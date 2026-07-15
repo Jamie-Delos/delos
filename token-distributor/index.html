@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token Distributor — Robinhood Chain</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #2f81f7; --green: #3fb950; --red: #f85149;
+    --yellow: #d29922;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; padding: 24px; max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: Consolas, monospace;
+  }
+  textarea { min-height: 120px; resize: vertical; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 10px;
+  }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: var(--red); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 160px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: Consolas, monospace; margin-top: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; }
+  .ok { color: var(--green); } .bad { color: var(--red); } .warn { color: var(--yellow); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); }
+  #summary div { padding: 3px 0; font-size: 13px; font-family: Consolas, monospace; }
+  #log { font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-top: 10px; }
+  a { color: var(--accent); text-decoration: none; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  progress { width: 100%; height: 10px; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<h1>Token Distributor</h1>
+<div class="sub">Direct, transparent ERC-20 distribution from your connected treasury wallet on Robinhood Chain. Your private key never touches this page — every transaction is signed in MetaMask/Rabby. All transfers are public on-chain and visibly originate from the treasury.</div>
+
+<!-- 1. NETWORK & WALLET -->
+<div class="panel">
+  <h2>1 · Network &amp; Wallet</h2>
+  <div class="row">
+    <div>
+      <label>Network</label>
+      <select id="network">
+        <option value="testnet" selected>Robinhood Testnet (46630)</option>
+        <option value="mainnet">Robinhood Mainnet (4663)</option>
+      </select>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button id="btnConnect">Connect wallet</button>
+    </div>
+  </div>
+  <div id="walletInfo" class="note"></div>
+</div>
+
+<!-- 2. TOKEN -->
+<div class="panel">
+  <h2>2 · Token</h2>
+  <label>Token contract address</label>
+  <input type="text" id="tokenAddr" placeholder="0x…">
+  <button id="btnLoadToken" class="secondary">Load token</button>
+  <div id="tokenInfo" class="note"></div>
+</div>
+
+<!-- 3. RECIPIENTS & ALLOCATION -->
+<div class="panel">
+  <h2>3 · Recipients &amp; Allocation</h2>
+  <label>Allocation mode</label>
+  <select id="mode">
+    <option value="random" selected>Random split (min–max, exact total)</option>
+    <option value="equal">Equal split</option>
+    <option value="manual">Manual (address,amount per line)</option>
+  </select>
+
+  <div id="rangeInputs" class="row">
+    <div><label>Total tokens to distribute</label><input type="number" id="total" value="600000000"></div>
+    <div><label>Min per wallet</label><input type="number" id="min" value="10000000"></div>
+    <div><label>Max per wallet</label><input type="number" id="max" value="30000000"></div>
+  </div>
+
+  <label id="recipLabel">Recipient addresses (one per line)</label>
+  <textarea id="recipients" placeholder="0x1111…&#10;0x2222…&#10;0x3333…"></textarea>
+  <input type="file" id="csvFile" accept=".csv,.txt" style="margin-top:8px; font-size:12px; color:var(--muted);">
+  <br>
+  <button id="btnGenerate">Generate preview</button>
+</div>
+
+<!-- 4. PREVIEW -->
+<div class="panel" id="previewPanel" style="display:none">
+  <h2>4 · Preview &amp; Validation</h2>
+  <div id="summary"></div>
+  <table id="planTable">
+    <thead><tr><th>#</th><th>Address</th><th style="text-align:right">Tokens</th><th style="text-align:right">%</th><th>Status</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <button id="btnDownloadPlan" class="secondary">Download plan CSV</button>
+</div>
+
+<!-- 5. EXECUTE -->
+<div class="panel" id="executePanel" style="display:none">
+  <h2>5 · Execute</h2>
+  <div class="note">Each transfer is a separate transaction you approve in your wallet. Progress is saved locally after every confirmation — if anything fails you can reopen this page and resume; already-confirmed transfers are skipped.</div>
+  <label style="margin-top:12px"><input type="checkbox" id="confirmCheck"> I have reviewed the preview above and want to send these transfers.</label>
+  <button id="btnExecute" disabled>Start distribution</button>
+  <button id="btnStop" class="danger" style="display:none">Stop after current tx</button>
+  <button id="btnResume" class="secondary" style="display:none">Resume saved distribution</button>
+  <button id="btnClearState" class="secondary" style="display:none">Discard saved progress</button>
+  <progress id="prog" value="0" max="1" style="display:none"></progress>
+  <div id="log" style="display:none"></div>
+  <button id="btnExport" class="secondary" style="display:none">Export results CSV</button>
+</div>
+
+<script>
+"use strict";
+
+const CHAINS = {
+  mainnet: {
+    chainIdHex: "0x1237", chainId: 4663, name: "Robinhood Chain",
+    rpc: "https://rpc.mainnet.chain.robinhood.com",
+    explorer: "https://robinhoodchain.blockscout.com",
+    currency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  },
+  testnet: {
+    chainIdHex: "0xb626", chainId: 46630, name: "Robinhood Chain Testnet",
+    rpc: "https://rpc.testnet.chain.robinhood.com",
+    explorer: "https://explorer.testnet.chain.robinhood.com",
+    currency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  },
+};
+
+const ERC20_ABI = [
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function balanceOf(address) view returns (uint256)",
+  "function transfer(address,uint256) returns (bool)",
+];
+
+const STATE_KEY = "rh-distributor-state-v1";
+
+let provider = null, signer = null, account = null;
+let token = null, tokenMeta = null;   // { address, symbol, decimals, balance }
+let plan = [];                        // [{ address, amount (whole tokens, Number), status, txHash }]
+let running = false, stopRequested = false;
+
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => Number(n).toLocaleString("en-US");
+const chainCfg = () => CHAINS[$("network").value];
+
+function logLine(msg, cls) {
+  const el = $("log");
+  el.style.display = "block";
+  const span = document.createElement("div");
+  if (cls) span.className = cls;
+  span.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ---------- randomness (crypto-secure) ---------- */
+function randInt(min, max) { // inclusive
+  if (min >= max) return min;
+  const range = max - min + 1;
+  const limit = Math.floor(0x100000000 / range) * range;
+  const buf = new Uint32Array(1);
+  let x;
+  do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+  return min + (x % range);
+}
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/* ---------- allocation ---------- */
+function buildRandomPlan(addresses, total, min, max) {
+  const n = addresses.length;
+  if (total < n * min || total > n * max) {
+    throw new Error(`Impossible: ${n} wallets at ${fmt(min)}–${fmt(max)} can only cover ${fmt(n * min)}–${fmt(n * max)}, but total is ${fmt(total)}.`);
+  }
+  const alloc = new Array(n).fill(min);
+  const cap = max - min;
+  let remaining = total - n * min;
+  const order = shuffle([...Array(n).keys()]);
+  for (let p = 0; p < n; p++) {
+    const idx = order[p];
+    const walletsLeft = n - p - 1;
+    const lo = Math.max(0, remaining - walletsLeft * cap);
+    const hi = Math.min(cap, remaining);
+    const add = randInt(lo, hi);
+    alloc[idx] += add;
+    remaining -= add;
+  }
+  if (remaining !== 0) throw new Error("Internal allocation error.");
+  return addresses.map((address, i) => ({ address, amount: alloc[i] }));
+}
+
+function buildEqualPlan(addresses, total) {
+  const n = addresses.length;
+  const base = Math.floor(total / n);
+  const rem = total - base * n;
+  return addresses.map((address, i) => ({ address, amount: base + (i < rem ? 1 : 0) }));
+}
+
+/* ---------- parsing & validation ---------- */
+function parseRecipients(text, manual) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    const parts = line.split(/[,;\t]/).map((s) => s.trim()).filter(Boolean);
+    let address;
+    try { address = ethers.getAddress(parts[0]); }
+    catch { throw new Error(`Invalid address: ${parts[0]}`); }
+    if (manual) {
+      const amt = Number((parts[1] || "").replace(/[_ ]/g, ""));
+      if (!Number.isSafeInteger(amt) || amt <= 0) throw new Error(`Invalid amount on line: ${line} (use whole tokens, e.g. 0xabc…,15000000)`);
+      rows.push({ address, amount: amt });
+    } else {
+      rows.push({ address });
+    }
+  }
+  const seen = new Set();
+  for (const r of rows) {
+    const k = r.address.toLowerCase();
+    if (seen.has(k)) throw new Error(`Duplicate address: ${r.address}`);
+    seen.add(k);
+  }
+  if (rows.length === 0) throw new Error("No recipient addresses provided.");
+  return rows;
+}
+
+/* ---------- wallet ---------- */
+async function connect() {
+  if (!window.ethereum) { alert("No wallet detected. Install MetaMask or Rabby, then reopen this page."); return; }
+  const cfg = chainCfg();
+  provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send("eth_requestAccounts", []);
+
+  const current = await provider.send("eth_chainId", []);
+  if (parseInt(current, 16) !== cfg.chainId) {
+    try {
+      await provider.send("wallet_switchEthereumChain", [{ chainId: cfg.chainIdHex }]);
+    } catch (e) {
+      // 4902 = chain not added yet
+      await provider.send("wallet_addEthereumChain", [{
+        chainId: cfg.chainIdHex, chainName: cfg.name, rpcUrls: [cfg.rpc],
+        nativeCurrency: cfg.currency, blockExplorerUrls: [cfg.explorer],
+      }]);
+    }
+    provider = new ethers.BrowserProvider(window.ethereum);
+  }
+  signer = await provider.getSigner();
+  account = await signer.getAddress();
+  const bal = await provider.getBalance(account);
+  $("walletInfo").innerHTML =
+    `Connected: <b>${account}</b> on <b>${cfg.name}</b> · ETH balance: <b>${Number(ethers.formatEther(bal)).toFixed(5)}</b>` +
+    ` · <a href="${cfg.explorer}/address/${account}" target="_blank">explorer ↗</a>`;
+}
+
+async function loadToken() {
+  if (!signer) { alert("Connect your wallet first."); return; }
+  let addr;
+  try { addr = ethers.getAddress($("tokenAddr").value.trim()); }
+  catch { alert("Invalid token address."); return; }
+  $("tokenInfo").textContent = "Loading…";
+  try {
+    token = new ethers.Contract(addr, ERC20_ABI, signer);
+    const [decimals, symbol, balance] = await Promise.all([
+      token.decimals(), token.symbol(), token.balanceOf(account),
+    ]);
+    tokenMeta = { address: addr, symbol, decimals: Number(decimals), balance };
+    $("tokenInfo").innerHTML =
+      `<span class="ok">✔</span> <b>${symbol}</b> (${tokenMeta.decimals} decimals) · treasury balance: <b>${fmt(ethers.formatUnits(balance, decimals).split(".")[0])} ${symbol}</b>`;
+  } catch (e) {
+    token = tokenMeta = null;
+    $("tokenInfo").innerHTML = `<span class="bad">✘ Could not read token (wrong network or not an ERC-20?): ${e.shortMessage || e.message}</span>`;
+  }
+}
+
+/* ---------- preview ---------- */
+function generate() {
+  try {
+    const mode = $("mode").value;
+    const rows = parseRecipients($("recipients").value, mode === "manual");
+    if (mode === "manual") {
+      plan = rows.map((r) => ({ ...r, status: "pending", txHash: "" }));
+    } else {
+      const total = Number($("total").value);
+      if (!Number.isSafeInteger(total) || total <= 0) throw new Error("Total must be a positive whole number of tokens.");
+      let p;
+      if (mode === "equal") p = buildEqualPlan(rows.map((r) => r.address), total);
+      else {
+        const min = Number($("min").value), max = Number($("max").value);
+        if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min < 0 || min > max) throw new Error("Check min/max values.");
+        p = buildRandomPlan(rows.map((r) => r.address), total, min, max);
+      }
+      plan = p.map((r) => ({ ...r, status: "pending", txHash: "" }));
+    }
+    renderPlan();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function renderPlan() {
+  const cfg = chainCfg();
+  const total = plan.reduce((s, r) => s + r.amount, 0);
+  const min = Math.min(...plan.map((r) => r.amount));
+  const max = Math.max(...plan.map((r) => r.amount));
+  const done = plan.filter((r) => r.status === "confirmed").length;
+
+  const checks = [];
+  checks.push([`Recipients: ${plan.length}`, "ok"]);
+  checks.push([`Total: ${fmt(total)} tokens`, "ok"]);
+  checks.push([`Range: ${fmt(min)} – ${fmt(max)} per wallet`, "ok"]);
+  let balanceOk = false;
+  if (tokenMeta) {
+    const need = ethers.parseUnits(String(total), tokenMeta.decimals);
+    balanceOk = tokenMeta.balance >= need;
+    checks.push([
+      balanceOk ? `Treasury balance sufficient (${tokenMeta.symbol})` : `INSUFFICIENT ${tokenMeta.symbol} BALANCE — need ${fmt(total)}`,
+      balanceOk ? "ok" : "bad",
+    ]);
+  } else {
+    checks.push(["Token not loaded — load it in section 2 before executing", "warn"]);
+  }
+  $("summary").innerHTML = checks.map(([t, c]) => `<div class="${c}">${c === "ok" ? "✔" : c === "bad" ? "✘" : "⚠"} ${t}</div>`).join("");
+
+  const tbody = $("planTable").querySelector("tbody");
+  tbody.innerHTML = "";
+  plan.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    const statusCls = r.status === "confirmed" ? "ok" : r.status === "failed" ? "bad" : "";
+    const link = r.txHash ? ` <a href="${cfg.explorer}/tx/${r.txHash}" target="_blank">tx ↗</a>` : "";
+    tr.innerHTML =
+      `<td>${i + 1}</td><td>${r.address}</td><td class="num">${fmt(r.amount)}</td>` +
+      `<td class="num">${((r.amount / total) * 100).toFixed(2)}%</td>` +
+      `<td class="${statusCls}">${r.status}${link}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  $("previewPanel").style.display = "block";
+  $("executePanel").style.display = "block";
+  $("prog").max = plan.length;
+  $("prog").value = done;
+  $("btnExecute").disabled = !$("confirmCheck").checked || !balanceOk || running;
+  $("btnExport").style.display = plan.some((r) => r.txHash) ? "inline-block" : "none";
+}
+
+/* ---------- persistence / resume ---------- */
+function saveState() {
+  localStorage.setItem(STATE_KEY, JSON.stringify({
+    network: $("network").value, tokenAddress: tokenMeta ? tokenMeta.address : $("tokenAddr").value.trim(), plan,
+  }));
+}
+function loadSavedState() {
+  const raw = localStorage.getItem(STATE_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+function refreshResumeButtons() {
+  const saved = loadSavedState();
+  const hasUnfinished = saved && saved.plan && saved.plan.some((r) => r.status !== "confirmed");
+  $("btnResume").style.display = saved ? "inline-block" : "none";
+  $("btnResume").textContent = hasUnfinished ? "Resume saved distribution" : "Load last completed distribution";
+  $("btnClearState").style.display = saved ? "inline-block" : "none";
+}
+
+/* ---------- execution ---------- */
+async function execute() {
+  if (!signer || !token || !tokenMeta) { alert("Connect wallet and load the token first."); return; }
+  const cfg = chainCfg();
+  const net = await provider.getNetwork();
+  if (Number(net.chainId) !== cfg.chainId) { alert(`Wallet is on chain ${net.chainId}, expected ${cfg.chainId}. Reconnect.`); return; }
+
+  running = true; stopRequested = false;
+  $("btnExecute").disabled = true;
+  $("btnStop").style.display = "inline-block";
+  $("prog").style.display = "block";
+  saveState();
+  logLine(`Starting distribution of ${fmt(plan.reduce((s, r) => s + r.amount, 0))} ${tokenMeta.symbol} to ${plan.length} wallets on ${cfg.name}.`);
+
+  for (let i = 0; i < plan.length; i++) {
+    const row = plan[i];
+    if (row.status === "confirmed") continue;
+    if (stopRequested) { logLine("Stopped by user. Reopen or press Resume to continue later.", "warn"); break; }
+    try {
+      logLine(`[${i + 1}/${plan.length}] Sending ${fmt(row.amount)} ${tokenMeta.symbol} → ${row.address} … confirm in wallet.`);
+      const tx = await token.transfer(row.address, ethers.parseUnits(String(row.amount), tokenMeta.decimals));
+      row.txHash = tx.hash;
+      row.status = "submitted";
+      saveState(); renderPlan();
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted.");
+      row.status = "confirmed";
+      logLine(`  ✔ confirmed: ${tx.hash}`, "ok");
+    } catch (e) {
+      row.status = "failed";
+      logLine(`  ✘ failed for ${row.address}: ${e.shortMessage || e.message}`, "bad");
+      saveState(); renderPlan();
+      if (!confirm("A transfer failed (see log). Continue with the next wallet?\n\nCancel = stop here (progress is saved, you can resume).")) break;
+    }
+    saveState(); renderPlan();
+  }
+
+  running = false;
+  $("btnStop").style.display = "none";
+  const remaining = plan.filter((r) => r.status !== "confirmed").length;
+  logLine(remaining === 0 ? "✅ Distribution complete — all transfers confirmed." : `Finished run with ${remaining} wallet(s) not yet confirmed.`, remaining === 0 ? "ok" : "warn");
+  renderPlan(); refreshResumeButtons();
+}
+
+/* ---------- CSV ---------- */
+function downloadCsv(name, rows) {
+  const blob = new Blob([rows.join("\n") + "\n"], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ---------- wire up ---------- */
+$("btnConnect").onclick = () => connect().catch((e) => alert(e.shortMessage || e.message));
+$("btnLoadToken").onclick = () => loadToken();
+$("btnGenerate").onclick = () => { generate(); saveState(); refreshResumeButtons(); };
+$("btnExecute").onclick = () => execute().catch((e) => { running = false; logLine("Error: " + (e.shortMessage || e.message), "bad"); });
+$("btnStop").onclick = () => { stopRequested = true; $("btnStop").disabled = true; setTimeout(() => ($("btnStop").disabled = false), 500); };
+$("confirmCheck").onchange = () => renderPlan();
+$("mode").onchange = () => {
+  const manual = $("mode").value === "manual";
+  $("rangeInputs").style.display = manual ? "none" : "flex";
+  $("recipLabel").textContent = manual ? "Recipients with amounts (address,amount per line — whole tokens)" : "Recipient addresses (one per line)";
+};
+$("csvFile").onchange = (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { $("recipients").value = String(reader.result).trim(); };
+  reader.readAsText(f);
+};
+$("btnDownloadPlan").onclick = () =>
+  downloadCsv("allocation-plan.csv", ["address,amount_tokens", ...plan.map((r) => `${r.address},${r.amount}`)]);
+$("btnExport").onclick = () =>
+  downloadCsv("distribution-results.csv", ["address,amount_tokens,status,tx_hash", ...plan.map((r) => `${r.address},${r.amount},${r.status},${r.txHash}`)]);
+$("btnResume").onclick = () => {
+  const saved = loadSavedState();
+  if (!saved) return;
+  $("network").value = saved.network || "testnet";
+  $("tokenAddr").value = saved.tokenAddress || "";
+  plan = saved.plan || [];
+  renderPlan();
+  logLine(`Loaded saved distribution: ${plan.length} wallets, ${plan.filter((r) => r.status === "confirmed").length} already confirmed. Connect wallet + load token, tick the checkbox, then Start to continue.`);
+};
+$("btnClearState").onclick = () => {
+  if (confirm("Discard saved progress? Confirmed on-chain transfers are NOT undone — this only clears the local record.")) {
+    localStorage.removeItem(STATE_KEY);
+    refreshResumeButtons();
+  }
+};
+
+refreshResumeButtons();
+if (!window.ethers) {
+  document.body.insertAdjacentHTML("afterbegin",
+    '<div class="panel bad" style="border-color:var(--red)">Could not load the ethers.js library — this page needs an internet connection the first time it loads. Refresh once you are online.</div>');
+}
+</script>
+</body>
+</html>

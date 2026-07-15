@@ -1,0 +1,17 @@
+{
+  "name": "launchpad-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Reward loop: claim creator fees -> buy reward token -> airdrop to holders",
+  "scripts": {
+    "start": "node src/index.js",
+    "dry": "DRY_RUN=true node src/index.js",
+    "buyback": "node src/buyback.js",
+    "buyback:dry": "DRY_RUN=true node src/buyback.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2"
+  }
+}

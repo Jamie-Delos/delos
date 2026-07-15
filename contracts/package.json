@@ -1,0 +1,27 @@
+{
+  "name": "launchpad-contracts",
+  "version": "0.1.0",
+  "description": "Single-sided Uniswap V3 launchpad contracts",
+  "license": "MIT",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:uniswap:local": "hardhat run scripts/deployUniswapV3.js",
+    "deploy:uniswap:robinhoodTestnet": "hardhat run scripts/deployUniswapV3.js --network robinhoodTestnet",
+    "deploy:robinhoodTestnet": "hardhat run scripts/deploy.js --network robinhoodTestnet",
+    "launch:robinhoodTestnet": "hardhat run scripts/launch.js --network robinhoodTestnet",
+    "deploy:robinhood": "hardhat run scripts/deploy.js --network robinhood",
+    "launch:robinhood": "hardhat run scripts/launch.js --network robinhood"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@uniswap/swap-router-contracts": "^1.3.0",
+    "@uniswap/v3-core": "^1.0.1",
+    "@uniswap/v3-periphery": "^1.4.4",
+    "hardhat": "^2.22.10"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5"
+  }
+}
