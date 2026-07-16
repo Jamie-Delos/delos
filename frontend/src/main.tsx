@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { HashRouter } from "react-router-dom";
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "./wagmi";
@@ -12,7 +13,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <HashRouter>
+          <App />
+        </HashRouter>
       </QueryClientProvider>
     </WagmiProvider>
   </React.StrictMode>,

@@ -1,42 +1,83 @@
-import { useState } from "react";
-import { Wallet } from "./components/Wallet";
-import { LaunchForm } from "./components/LaunchForm";
-import { TokenList } from "./components/TokenList";
+import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { CONTRACTS } from "./config";
+import { short } from "./lib/format";
+import { IcHome, IcToken, IcAdvanced, IcProfile, IcMore, IcSearch, IcPlus } from "./components/icons";
+import { Home } from "./pages/Home";
+import { Create } from "./pages/Create";
+import { Coin } from "./pages/Coin";
+import { Profile } from "./pages/Profile";
+
+function Wordmark() {
+  return (
+    <div className="wordmark">
+      <span className="wm-mark"><i /></span>
+      <span className="wm-text">robinpad</span>
+    </div>
+  );
+}
+
+function ConnectBtn({ mini }: { mini?: boolean }) {
+  const { address, isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
+  const nav = useNavigate();
+  if (!isConnected) {
+    return <button className="btn2" onClick={() => connect({ connector: connectors[0] })}>log in</button>;
+  }
+  return (
+    <button className="btn2" onClick={() => (mini ? disconnect() : nav("/profile"))} title="profile / disconnect">
+      <span className="mono">{short(address)}</span>
+    </button>
+  );
+}
 
 export function App() {
-  const [tab, setTab] = useState<"launch" | "explore">("launch");
-  const [refreshKey, setRefreshKey] = useState(0);
-
   const notDeployed = CONTRACTS.factory === "0x0000000000000000000000000000000000000000";
-
   return (
     <div className="app">
-      <header>
-        <div className="brand">Launch<span>pad</span></div>
-        <nav>
-          <button className={tab === "launch" ? "tab on" : "tab"} onClick={() => setTab("launch")}>Launch</button>
-          <button className={tab === "explore" ? "tab on" : "tab"} onClick={() => setTab("explore")}>Explore</button>
-        </nav>
-        <Wallet />
-      </header>
+      {/* desktop sidebar */}
+      <aside className="sidebar">
+        <Wordmark />
+        <NavLink to="/" end className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcHome /><span>home</span></NavLink>
+        <span className="side-link disabled" title="coming soon"><IcToken /><span>token</span></span>
+        <span className="side-link disabled" title="coming soon"><IcAdvanced /><span>advanced</span></span>
+        <NavLink to="/profile" className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcProfile /><span>profile</span></NavLink>
+        <span className="side-link disabled"><IcMore /><span>more</span></span>
+        <NavLink to="/create" className="side-cta">create coin</NavLink>
+        <div style={{ marginTop: "auto", paddingTop: 16 }}><ConnectBtn /></div>
+      </aside>
 
-      {notDeployed && (
-        <div className="banner">
-          Contracts not configured. Deploy with <code>contracts/scripts/deploy.js</code>, then set
-          <code>VITE_FACTORY_ADDRESS</code> / <code>VITE_LOCKER_ADDRESS</code> in <code>frontend/.env</code>.
+      <div className="main">
+        {/* mobile top bar */}
+        <div className="topbar">
+          <Wordmark />
+          <div style={{ marginLeft: "auto" }}><ConnectBtn /></div>
         </div>
-      )}
 
-      <main>
-        {tab === "launch"
-          ? <LaunchForm onLaunched={() => { setRefreshKey((k) => k + 1); setTab("explore"); }} />
-          : <TokenList refreshKey={refreshKey} />}
-      </main>
+        <div className="content">
+          {notDeployed && (
+            <div className="banner">
+              dev: contracts not set — launches/trades are placeholder. deploy then set <code>VITE_FACTORY_ADDRESS</code> / <code>VITE_LOCKER_ADDRESS</code>.
+            </div>
+          )}
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/create" element={<Create />} />
+            <Route path="/coin/:address" element={<Coin />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/:address" element={<Profile />} />
+          </Routes>
+        </div>
 
-      <footer className="muted">
-        Single-sided Uniswap V3 · price rises as people buy · liquidity locked forever · testnet
-      </footer>
+        {/* mobile bottom tab bar */}
+        <nav className="bottomnav">
+          <NavLink to="/" end className={({ isActive }) => "tab" + (isActive ? " active" : "")}><IcHome /><span>home</span></NavLink>
+          <NavLink to="/" className="tab"><IcSearch /><span>search</span></NavLink>
+          <NavLink to="/create" className="tab"><span className="tab-center"><IcPlus /></span><span>create</span></NavLink>
+          <NavLink to="/profile" className={({ isActive }) => "tab" + (isActive ? " active" : "")}><IcProfile /><span>profile</span></NavLink>
+        </nav>
+      </div>
     </div>
   );
 }
