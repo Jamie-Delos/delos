@@ -11,7 +11,9 @@
     "deploy:robinhoodTestnet": "hardhat run scripts/deploy.js --network robinhoodTestnet",
     "launch:robinhoodTestnet": "hardhat run scripts/launch.js --network robinhoodTestnet",
     "deploy:robinhood": "hardhat run scripts/deploy.js --network robinhood",
-    "launch:robinhood": "hardhat run scripts/launch.js --network robinhood"
+    "launch:robinhood": "hardhat run scripts/launch.js --network robinhood",
+    "verify:robinhoodTestnet": "hardhat run scripts/verifyAll.js --network robinhoodTestnet",
+    "verify:robinhood": "hardhat run scripts/verifyAll.js --network robinhood"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

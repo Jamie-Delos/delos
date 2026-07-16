@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  @keyframes kothbounce { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(-3px) } }
+  @keyframes popin { 0%{ transform: translateY(-4px); opacity: 0 } 100%{ transform: translateY(0); opacity: 1 } }
+  body { margin: 0; background: #14161b; }
+  a { color: #5eead4; text-decoration: none; }
+  a:hover { color: #99f6e4; }
+  ::selection { background: #5eead4; color: #04120e; }
+  .noscroll::-webkit-scrollbar { display: none; }
+</style>
+</helmet>
+<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px; background:radial-gradient(900px 500px at 50% 0%, #1b1e26, #0d0e12);">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="true" hint-size="402px,874px">
+
+    <div style="height:100%; display:flex; flex-direction:column; background:#090b0f; color:#e9edf3; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif; font-size:15px;">
+
+      <!-- scroll area -->
+      <div class="noscroll" style="flex:1; overflow-y:auto; overflow-x:hidden;">
+
+        <!-- sticky top bar -->
+        <div style="position:sticky; top:0; z-index:10; background:rgba(9,11,15,0.92); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-bottom:1px solid #12161e; padding:52px 16px 12px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:28px; height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:#2dd4bf;">
+              <div style="width:11px; height:11px; background:#06110e; transform:rotate(45deg);"></div>
+            </div>
+            <span style="font-weight:700; font-size:16px; letter-spacing:2px; color:#e9edf3;">launchpad</span>
+            <a href="AJM Pad Profile Mobile.dc.html" style="margin-left:auto; background:#12161e; color:#e9edf3; border:1px solid #232a37; padding:8px 15px; font-weight:600; font-size:13px;">log in</a>
+          </div>
+        </div>
+
+        <!-- live tape ticker -->
+        <div class="noscroll" style="display:flex; gap:8px; overflow-x:auto; padding:12px 16px; border-bottom:1px solid #12161e;">
+          <sc-for list="{{ tape }}" as="ev" hint-placeholder-count="4">
+            <div style="display:flex; align-items:center; gap:7px; flex-shrink:0; padding:6px 11px; font-size:12px; font-weight:600; white-space:nowrap; background:{{ ev.bg }}; color:{{ ev.fg }}; border:1px solid {{ ev.ring }}; animation:popin .4s ease;">
+              <span style="width:6px; height:6px; border-radius:50%; flex-shrink:0; background:{{ ev.dot }};"></span>
+              <span>{{ ev.text }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- search -->
+        <div style="padding:16px 16px 4px;">
+          <div style="position:relative;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5eead4" stroke-width="2" stroke-linecap="round" style="position:absolute; left:14px; top:50%; transform:translateY(-50%);"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.2-3.2"></path></svg>
+            <input id="mobileSearch" placeholder="search for token" style="width:100%; box-sizing:border-box; background:#0e1219; border:1px solid #232a37; color:#e9edf3; padding:12px 14px 12px 40px; font-size:14px; outline:none;" style-focus="border-color:#5eead4;">
+          </div>
+        </div>
+
+        <!-- now trending -->
+        <div style="padding:18px 16px 6px; display:flex; align-items:center; gap:9px;">
+          <span style="width:7px; height:7px; border-radius:50%; background:#5eead4;"></span>
+          <h2 style="margin:0; font-size:15px; font-weight:700; letter-spacing:-0.2px;">now trending</h2>
+        </div>
+        <div class="noscroll" style="display:flex; gap:12px; overflow-x:auto; padding:8px 16px 4px; scroll-snap-type:x mandatory;">
+          <sc-for list="{{ trending }}" as="t" hint-placeholder-count="4">
+            <div style="flex-shrink:0; width:236px; scroll-snap-align:start; border:1px solid {{ t.border }}; padding:13px; background:#0e1219; animation:{{ t.anim }};">
+              <div style="display:flex; gap:11px; align-items:flex-start;">
+                <div style="width:48px; height:48px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:24px; background:{{ t.color }};">{{ t.emoji }}</div>
+                <div style="min-width:0; flex:1;">
+                  <div style="font-weight:700; font-size:13px; line-height:1.25;">{{ t.title }} <span style="color:#f2c14c;">{{ t.bolt }}</span></div>
+                  <div style="font-size:11.5px; margin-top:5px;"><span style="color:#7b8494;">mcap </span><span style="color:#5eead4; font-weight:700;">{{ t.mcap }}</span></div>
+                </div>
+              </div>
+              <div style="font-size:12px; color:#9aa3b2; margin-top:10px; line-height:1.4; border-top:1px solid #171c25; padding-top:9px;">{{ t.desc }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- coin list -->
+        <div style="padding:18px 16px 6px; display:flex; align-items:center; justify-content:space-between;">
+          <h2 style="margin:0; font-size:15px; font-weight:700; letter-spacing:-0.2px;">all coins</h2>
+          <button style="background:#12161e; color:#5eead4; border:1px solid #2f6b5e; padding:7px 12px; font-weight:600; font-size:12.5px; cursor:pointer;">featured 🔥</button>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:12px; padding:8px 16px 20px;">
+          <sc-for list="{{ coins }}" as="c" hint-placeholder-count="8">
+            <a href="AJM Pad Coin Mobile.dc.html" style="display:flex; gap:12px; align-items:flex-start; background:#0d1017; border:1px solid #171c25; padding:12px;" style-active="border-color:#2f6b5e;">
+              <div style="width:72px; height:72px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; overflow:hidden; background:{{ c.color }};">
+                <div style="font-size:30px; line-height:1;">{{ c.emoji }}</div>
+                <div style="font-size:9px; font-weight:800; color:#06110e; letter-spacing:0.5px;">{{ c.ticker }}</div>
+              </div>
+              <div style="min-width:0; flex:1;">
+                <div style="display:flex; align-items:center; gap:6px; font-size:11.5px;">
+                  <span style="color:#7b8494;">by</span>
+                  <span style="width:14px; height:14px; border-radius:50%; display:inline-block; background:{{ c.avatar }};"></span>
+                  <span style="color:#aab2c0;">{{ c.by }}</span>
+                  <span style="color:#7b8494; margin-left:auto;">{{ c.age }}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; margin-top:7px; font-size:11.5px;">
+                  <span><span style="color:#7b8494;">mcap </span><span style="color:#5eead4; font-weight:700;">{{ c.mcap }}</span></span>
+                  <span style="color:#7b8494;">{{ c.replies }} replies</span>
+                </div>
+                <div style="font-size:12.5px; margin-top:8px; line-height:1.4;"><span style="font-weight:700; color:#e9edf3;">{{ c.head }}</span> <span style="color:#7b8494;">{{ c.desc }}</span></div>
+              </div>
+            </a>
+          </sc-for>
+        </div>
+
+      </div>
+
+      <!-- sticky bottom tab bar -->
+      <div style="position:sticky; bottom:0; z-index:20; display:flex; background:rgba(9,11,15,0.94); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-top:1px solid #171c25; padding:10px 8px 26px;">
+        <a href="#" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#5eead4; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path></svg>
+          <span>home</span>
+        </a>
+        <a href="#" onClick="{{ focusSearch }}" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.2-3.2"></path></svg>
+          <span>search</span>
+        </a>
+        <a href="AJM Pad Create Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <span style="width:26px; height:26px; display:flex; align-items:center; justify-content:center; background:#2dd4bf; color:#05130c;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+          </span>
+          <span>create</span>
+        </a>
+        <a href="AJM Pad Profile Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"></circle><circle cx="12" cy="9.5" r="3"></circle><path d="M6 19a6 6 0 0112 0"></path></svg>
+          <span>profile</span>
+        </a>
+      </div>
+
+    </div>
+  </x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 470, &quot;height&quot;: 940}}">
+class Component extends DCLogic {
+  state = { tape: [] };
+
+  addrs = ["CYttoi","Gny7UM","8nSoTk","3F2ch2","8whSeG","6ceQoZ","73nQjF","BVWhAU","9xKm2p","Ap3Rtz","zX4rTq","Kp0tR2"];
+  toks  = ["51COIN","MUTATITS","USDC","Wibbidi","NEH","Fartgram","Bullko","GIGA","TURBO","CHONK","MOONB"];
+  dots  = ["#2fae5a","#e8b84b","#b06de0","#38bdf8","#e37b7b","#e8963c"];
+
+  componentDidMount() {
+    this.setState({ tape: [this.makeEvent(), this.makeEvent(), this.makeEvent(), this.makeEvent()] });
+    this.timer = setInterval(() => {
+      this.setState(s => ({ tape: [this.makeEvent(), ...s.tape].slice(0, 4) }));
+    }, 2100);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+
+  makeEvent() {
+    const kind = this.pick(["buy","sell","create"]);
+    const addr = this.pick(this.addrs), tk = this.pick(this.toks), dot = this.pick(this.dots);
+    const amt = (Math.random() * 0.18 + 0.002).toFixed(4);
+    let text, bg, fg, ring;
+    if (kind === "buy")      { text = `${addr} bought ${amt} ${tk}`; bg = "rgba(52,211,153,0.14)"; fg = "#6ee7b0"; ring = "rgba(52,211,153,0.35)"; }
+    else if (kind === "sell"){ text = `${addr} sold ${amt} ${tk}`;   bg = "rgba(244,114,140,0.13)"; fg = "#f9a8b8"; ring = "rgba(244,114,140,0.35)"; }
+    else                     { text = `${addr} created ${tk}`;       bg = "rgba(242,201,76,0.13)";  fg = "#f4d47a"; ring = "rgba(242,201,76,0.35)"; }
+    return { id: Math.random().toString(36).slice(2), text, bg, fg, ring, dot };
+  }
+
+  renderVals() {
+    const trending = [
+      { title: "BASEDD House (BASEDD)", mcap: "$5.1M",  emoji: "\uD83C\uDD71\uFE0F", color: "#1c1f27", bolt: "", desc: "Streamer Collective 'BASEDD House' Launches Token" },
+      { title: "rasmr (rasmr)",         mcap: "$8.9M",  emoji: "\uD83D\uDE35",       color: "#c9a892", bolt: "", desc: "Rasmr Launches Official Livestreaming Coin" },
+      { title: "Monitoring (Monitor)",  mcap: "$1.2M",  emoji: "\uD83D\uDD75\uFE0F", color: "#2b3a2b", bolt: "", desc: "CT Monitoring the Situation From the Sidelines" },
+      { title: "Xavier (xavier)",       mcap: "$13.3M", emoji: "\uD83E\uDDD8", color: "#c98a3c", bolt: "\u26A1", desc: "Ansem Shills Xavier, a Retro Absurdist Character" },
+    ].map((t, i) => ({
+      ...t,
+      anim: i === 3 ? "kothbounce 1.5s ease-in-out infinite" : "none",
+      border: i === 3 ? "rgba(94,234,212,0.5)" : "#1e2530",
+    }));
+
+    const coins = [
+      { head: "MUTATED TITS (MUTATITS):", desc: "", by: "8nSoTk", age: "24m", mcap: "$5.3K", replies: 9, ticker: "MUTATITS", emoji: "\uD83C\uDF48", color: "#7ee787", avatar: "#2fae5a" },
+      { head: "USD cat (USDC):", desc: "1 USDC = 1USD stablecat", by: "3F2ch2", age: "1h", mcap: "$6.4K", replies: 58, ticker: "USDC", emoji: "\uD83D\uDC31", color: "#d9c48a", avatar: "#e8b84b" },
+      { head: "Wibbidi Cat (Wibbidi):", desc: "fluffstorm meowbang babbyflip", by: "8whSeG", age: "28m", mcap: "$52.7K", replies: 10, ticker: "Wibbidi", emoji: "\uD83E\uDD16", color: "#b06de0", avatar: "#b06de0" },
+      { head: "Nothing Ever Happens (NEH):", desc: "nothing ever happens", by: "6ceQoZ", age: "20m", mcap: "$6.9K", replies: 0, ticker: "NEH", emoji: "\uD83D\uDDFF", color: "#e8e4da", avatar: "#8a93a6" },
+      { head: "Bullko (Bullko):", desc: "the official mascot of the Bull Market on Base.", by: "BVWhAU", age: "39m", mcap: "$15.2K", replies: 54, ticker: "Bullko", emoji: "\uD83D\uDC2E", color: "#e3b23c", avatar: "#e8963c" },
+      { head: "Gigachad (GIGA):", desc: "jaw so sharp it broke the chart", by: "U9kDeD", age: "33m", mcap: "$28.4K", replies: 41, ticker: "GIGA", emoji: "\uD83D\uDCAA", color: "#9aa3b2", avatar: "#38bdf8" },
+      { head: "Turbo Toad (TURBO):", desc: "ribbit to the moon", by: "FvbeGe", age: "2h", mcap: "$11.8K", replies: 63, ticker: "TURBO", emoji: "\uD83D\uDC38", color: "#4fae5a", avatar: "#2fae5a" },
+      { head: "Chonk (CHONK):", desc: "absolute unit. do not feed after midnight", by: "zX4rTq", age: "55m", mcap: "$42.0K", replies: 132, ticker: "CHONK", emoji: "\uD83D\uDC08", color: "#e8963c", avatar: "#e8b84b" },
+    ];
+
+    return {
+      tape: this.state.tape, trending, coins,
+      focusSearch: (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const el = document.getElementById("mobileSearch");
+        if (el) el.focus();
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

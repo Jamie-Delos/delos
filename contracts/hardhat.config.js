@@ -35,9 +35,31 @@ module.exports = {
       chainId: 84532,
     },
   },
+  // Robinhood Chain uses Blockscout, which accepts the Etherscan-compatible verify API. Blockscout
+  // ignores the API key but hardhat requires a value, so any non-empty string works.
   etherscan: {
-    apiKey: { baseSepolia: BASESCAN_API_KEY || "" },
+    apiKey: {
+      robinhood: "blockscout",
+      robinhoodTestnet: "blockscout",
+      baseSepolia: BASESCAN_API_KEY || "",
+    },
     customChains: [
+      {
+        network: "robinhood",
+        chainId: 4663,
+        urls: {
+          apiURL: "https://robinhoodchain.blockscout.com/api",
+          browserURL: "https://robinhoodchain.blockscout.com",
+        },
+      },
+      {
+        network: "robinhoodTestnet",
+        chainId: 46630,
+        urls: {
+          apiURL: "https://explorer.testnet.chain.robinhood.com/api",
+          browserURL: "https://explorer.testnet.chain.robinhood.com",
+        },
+      },
       {
         network: "baseSepolia",
         chainId: 84532,

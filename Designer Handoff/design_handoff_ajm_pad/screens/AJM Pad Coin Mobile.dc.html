@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body { margin: 0; background: #14161b; }
+  a { color: #5eead4; text-decoration: none; }
+  a:hover { color: #99f6e4; }
+  ::selection { background: #5eead4; color: #04120e; }
+  .noscroll::-webkit-scrollbar { display: none; }
+</style>
+</helmet>
+<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px; background:radial-gradient(900px 500px at 50% 0%, #1b1e26, #0d0e12);">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="true" hint-size="402px,874px">
+
+    <div style="height:100%; display:flex; flex-direction:column; background:#090b0f; color:#e9edf3; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif; font-size:15px;">
+
+      <div class="noscroll" style="flex:1; overflow-y:auto; overflow-x:hidden;">
+
+        <!-- sticky top bar -->
+        <div style="position:sticky; top:0; z-index:10; background:rgba(9,11,15,0.92); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-bottom:1px solid #12161e; padding:52px 16px 12px; display:flex; align-items:center; gap:12px;">
+          <a href="AJM Pad Home Mobile.dc.html" style="color:#aab2c0; display:flex; align-items:center;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          </a>
+          <span style="width:26px; height:26px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:16px; background:#e3b23c;">🐮</span>
+          <span style="font-weight:700; font-size:16px;">Bullko <span style="color:#7b8494; font-weight:600;">(Bullko)</span></span>
+        </div>
+
+        <div style="padding:16px 16px 24px; display:flex; flex-direction:column; gap:16px;">
+
+          <!-- token header meta -->
+          <div>
+            <div style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:#7b8494; flex-wrap:wrap;">
+              <span style="font-size:11px; font-weight:700; color:#f4d47a; background:rgba(242,201,76,0.12); border:1px solid rgba(242,201,76,0.3); padding:3px 9px;">🔥 trending</span>
+              <span>created by</span>
+              <span style="width:15px; height:15px; border-radius:50%; display:inline-block; background:#e8963c;"></span>
+              <a href="AJM Pad Profile Mobile.dc.html" style="color:#aab2c0;">BVWhAU</a>
+              <span>· 39m ago</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:12px;">
+              <div style="display:flex; align-items:center; gap:8px; background:#0d1017; border:1px solid #171c25; padding:7px 11px; font-family:ui-monospace,monospace; font-size:12px; color:#9aa3b2;">
+                <span>0x7a3F…9dC2</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5eead4" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 012-2h10"></path></svg>
+              </div>
+              <a href="#" style="width:32px; height:32px; background:#0d1017; border:1px solid #171c25; display:flex; align-items:center; justify-content:center; color:#aab2c0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3h4l-8 9 9 9h-6l-5-6-6 6H1l9-10L1 3h6l4 5z"></path></svg></a>
+              <a href="#" style="width:32px; height:32px; background:#0d1017; border:1px solid #171c25; display:flex; align-items:center; justify-content:center; color:#aab2c0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M21.9 4.3L2.9 11.6c-1 .4-1 1.4-.2 1.7l4.8 1.5 1.8 5.7c.2.6.5.7 1 .4l2.7-2 4.7 3.5c.6.4 1.3.1 1.4-.7L23 5.4c.2-.9-.4-1.4-1.1-1.1z"></path></svg></a>
+            </div>
+          </div>
+
+          <!-- stats 2x2 -->
+          <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:10px;">
+            <div style="background:#0d1017; border:1px solid #171c25; padding:12px 14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:5px;">market cap</div>
+              <div style="font-size:16px; font-weight:700; color:#5eead4;">$15.2K</div>
+            </div>
+            <div style="background:#0d1017; border:1px solid #171c25; padding:12px 14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:5px;">price</div>
+              <div style="font-size:16px; font-weight:700;">$0.0000152</div>
+            </div>
+            <div style="background:#0d1017; border:1px solid #171c25; padding:12px 14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:5px;">24h</div>
+              <div style="font-size:16px; font-weight:700; color:#6ee7b0;">+142%</div>
+            </div>
+            <div style="background:#0d1017; border:1px solid #171c25; padding:12px 14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:5px;">holders</div>
+              <div style="font-size:16px; font-weight:700;">312</div>
+            </div>
+          </div>
+
+          <!-- trade -->
+          <div style="background:#0d1017; border:1px solid #171c25; padding:16px;">
+            <div style="display:flex; gap:6px; background:#0a0d12; border:1px solid #171c25; padding:4px; margin-bottom:14px;">
+              <button onClick="{{ setBuy }}" style="flex:1; padding:11px; border:none; font-weight:700; font-size:14px; cursor:pointer; {{ buyTabStyle }}">buy</button>
+              <button onClick="{{ setSell }}" style="flex:1; padding:11px; border:none; font-weight:700; font-size:14px; cursor:pointer; {{ sellTabStyle }}">sell</button>
+            </div>
+            <div style="position:relative; margin-bottom:12px;">
+              <input value="{{ amount }}" onInput="{{ setAmount }}" style="width:100%; box-sizing:border-box; background:#0e1219; border:1px solid #232a37; color:#e9edf3; padding:14px 64px 14px 14px; font-size:18px; font-weight:600; outline:none;" style-focus="border-color:#5eead4;">
+              <span style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#7b8494; font-size:13px; font-weight:700;">{{ payUnit }}</span>
+            </div>
+            <div style="display:flex; gap:7px; margin-bottom:14px;">
+              <button onClick="{{ amt1 }}" style="flex:1; background:#0e1219; border:1px solid #232a37; color:#aab2c0; padding:8px; font-size:12.5px; cursor:pointer;">0.01</button>
+              <button onClick="{{ amt2 }}" style="flex:1; background:#0e1219; border:1px solid #232a37; color:#aab2c0; padding:8px; font-size:12.5px; cursor:pointer;">0.1</button>
+              <button onClick="{{ amt3 }}" style="flex:1; background:#0e1219; border:1px solid #232a37; color:#aab2c0; padding:8px; font-size:12.5px; cursor:pointer;">0.5</button>
+              <button onClick="{{ amt4 }}" style="flex:1; background:#0e1219; border:1px solid #232a37; color:#aab2c0; padding:8px; font-size:12.5px; cursor:pointer;">1</button>
+            </div>
+            <button style="width:100%; background:#2dd4bf; color:#05130c; border:none; padding:14px; font-weight:700; font-size:15px; cursor:pointer;" style-active="filter:brightness(1.06);">place trade</button>
+            <div style="text-align:center; font-size:11px; color:#5b6472; margin-top:10px;">1% fee</div>
+          </div>
+
+          <!-- chart -->
+          <div style="background:#0d1017; border:1px solid #171c25; padding:14px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+              <div style="display:flex; gap:2px; background:#0a0d12; border:1px solid #171c25; padding:3px;">
+                <span style="padding:5px 10px; font-size:12px; color:#7b8494;">1m</span>
+                <span style="padding:5px 10px; font-size:12px; color:#7b8494;">5m</span>
+                <span style="padding:5px 10px; font-size:12px; background:#1a2028; color:#e9edf3;">1h</span>
+                <span style="padding:5px 10px; font-size:12px; color:#7b8494;">1d</span>
+              </div>
+              <span style="margin-left:auto; font-size:11px; color:#7b8494;">price in USD</span>
+            </div>
+            <svg viewBox="0 0 640 200" preserveAspectRatio="none" style="width:100%; height:180px; display:block;">
+              <defs>
+                <linearGradient id="ca" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#5eead4" stop-opacity="0.35"></stop>
+                  <stop offset="100%" stop-color="#5eead4" stop-opacity="0"></stop>
+                </linearGradient>
+              </defs>
+              <line x1="0" y1="50" x2="640" y2="50" stroke="#171c25" stroke-width="1"></line>
+              <line x1="0" y1="100" x2="640" y2="100" stroke="#171c25" stroke-width="1"></line>
+              <line x1="0" y1="150" x2="640" y2="150" stroke="#171c25" stroke-width="1"></line>
+              <path d="M0,182 L40,175 L80,178 L120,162 L160,166 L200,145 L240,136 L280,143 L320,116 L360,108 L400,86 L440,94 L480,64 L520,54 L560,60 L600,36 L640,27 L640,200 L0,200 Z" fill="url(#ca)"></path>
+              <path d="M0,182 L40,175 L80,178 L120,162 L160,166 L200,145 L240,136 L280,143 L320,116 L360,108 L400,86 L440,94 L480,64 L520,54 L560,60 L600,36 L640,27" fill="none" stroke="#5eead4" stroke-width="2.5" stroke-linejoin="round"></path>
+            </svg>
+          </div>
+
+          <!-- graduation -->
+          <div style="background:#0d1017; border:1px solid #171c25; padding:16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <span style="font-size:13px; font-weight:700;">graduation</span>
+              <span style="font-size:12px; color:#5eead4; font-weight:700;">41%</span>
+            </div>
+            <div style="height:10px; background:#0a0d12; overflow:hidden; border:1px solid #171c25;">
+              <div style="width:41%; height:100%; background:#2dd4bf;"></div>
+            </div>
+            <div style="font-size:12px; color:#9aa3b2; margin-top:11px; line-height:1.5;">1.5 ETH of ~3.7 ETH bought · graduates at <span style="color:#e9edf3;">~$60k mcap</span></div>
+          </div>
+
+          <!-- holders -->
+          <div style="background:#0d1017; border:1px solid #171c25; padding:16px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:14px;">holders</div>
+            <div style="display:flex; flex-direction:column; gap:11px; font-size:12.5px;">
+              <div style="display:flex; align-items:center; gap:9px;"><span style="width:9px; height:9px; background:#5eead4;"></span><span style="color:#aab2c0;">locked pool (bonding)</span><span style="margin-left:auto; color:#e9edf3; font-weight:600;">78.4%</span></div>
+              <div style="display:flex; align-items:center; gap:9px;"><span style="width:9px; height:9px; background:#e8963c;"></span><span style="color:#aab2c0;">BVWhAU <span style="color:#5b6472;">(dev)</span></span><span style="margin-left:auto; color:#e9edf3; font-weight:600;">4.8%</span></div>
+              <div style="display:flex; align-items:center; gap:9px;"><span style="width:9px; height:9px; background:#38bdf8;"></span><span style="color:#aab2c0;">9xKm2p</span><span style="margin-left:auto; color:#e9edf3; font-weight:600;">3.1%</span></div>
+              <div style="display:flex; align-items:center; gap:9px;"><span style="width:9px; height:9px; background:#b06de0;"></span><span style="color:#aab2c0;">Ap3Rtz</span><span style="margin-left:auto; color:#e9edf3; font-weight:600;">2.6%</span></div>
+              <div style="display:flex; align-items:center; gap:9px;"><span style="width:9px; height:9px; background:#3a4250;"></span><span style="color:#aab2c0;">308 others</span><span style="margin-left:auto; color:#e9edf3; font-weight:600;">11.1%</span></div>
+            </div>
+          </div>
+
+          <!-- creator fees -->
+          <div style="background:rgba(94,234,212,0.06); border:1px solid rgba(94,234,212,0.25); padding:16px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:6px;">creator fees</div>
+            <div style="font-size:12px; color:#9aa3b2; margin-bottom:12px; line-height:1.5;">you've earned <span style="color:#5eead4; font-weight:700;">0.0142 ETH</span> in swap fees.</div>
+            <button style="width:100%; background:#0e1219; color:#5eead4; border:1px solid #2f6b5e; padding:12px; font-weight:700; font-size:14px; cursor:pointer;">collect fees</button>
+          </div>
+
+          <!-- thread -->
+          <div style="background:#0d1017; border:1px solid #171c25; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+              <h2 style="margin:0; font-size:15px; font-weight:700;">thread</h2>
+              <span style="font-size:12px; color:#7b8494;">54 replies</span>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:16px;">
+              <input placeholder="post a reply…" style="flex:1; min-width:0; background:#0e1219; border:1px solid #232a37; color:#e9edf3; padding:11px 14px; font-size:14px; outline:none;" style-focus="border-color:#5eead4;">
+              <button style="background:#2dd4bf; color:#05130c; border:none; padding:11px 16px; font-weight:700; font-size:14px; cursor:pointer;">post</button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="display:flex; gap:11px;"><span style="width:30px; height:30px; border-radius:50%; flex-shrink:0; background:#e8963c;"></span><div><div style="font-size:12.5px;"><span style="color:#e9edf3; font-weight:600;">BVWhAU</span> <span style="font-size:10px; color:#05130c; background:#5eead4; padding:1px 6px; font-weight:700; margin-left:4px;">dev</span> <span style="color:#7b8494; margin-left:6px;">39m ago</span></div><div style="font-size:13.5px; color:#c9cfd9; margin-top:4px; line-height:1.45;">welcome to the bull market. locked liquidity, fees to the community. LFG 🐮</div></div></div>
+              <div style="display:flex; gap:11px;"><span style="width:30px; height:30px; border-radius:50%; flex-shrink:0; background:#38bdf8;"></span><div><div style="font-size:12.5px;"><span style="color:#e9edf3; font-weight:600;">9xKm2p</span> <span style="color:#7b8494; margin-left:6px;">31m ago</span></div><div style="font-size:13.5px; color:#c9cfd9; margin-top:4px; line-height:1.45;">aped 0.3 ETH. chart looking clean, curve barely started</div></div></div>
+              <div style="display:flex; gap:11px;"><span style="width:30px; height:30px; border-radius:50%; flex-shrink:0; background:#b06de0;"></span><div><div style="font-size:12.5px;"><span style="color:#e9edf3; font-weight:600;">Ap3Rtz</span> <span style="color:#7b8494; margin-left:6px;">18m ago</span></div><div style="font-size:13.5px; color:#c9cfd9; margin-top:4px; line-height:1.45;">wen graduation ser</div></div></div>
+              <div style="display:flex; gap:11px;"><span style="width:30px; height:30px; border-radius:50%; flex-shrink:0; background:#2fae5a;"></span><div><div style="font-size:12.5px;"><span style="color:#e9edf3; font-weight:600;">zX4rTq</span> <span style="color:#7b8494; margin-left:6px;">6m ago</span></div><div style="font-size:13.5px; color:#c9cfd9; margin-top:4px; line-height:1.45;">33% up the curve already. this one moves</div></div></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- sticky bottom tab bar -->
+      <div style="position:sticky; bottom:0; z-index:20; display:flex; background:rgba(9,11,15,0.94); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-top:1px solid #171c25; padding:10px 8px 26px;">
+        <a href="AJM Pad Home Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path></svg>
+          <span>home</span>
+        </a>
+        <a href="AJM Pad Home Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.2-3.2"></path></svg>
+          <span>search</span>
+        </a>
+        <a href="AJM Pad Create Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <span style="width:26px; height:26px; display:flex; align-items:center; justify-content:center; background:#2dd4bf; color:#05130c;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+          </span>
+          <span>create</span>
+        </a>
+        <a href="AJM Pad Profile Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"></circle><circle cx="12" cy="9.5" r="3"></circle><path d="M6 19a6 6 0 0112 0"></path></svg>
+          <span>profile</span>
+        </a>
+      </div>
+
+    </div>
+  </x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 470, &quot;height&quot;: 940}}">
+class Component extends DCLogic {
+  state = { buy: true, amount: "0.1" };
+
+  tab(active) {
+    return active ? "background:#2dd4bf; color:#05130c;" : "background:transparent; color:#7b8494;";
+  }
+
+  renderVals() {
+    const buy = this.state.buy;
+    return {
+      amount: this.state.amount,
+      buyTabStyle: this.tab(buy),
+      sellTabStyle: this.tab(!buy),
+      payUnit: buy ? "ETH" : "Bullko",
+      setBuy: () => this.setState({ buy: true }),
+      setSell: () => this.setState({ buy: false }),
+      setAmount: (e) => this.setState({ amount: e.target.value }),
+      amt1: () => this.setState({ amount: "0.01" }),
+      amt2: () => this.setState({ amount: "0.1" }),
+      amt3: () => this.setState({ amount: "0.5" }),
+      amt4: () => this.setState({ amount: "1" }),
+    };
+  }
+}
+</script>
+</body>
+</html>

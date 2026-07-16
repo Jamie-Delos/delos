@@ -53,6 +53,12 @@ async function main() {
     LaunchLocker: lockerAddr,
     LaunchFactory: factoryAddr,
     uniswap: uni,
+    // Constructor args, recorded so scripts/verifyAll.js can verify on Blockscout unattended.
+    verify: {
+      FeeVault: [deployer.address],
+      LaunchLocker: [uni.NonfungiblePositionManager, feeVaultAddr, PROTOCOL_FEE_BPS],
+      LaunchFactory: [uni.NonfungiblePositionManager, uni.WETH, lockerAddr],
+    },
   };
   const file = path.join(__dirname, "..", `deployments.${netName}.json`);
   fs.writeFileSync(file, JSON.stringify(out, null, 2));

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body { margin: 0; background: #14161b; }
+  a { color: #5eead4; text-decoration: none; }
+  a:hover { color: #99f6e4; }
+  ::selection { background: #5eead4; color: #04120e; }
+  .noscroll::-webkit-scrollbar { display: none; }
+</style>
+</helmet>
+<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px; background:radial-gradient(900px 500px at 50% 0%, #1b1e26, #0d0e12);">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="true" hint-size="402px,874px">
+
+    <div style="height:100%; display:flex; flex-direction:column; background:#090b0f; color:#e9edf3; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif; font-size:15px;">
+
+      <div class="noscroll" style="flex:1; overflow-y:auto; overflow-x:hidden;">
+
+        <!-- sticky top bar -->
+        <div style="position:sticky; top:0; z-index:10; background:rgba(9,11,15,0.92); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-bottom:1px solid #12161e; padding:52px 16px 12px; display:flex; align-items:center; gap:12px;">
+          <a href="AJM Pad Home Mobile.dc.html" style="color:#aab2c0; display:flex; align-items:center;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          </a>
+          <span style="font-weight:700; font-size:16px;">profile</span>
+        </div>
+
+        <div style="padding:18px 16px 24px;">
+
+          <!-- identity -->
+          <div style="display:flex; gap:14px; align-items:flex-start;">
+            <div style="width:72px; height:72px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:34px; background:#e8963c;">🐮</div>
+            <div style="flex:1; min-width:0;">
+              <h1 style="margin:0; font-size:21px; font-weight:700; letter-spacing:-0.4px;">bullrunner</h1>
+              <div style="font-family:ui-monospace,monospace; font-size:12px; color:#9aa3b2; background:#0d1017; border:1px solid #171c25; padding:5px 10px; margin-top:8px; display:inline-flex; align-items:center; gap:7px;">0xBV…WhAU
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5eead4" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 012-2h10"></path></svg>
+              </div>
+              <div style="font-size:12.5px; color:#7b8494; margin-top:8px;">joined Mar 2024 · on Base</div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-top:14px;">
+            <button style="flex:1; background:#12161e; color:#e9edf3; border:1px solid #232a37; padding:9px 16px; font-weight:600; font-size:13px; cursor:pointer;" style-active="border-color:#5eead4;">edit profile</button>
+            <button style="flex:1; background:#0d1017; color:#aab2c0; border:1px solid #171c25; padding:9px 16px; font-weight:600; font-size:13px; cursor:pointer;" style-active="border-color:#5eead4;">share</button>
+          </div>
+
+          <!-- stats 2x2 -->
+          <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin:20px 0 22px;">
+            <div style="background:#0d1017; border:1px solid #171c25; padding:14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:6px;">coins created</div>
+              <div style="font-size:19px; font-weight:700;">6</div>
+            </div>
+            <div style="background:#0d1017; border:1px solid #171c25; padding:14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:6px;">wallet balance</div>
+              <div style="font-size:19px; font-weight:700;">2.14 ETH</div>
+            </div>
+            <div style="background:#0d1017; border:1px solid #171c25; padding:14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:6px;">fees earned</div>
+              <div style="font-size:19px; font-weight:700; color:#5eead4;">0.284 ETH</div>
+            </div>
+            <div style="background:#0d1017; border:1px solid #171c25; padding:14px;">
+              <div style="font-size:11px; color:#7b8494; margin-bottom:6px;">best coin</div>
+              <div style="font-size:19px; font-weight:700;">$15.2K</div>
+            </div>
+          </div>
+
+          <!-- tabs -->
+          <div style="display:flex; gap:22px; border-bottom:1px solid #171c25; margin-bottom:18px;">
+            <span onClick="{{ tabCreated }}" style="padding:10px 2px; font-size:13.5px; cursor:pointer; {{ createdStyle }}">created</span>
+            <span onClick="{{ tabHeld }}" style="padding:10px 2px; font-size:13.5px; cursor:pointer; {{ heldStyle }}">held</span>
+            <span onClick="{{ tabReplies }}" style="padding:10px 2px; font-size:13.5px; cursor:pointer; {{ repliesStyle }}">replies</span>
+          </div>
+
+          <!-- CREATED -->
+          <sc-if value="{{ showCreated }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <sc-for list="{{ created }}" as="c" hint-placeholder-count="4">
+                <a href="AJM Pad Coin Mobile.dc.html" style="display:flex; gap:12px; align-items:flex-start; background:#0d1017; border:1px solid #171c25; padding:12px;" style-active="border-color:#2f6b5e;">
+                  <div style="width:56px; height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:27px; background:{{ c.color }};">{{ c.emoji }}</div>
+                  <div style="min-width:0; flex:1;">
+                    <div style="font-weight:700; font-size:13.5px; color:#e9edf3;">{{ c.name }}</div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:6px; font-size:12px;">
+                      <span><span style="color:#7b8494;">mcap </span><span style="color:#5eead4; font-weight:700;">{{ c.mcap }}</span></span>
+                      <span style="color:#7b8494;">{{ c.age }}</span>
+                    </div>
+                    <div style="font-size:11.5px; color:#7b8494; margin-top:6px;">fees earned <span style="color:#aab2c0; font-weight:600;">{{ c.fees }}</span></div>
+                  </div>
+                </a>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- HELD -->
+          <sc-if value="{{ showHeld }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <sc-for list="{{ held }}" as="h" hint-placeholder-count="3">
+                <div style="display:flex; gap:12px; align-items:center; background:#0d1017; border:1px solid #171c25; padding:12px 14px;">
+                  <div style="width:44px; height:44px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:22px; background:{{ h.color }};">{{ h.emoji }}</div>
+                  <div style="min-width:0; flex:1;">
+                    <div style="font-weight:700; font-size:13.5px;">{{ h.name }}</div>
+                    <div style="font-size:12px; color:#7b8494; margin-top:2px;">{{ h.amount }}</div>
+                  </div>
+                  <div style="text-align:right;">
+                    <div style="font-size:14px; font-weight:700;">{{ h.value }}</div>
+                    <div style="font-size:12px; font-weight:600; color:{{ h.pnlColor }};">{{ h.pnl }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- REPLIES -->
+          <sc-if value="{{ showReplies }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <sc-for list="{{ replies }}" as="r" hint-placeholder-count="3">
+                <div style="background:#0d1017; border:1px solid #171c25; padding:14px 16px;">
+                  <div style="font-size:12px; color:#7b8494; margin-bottom:6px;">on <a href="AJM Pad Coin Mobile.dc.html" style="color:#5eead4;">{{ r.coin }}</a> · {{ r.age }}</div>
+                  <div style="font-size:13.5px; color:#c9cfd9; line-height:1.45;">{{ r.text }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+
+      <!-- sticky bottom tab bar -->
+      <div style="position:sticky; bottom:0; z-index:20; display:flex; background:rgba(9,11,15,0.94); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-top:1px solid #171c25; padding:10px 8px 26px;">
+        <a href="AJM Pad Home Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path></svg>
+          <span>home</span>
+        </a>
+        <a href="AJM Pad Home Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.2-3.2"></path></svg>
+          <span>search</span>
+        </a>
+        <a href="AJM Pad Create Mobile.dc.html" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#6b7482; font-size:10.5px; font-weight:600;">
+          <span style="width:26px; height:26px; display:flex; align-items:center; justify-content:center; background:#2dd4bf; color:#05130c;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+          </span>
+          <span>create</span>
+        </a>
+        <a href="#" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; color:#5eead4; font-size:10.5px; font-weight:600;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"></circle><circle cx="12" cy="9.5" r="3"></circle><path d="M6 19a6 6 0 0112 0"></path></svg>
+          <span>profile</span>
+        </a>
+      </div>
+
+    </div>
+  </x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 470, &quot;height&quot;: 940}}">
+class Component extends DCLogic {
+  state = { tab: "created" };
+
+  ts(active) {
+    return active
+      ? "color:#e9edf3; font-weight:700; border-bottom:2px solid #5eead4;"
+      : "color:#7b8494; font-weight:500;";
+  }
+
+  renderVals() {
+    const t = this.state.tab;
+    const created = [
+      { name: "Bullko (Bullko)", mcap: "$15.2K", age: "39m ago", fees: "0.0142 ETH", color: "#e3b23c", emoji: "\uD83D\uDC2E" },
+      { name: "Chonk (CHONK)", mcap: "$42.0K", age: "55m ago", fees: "0.0388 ETH", color: "#e8963c", emoji: "\uD83D\uDC08" },
+      { name: "Moon Boi (MOONB)", mcap: "$19.6K", age: "44m ago", fees: "0.0176 ETH", color: "#6b74e0", emoji: "\uD83C\uDF19" },
+      { name: "Doge Classic (DOGEC)", mcap: "$9.1K", age: "3h ago", fees: "0.0091 ETH", color: "#e8b84b", emoji: "\uD83D\uDC15" },
+      { name: "Turbo Toad (TURBO)", mcap: "$11.8K", age: "2h ago", fees: "0.0104 ETH", color: "#4fae5a", emoji: "\uD83D\uDC38" },
+      { name: "Wojak Wept (SADW)", mcap: "$3.4K", age: "12m ago", fees: "0.0021 ETH", color: "#d98f8f", emoji: "\uD83D\uDE2D" },
+    ];
+    const held = [
+      { name: "Bullko (Bullko)", amount: "1.2M Bullko", value: "0.42 ETH", pnl: "+118%", pnlColor: "#6ee7b0", color: "#e3b23c", emoji: "\uD83D\uDC2E" },
+      { name: "Gigachad (GIGA)", amount: "480K GIGA", value: "0.31 ETH", pnl: "+64%", pnlColor: "#6ee7b0", color: "#9aa3b2", emoji: "\uD83D\uDCAA" },
+      { name: "Wibbidi Cat (Wibbidi)", amount: "90K Wibbidi", value: "0.08 ETH", pnl: "-22%", pnlColor: "#f9a8b8", color: "#b06de0", emoji: "\uD83E\uDD16" },
+    ];
+    const replies = [
+      { coin: "Bullko (Bullko)", age: "39m ago", text: "welcome to the bull market. locked liquidity, fees to the community. LFG \uD83D\uDC2E" },
+      { coin: "Chonk (CHONK)", age: "1h ago", text: "absolute unit. do not feed after midnight" },
+      { coin: "Gigachad (GIGA)", age: "2h ago", text: "chart so sharp it broke my screen" },
+    ];
+
+    return {
+      created, held, replies,
+      showCreated: t === "created",
+      showHeld: t === "held",
+      showReplies: t === "replies",
+      createdStyle: this.ts(t === "created"),
+      heldStyle: this.ts(t === "held"),
+      repliesStyle: this.ts(t === "replies"),
+      tabCreated: () => this.setState({ tab: "created" }),
+      tabHeld: () => this.setState({ tab: "held" }),
+      tabReplies: () => this.setState({ tab: "replies" }),
+    };
+  }
+}
+</script>
+</body>
+</html>
