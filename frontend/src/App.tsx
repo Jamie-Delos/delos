@@ -7,6 +7,8 @@ import { Home } from "./pages/Home";
 import { Create } from "./pages/Create";
 import { Coin } from "./pages/Coin";
 import { Profile } from "./pages/Profile";
+import { Token } from "./pages/Token";
+import { Advanced } from "./pages/Advanced";
 
 function Wordmark() {
   return (
@@ -40,8 +42,8 @@ export function App() {
       <aside className="sidebar">
         <Wordmark />
         <NavLink to="/" end className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcHome /><span>home</span></NavLink>
-        <span className="side-link disabled" title="coming soon"><IcToken /><span>token</span></span>
-        <span className="side-link disabled" title="coming soon"><IcAdvanced /><span>advanced</span></span>
+        <NavLink to="/token" className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcToken /><span>token</span></NavLink>
+        <NavLink to="/advanced" className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcAdvanced /><span>advanced</span></NavLink>
         <NavLink to="/profile" className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcProfile /><span>profile</span></NavLink>
         <span className="side-link disabled"><IcMore /><span>more</span></span>
         <NavLink to="/create" className="side-cta">create coin</NavLink>
@@ -63,6 +65,8 @@ export function App() {
           )}
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/token" element={<Token />} />
+            <Route path="/advanced" element={<Advanced />} />
             <Route path="/create" element={<Create />} />
             <Route path="/coin/:address" element={<Coin />} />
             <Route path="/profile" element={<Profile />} />

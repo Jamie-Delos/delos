@@ -182,6 +182,29 @@ button, input, textarea, select { font-family: inherit; border-radius: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; }
 @media (min-width: 860px) { .coin-detail { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; } }
 
+/* ---- flywheel (token page) ---- */
+.flow { display: flex; gap: 10px; align-items: stretch; }
+.flow-step { flex: 1; background: var(--surface-alt); border: 1px solid var(--border-input); padding: 13px; }
+.flow-step .n { font-size: 11px; color: var(--accent-light); font-weight: 700; margin-bottom: 6px; }
+.flow-arrow { align-self: center; color: var(--text-dim); }
+@media (max-width: 640px) { .flow { flex-direction: column; } .flow-arrow { transform: rotate(90deg); } }
+
+/* ---- board (advanced page) ---- */
+.controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+.controls .input, .controls select.input { width: auto; flex: 1; min-width: 140px; }
+.board-wrap { overflow-x: auto; border: 1px solid var(--border); }
+.board { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+.board th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; user-select: none; }
+.board th.num, .board td.num { text-align: right; }
+.board th:hover { color: var(--text); }
+.board td { padding: 11px 12px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.board tr { cursor: pointer; }
+.board tbody tr:hover { background: var(--border-subtle); }
+.board .cc { display: flex; align-items: center; gap: 9px; }
+.board .cc .em { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 17px; background: var(--surface-alt); }
+.minibar { width: 64px; height: 6px; background: var(--surface-alt2); border: 1px solid var(--border-input); display: inline-block; vertical-align: middle; }
+.minibar > i { display: block; height: 100%; background: var(--accent); }
+
 .back { color: var(--text-dim); font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; margin-bottom: 14px; }
 .back:hover { color: var(--text); }
 
