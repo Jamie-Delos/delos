@@ -19,19 +19,18 @@ export function isqrt(value: bigint): bigint {
 
 const tenPow = (n: number) => 10n ** BigInt(n);
 
-function rawPriceFraction(tokenIsToken0: boolean, tokenDecimals: number, priceWethPerToken: number) {
-  const WETH_DECIMALS = 18;
+function rawPriceFraction(tokenIsToken0: boolean, tokenDecimals: number, quoteDecimals: number, priceWethPerToken: number) {
   const denH = tenPow(18);
   const numH = BigInt(Math.round(priceWethPerToken * 1e18));
   if (numH <= 0n) throw new Error("priceWethPerToken must be > 0");
 
   let num: bigint, den: bigint;
   if (tokenIsToken0) {
-    const e = WETH_DECIMALS - tokenDecimals;
+    const e = quoteDecimals - tokenDecimals;
     if (e >= 0) { num = numH * tenPow(e); den = denH; }
     else { num = numH; den = denH * tenPow(-e); }
   } else {
-    const e = tokenDecimals - WETH_DECIMALS;
+    const e = tokenDecimals - quoteDecimals;
     if (e >= 0) { num = denH * tenPow(e); den = numH; }
     else { num = denH; den = numH * tenPow(-e); }
   }
@@ -59,11 +58,12 @@ export function computeGraduationTick(opts: {
   token: Address;
   weth: Address;
   tokenDecimals?: number;
+  quoteDecimals?: number;
   graduationPriceWethPerToken: number;
 }): number {
-  const { token, weth, tokenDecimals = 18, graduationPriceWethPerToken } = opts;
+  const { token, weth, tokenDecimals = 18, quoteDecimals = 18, graduationPriceWethPerToken } = opts;
   const tokenIsToken0 = BigInt(token) < BigInt(weth);
-  const { num, den } = rawPriceFraction(tokenIsToken0, tokenDecimals, graduationPriceWethPerToken);
+  const { num, den } = rawPriceFraction(tokenIsToken0, tokenDecimals, quoteDecimals, graduationPriceWethPerToken);
   const priceFloat = Number(num) / Number(den);
   return Math.floor(Math.log(priceFloat) / Math.log(1.0001));
 }
@@ -72,15 +72,16 @@ export function computeLaunchParams(opts: {
   token: Address;
   weth: Address;
   tokenDecimals?: number;
+  quoteDecimals?: number;
   fee?: number;
   priceWethPerToken: number;
 }): LaunchParams {
-  const { token, weth, tokenDecimals = 18, fee = 3000, priceWethPerToken } = opts;
+  const { token, weth, tokenDecimals = 18, quoteDecimals = 18, fee = 3000, priceWethPerToken } = opts;
   const spacing = TICK_SPACING[fee];
   if (!spacing) throw new Error(`unsupported fee tier ${fee}`);
 
   const tokenIsToken0 = BigInt(token) < BigInt(weth);
-  const { num, den } = rawPriceFraction(tokenIsToken0, tokenDecimals, priceWethPerToken);
+  const { num, den } = rawPriceFraction(tokenIsToken0, tokenDecimals, quoteDecimals, priceWethPerToken);
 
   const sqrtPriceX96 = isqrt((num << 192n) / den);
   const priceFloat = Number(num) / Number(den);

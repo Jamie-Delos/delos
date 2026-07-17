@@ -1,7 +1,7 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
-const { ROBINHOOD_RPC_URL, ROBINHOOD_TESTNET_RPC_URL, BASE_SEPOLIA_RPC_URL, PRIVATE_KEY, BASESCAN_API_KEY } = process.env;
+const { ROBINHOOD_RPC_URL, ROBINHOOD_TESTNET_RPC_URL, ARC_RPC_URL, BASE_SEPOLIA_RPC_URL, PRIVATE_KEY, BASESCAN_API_KEY } = process.env;
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -29,6 +29,12 @@ module.exports = {
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
       chainId: 46630,
     },
+    arc: {
+      // Circle's Arc testnet. Gas paid in USDC — fund the deployer via faucet.circle.com.
+      url: ARC_RPC_URL || "https://rpc.drpc.testnet.arc.network",
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+      chainId: 5042002,
+    },
     baseSepolia: {
       url: BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
@@ -41,6 +47,7 @@ module.exports = {
     apiKey: {
       robinhood: "blockscout",
       robinhoodTestnet: "blockscout",
+      arc: "arcscan",
       baseSepolia: BASESCAN_API_KEY || "",
     },
     customChains: [
@@ -58,6 +65,14 @@ module.exports = {
         urls: {
           apiURL: "https://explorer.testnet.chain.robinhood.com/api",
           browserURL: "https://explorer.testnet.chain.robinhood.com",
+        },
+      },
+      {
+        network: "arc",
+        chainId: 5042002,
+        urls: {
+          apiURL: "https://testnet.arcscan.app/api",
+          browserURL: "https://testnet.arcscan.app",
         },
       },
       {

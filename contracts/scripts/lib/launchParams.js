@@ -32,8 +32,9 @@ function tenPow(n) {
 }
 
 // Build price_raw = token1_baseunits per token0_baseunits as an exact BigInt fraction num/den.
-function rawPriceFraction({ tokenIsToken0, tokenDecimals, priceWethPerToken }) {
-  const WETH_DECIMALS = 18;
+// `quoteDecimals` is the decimals of the quote asset (18 for WETH and for Arc's WUSDC; would be 6
+// for a raw-USDC-quoted chain).
+function rawPriceFraction({ tokenIsToken0, tokenDecimals, quoteDecimals = 18, priceWethPerToken }) {
   // Human price as a fraction numH/denH (18 dp of precision is plenty for a testnet start price).
   const denH = tenPow(18);
   const numH = BigInt(Math.round(priceWethPerToken * 1e18));
@@ -41,13 +42,13 @@ function rawPriceFraction({ tokenIsToken0, tokenDecimals, priceWethPerToken }) {
 
   let num, den;
   if (tokenIsToken0) {
-    // token0 = TOKEN(tokenDecimals), token1 = WETH(18). price_raw = P_h * 10^(18 - tokenDecimals)
-    const e = WETH_DECIMALS - tokenDecimals;
+    // token0 = TOKEN(tokenDecimals), token1 = QUOTE. price_raw = P_h * 10^(quoteDecimals - tokenDecimals)
+    const e = quoteDecimals - tokenDecimals;
     if (e >= 0) { num = numH * tenPow(e); den = denH; }
     else { num = numH; den = denH * tenPow(-e); }
   } else {
-    // token0 = WETH(18), token1 = TOKEN(tokenDecimals). price_raw = (1/P_h) * 10^(tokenDecimals - 18)
-    const e = tokenDecimals - WETH_DECIMALS;
+    // token0 = QUOTE, token1 = TOKEN(tokenDecimals). price_raw = (1/P_h) * 10^(tokenDecimals - quoteDecimals)
+    const e = tokenDecimals - quoteDecimals;
     if (e >= 0) { num = denH * tenPow(e); den = numH; }
     else { num = denH; den = numH * tenPow(-e); }
   }
@@ -71,13 +72,13 @@ function usableTick(tick, spacing, roundUp) {
  * @param {number} o.priceWethPerToken  starting price, WETH per 1 whole token
  * @returns {{ sqrtPriceX96: string, tickLower: number, tickUpper: number, tokenIsToken0: boolean }}
  */
-function computeLaunchParams({ token, weth, tokenDecimals = 18, fee = 3000, priceWethPerToken }) {
+function computeLaunchParams({ token, weth, tokenDecimals = 18, quoteDecimals = 18, fee = 3000, priceWethPerToken }) {
   const spacing = TICK_SPACING[fee];
   if (!spacing) throw new Error(`unsupported fee tier ${fee}`);
 
   const tokenIsToken0 = BigInt(token) < BigInt(weth);
 
-  const { num, den } = rawPriceFraction({ tokenIsToken0, tokenDecimals, priceWethPerToken });
+  const { num, den } = rawPriceFraction({ tokenIsToken0, tokenDecimals, quoteDecimals, priceWethPerToken });
 
   // sqrtPriceX96 = floor( sqrt(num/den) * 2^96 ) = floor( sqrt( (num << 192) / den ) )
   const sqrtPriceX96 = isqrt((num << 192n) / den);
@@ -120,9 +121,9 @@ function computeLaunchParams({ token, weth, tokenDecimals = 18, fee = 3000, pric
  * Tick (pool orientation, unaligned) at which the token graduates — i.e. the tick corresponding
  * to `graduationPriceWethPerToken`. Compared live against the pool tick in LaunchLocker.
  */
-function computeGraduationTick({ token, weth, tokenDecimals = 18, graduationPriceWethPerToken }) {
+function computeGraduationTick({ token, weth, tokenDecimals = 18, quoteDecimals = 18, graduationPriceWethPerToken }) {
   const tokenIsToken0 = BigInt(token) < BigInt(weth);
-  const { num, den } = rawPriceFraction({ tokenIsToken0, tokenDecimals, priceWethPerToken: graduationPriceWethPerToken });
+  const { num, den } = rawPriceFraction({ tokenIsToken0, tokenDecimals, quoteDecimals, priceWethPerToken: graduationPriceWethPerToken });
   const priceFloat = Number(num) / Number(den);
   return Math.floor(Math.log(priceFloat) / Math.log(1.0001));
 }

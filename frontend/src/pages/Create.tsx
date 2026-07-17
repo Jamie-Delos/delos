@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { getContractAddress, parseUnits, parseEventLogs, type Address } from "viem";
-import { CONTRACTS, STANDARD } from "../config";
+import { CONTRACTS, STANDARD, QUOTE } from "../config";
 import { factoryAbi } from "../abis";
 import { computeLaunchParams, computeGraduationTick } from "../lib/launchParams";
 import { IcBack } from "../components/icons";
@@ -30,8 +30,8 @@ export function Create() {
     try {
       const nonce = await publicClient.getTransactionCount({ address: CONTRACTS.factory });
       const predicted = getContractAddress({ from: CONTRACTS.factory, nonce: BigInt(nonce) }) as Address;
-      const p = computeLaunchParams({ token: predicted, weth: CONTRACTS.weth, tokenDecimals: STANDARD.decimals, fee: STANDARD.fee, priceWethPerToken: STANDARD.launchPriceWethPerToken });
-      const graduationTick = computeGraduationTick({ token: predicted, weth: CONTRACTS.weth, tokenDecimals: STANDARD.decimals, graduationPriceWethPerToken: STANDARD.graduationPriceWethPerToken });
+      const p = computeLaunchParams({ token: predicted, weth: CONTRACTS.weth, tokenDecimals: STANDARD.decimals, quoteDecimals: STANDARD.quoteDecimals, fee: STANDARD.fee, priceWethPerToken: STANDARD.launchPriceWethPerToken });
+      const graduationTick = computeGraduationTick({ token: predicted, weth: CONTRACTS.weth, tokenDecimals: STANDARD.decimals, quoteDecimals: STANDARD.quoteDecimals, graduationPriceWethPerToken: STANDARD.graduationPriceWethPerToken });
       setStatus("confirm in wallet…");
       const hash = await writeContractAsync({
         address: CONTRACTS.factory, abi: factoryAbi, functionName: "createLaunch",
@@ -70,7 +70,7 @@ export function Create() {
         )}
         <div style={{ borderTop: "1px solid var(--border)", margin: "14px 0" }} />
         <label className="field"><span>buy a little of your own coin (optional)</span>
-          <div className="amount"><input value={devBuy} onChange={(e) => setDevBuy(e.target.value)} placeholder="0.0" /><span className="unit">ETH</span></div>
+          <div className="amount"><input value={devBuy} onChange={(e) => setDevBuy(e.target.value)} placeholder="0.0" /><span className="unit">{QUOTE}</span></div>
         </label>
 
         <button className="cta" disabled={isPending} onClick={launch}>{isPending ? "launching…" : "launch coin"}</button>

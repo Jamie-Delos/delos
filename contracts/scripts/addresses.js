@@ -12,6 +12,19 @@ module.exports = {
     SwapRouter02: "0xCaf681a66D020601342297493863E78C959E5cb2",
     WETH: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
   },
+  // === Arc testnet (chainId 5042002) — Circle's L1, USDC gas (18-dec native) ===
+  // DEX = UNITFLOW V3 (a Uniswap V3 fork). Quote asset = WUSDC (wrapped native USDC, 18 decimals,
+  // verified on-chain). NPM.factory() and Router.factory() both == the factory below.
+  // Native gas is USDC; fund the deployer via faucet.circle.com. SwapRouter is v1-style (has deadline).
+  arc: {
+    chainId: 5042002,
+    quoteDecimals: 18,
+    quoteSymbol: "USDC",
+    UniswapV3Factory: "0xAb6A8AAb7d490007634ef59d424b5d89688a1971",
+    NonfungiblePositionManager: "0x77c39eB310BE31e60068CE29855F83359bf85fc4",
+    SwapRouter02: "0x509cF58CdA08C7aee83a2BdBb4A1Eac907343D01", // UNITFLOW SwapRouter (v1 exactInputSingle w/ deadline)
+    WETH: "0x911b4000D3422F482F4062a913885f7b035382Df", // WUSDC = the quote asset
+  },
   // Robinhood Chain testnet (chainId 46630) — Uniswap V3 addresses NOT yet confirmed here.
   // Fill these in once verified on the testnet; until then, testnet launches can't run.
   robinhoodTestnet: {

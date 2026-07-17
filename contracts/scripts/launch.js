@@ -3,22 +3,10 @@ const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 const ADDR = require("./addresses");
+const standardFor = require("./standards");
 const { computeLaunchParams, computeGraduationTick } = require("./lib/launchParams");
 
-// ---- Protocol-fixed launch standard (pump.fun v1 style, one-click) --------
-// Every token is identical: buyers push price UP the single-sided range as they buy. The token
-// "graduates" (fees flip 100% creator -> 80/20) once price reaches ~14x the launch price, which
-// corresponds to roughly the pump.fun ~$70k-mcap band after ~3 ETH of buys.
-const LAUNCH = {
-  name: "Test Token",
-  symbol: "TEST",
-  decimals: 18,
-  totalSupplyWhole: 1_000_000_000n, // 1B tokens
-  fee: 10000, // 1% tier — the market anchor
-  priceWethPerToken: 1.2e-9, // launch price ~1.2 ETH mcap
-  graduationPriceWethPerToken: 2.0e-8, // ~20 ETH mcap, ~3.7 ETH bought to graduate
-};
-// --------------------------------------------------------------------------
+const TOKEN = { name: "Test Token", symbol: "TEST", decimals: 18, totalSupplyWhole: 1_000_000_000n };
 
 function loadDeployment(netName) {
   const file = path.join(__dirname, "..", `deployments.${netName}.json`);
@@ -41,6 +29,11 @@ async function main() {
 
   const factory = await hre.ethers.getContractAt("LaunchFactory", dep.LaunchFactory, signer);
 
+  // Per-network economics (ETH- vs USDC-quoted). uni.quoteDecimals overrides if the address book set it.
+  const std = standardFor(netName);
+  const quoteDecimals = uni.quoteDecimals ?? std.quoteDecimals;
+  console.log(`Launch standard for ${netName}: quoteDecimals=${quoteDecimals} fee=${std.fee}`);
+
   // Predict the token's CREATE address so tick geometry matches the deployed ordering.
   const factoryNonce = await hre.ethers.provider.getTransactionCount(dep.LaunchFactory);
   const predictedToken = hre.ethers.getCreateAddress({ from: dep.LaunchFactory, nonce: factoryNonce });
@@ -48,15 +41,17 @@ async function main() {
   const params = computeLaunchParams({
     token: predictedToken,
     weth: uni.WETH,
-    tokenDecimals: LAUNCH.decimals,
-    fee: LAUNCH.fee,
-    priceWethPerToken: LAUNCH.priceWethPerToken,
+    tokenDecimals: TOKEN.decimals,
+    quoteDecimals,
+    fee: std.fee,
+    priceWethPerToken: std.launchPriceWethPerToken,
   });
   const graduationTick = computeGraduationTick({
     token: predictedToken,
     weth: uni.WETH,
-    tokenDecimals: LAUNCH.decimals,
-    graduationPriceWethPerToken: LAUNCH.graduationPriceWethPerToken,
+    tokenDecimals: TOKEN.decimals,
+    quoteDecimals,
+    graduationPriceWethPerToken: std.graduationPriceWethPerToken,
   });
 
   console.log("Predicted token:", predictedToken, "(token0:", params.tokenIsToken0 + ")");
@@ -64,14 +59,14 @@ async function main() {
   console.log("tick range:  ", params.tickLower, "->", params.tickUpper);
   console.log("graduation tick:", graduationTick);
 
-  const totalSupply = LAUNCH.totalSupplyWhole * 10n ** BigInt(LAUNCH.decimals);
+  const totalSupply = TOKEN.totalSupplyWhole * 10n ** BigInt(TOKEN.decimals);
 
   const tx = await factory.createLaunch({
-    name: LAUNCH.name,
-    symbol: LAUNCH.symbol,
+    name: TOKEN.name,
+    symbol: TOKEN.symbol,
     totalSupply,
-    decimals: LAUNCH.decimals,
-    fee: LAUNCH.fee,
+    decimals: TOKEN.decimals,
+    fee: std.fee,
     sqrtPriceX96: params.sqrtPriceX96,
     tickLower: params.tickLower,
     tickUpper: params.tickUpper,

@@ -24,6 +24,12 @@ export const wethAbi = parseAbi([
   "function approve(address spender,uint256 amount) returns (bool)",
 ]);
 
+// SwapRouter02 (Robinhood): exactInputSingle without a deadline.
 export const swapRouterAbi = parseAbi([
   "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
+]);
+
+// SwapRouter v1 (Arc UNITFLOW): exactInputSingle WITH a deadline field.
+export const swapRouterV1Abi = parseAbi([
+  "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
 ]);

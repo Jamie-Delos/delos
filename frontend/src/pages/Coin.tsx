@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { parseEther, type Address } from "viem";
-import { CONTRACTS, DEFAULT_FEE } from "../config";
-import { wethAbi, swapRouterAbi } from "../abis";
+import { CONTRACTS, DEFAULT_FEE, QUOTE, SWAP_HAS_DEADLINE } from "../config";
+import { wethAbi, swapRouterAbi, swapRouterV1Abi } from "../abis";
 import { COINS, HOLDERS, THREAD } from "../lib/mock";
 import { usd, price as fmtPrice, pct, short } from "../lib/format";
 import { IcBack, IcCopy, IcTg } from "../components/icons";
@@ -62,7 +62,11 @@ export function Coin() {
       h = await writeContractAsync({ address: CONTRACTS.weth, abi: wethAbi, functionName: "approve", args: [CONTRACTS.swapRouter, amountIn] });
       await publicClient.waitForTransactionReceipt({ hash: h });
       setStatus("trading…");
-      h = await writeContractAsync({ address: CONTRACTS.swapRouter, abi: swapRouterAbi, functionName: "exactInputSingle", args: [{ tokenIn: CONTRACTS.weth, tokenOut: coin.address as Address, fee: DEFAULT_FEE, recipient: me, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }] });
+      // Arc's UNITFLOW router (v1) needs a deadline; Robinhood's SwapRouter02 does not.
+      const common = { tokenIn: CONTRACTS.weth, tokenOut: coin.address as Address, fee: DEFAULT_FEE, recipient: me, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n };
+      h = SWAP_HAS_DEADLINE
+        ? await writeContractAsync({ address: CONTRACTS.swapRouter, abi: swapRouterV1Abi, functionName: "exactInputSingle", args: [{ ...common, deadline: BigInt(Math.floor(Date.now() / 1000) + 1200) }] })
+        : await writeContractAsync({ address: CONTRACTS.swapRouter, abi: swapRouterAbi, functionName: "exactInputSingle", args: [common] });
       await publicClient.waitForTransactionReceipt({ hash: h });
       setStatus("bought ✓");
     } catch (e: any) { setStatus(e?.shortMessage ?? e?.message ?? String(e)); }
@@ -102,7 +106,7 @@ export function Coin() {
           <div className="card" style={{ marginTop: 16 }}>
             <div className="row" style={{ justifyContent: "space-between" }}><span className="h2">graduation</span><span className="accent" style={{ fontWeight: 700 }}>42%</span></div>
             <div className="gradtrack"><div className="gradfill" style={{ width: "42%" }} /></div>
-            <div className="dim" style={{ fontSize: 12 }}>1.55 ETH of ~3.7 ETH bought · graduates at ~$60k mcap</div>
+            <div className="dim" style={{ fontSize: 12 }}>42% of the way to graduation · graduates at ~$60k mcap</div>
           </div>
 
           <div className="card" style={{ marginTop: 16 }}>
@@ -144,7 +148,7 @@ export function Coin() {
           </div>
           <div className="amount" style={{ marginTop: 12 }}>
             <input value={amount} onChange={(e) => setAmount(e.target.value)} />
-            <span className="unit">{buy ? "ETH" : coin.symbol}</span>
+            <span className="unit">{buy ? QUOTE : coin.symbol}</span>
           </div>
           <div className="quick">{["0.01", "0.1", "0.5", "1"].map((q) => <button key={q} onClick={() => setAmount(q)}>{q}</button>)}</div>
           <div className="row" style={{ justifyContent: "space-between", margin: "4px 0 12px" }}><span className="dim" style={{ fontSize: 12 }}>slippage</span><span className="mono dim" style={{ fontSize: 12 }}>2%</span></div>
