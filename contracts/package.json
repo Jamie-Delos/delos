@@ -6,6 +6,7 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
+    "devnet": "hardhat run scripts/devnetLaunch.js",
     "deploy:uniswap:local": "hardhat run scripts/deployUniswapV3.js",
     "deploy:uniswap:robinhoodTestnet": "hardhat run scripts/deployUniswapV3.js --network robinhoodTestnet",
     "deploy:robinhoodTestnet": "hardhat run scripts/deploy.js --network robinhoodTestnet",
