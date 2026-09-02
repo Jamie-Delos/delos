@@ -26,6 +26,28 @@ export const COINS: Coin[] = [
   { address: "0x0000000000000000000000000000000000neko11", emoji: "🐈", name: "Neko", symbol: "NEKO", creator: "0x51abaa", age: "44m", mcap: 9800, price: 0.0000098, change24: 210, replies: 7, desc: "cat coin. nine lives, one chart." },
 ];
 
+// Tokenized-stock pairing menu (mock subset of the 130+ live on Robinhood Chain). Real build reads
+// the liquid set from the on-chain registry.
+export interface Stock { ticker: string; name: string; color: string; }
+export const STOCKS: Stock[] = [
+  { ticker: "NVDA", name: "NVIDIA", color: "#76b900" },
+  { ticker: "TSLA", name: "Tesla", color: "#e82127" },
+  { ticker: "AAPL", name: "Apple", color: "#a2aaad" },
+  { ticker: "MSFT", name: "Microsoft", color: "#00a4ef" },
+  { ticker: "GOOGL", name: "Alphabet", color: "#4285f4" },
+  { ticker: "AMZN", name: "Amazon", color: "#ff9900" },
+  { ticker: "META", name: "Meta", color: "#0866ff" },
+  { ticker: "SPCX", name: "SpaceX (private)", color: "#005288" },
+  { ticker: "COST", name: "Costco", color: "#e31837" },
+  { ticker: "MRVL", name: "Marvell", color: "#00a3e0" },
+  { ticker: "MSTR", name: "Strategy", color: "#f7931a" },
+  { ticker: "GME", name: "GameStop", color: "#ed1c24" },
+  { ticker: "SPY", name: "S&P 500 ETF", color: "#5eead4" },
+  { ticker: "QQQ", name: "Nasdaq-100 ETF", color: "#8b5cf6" },
+  { ticker: "GLD", name: "Gold ETF", color: "#f4d47a" },
+  { ticker: "LLY", name: "Eli Lilly", color: "#d52b1e" },
+];
+
 export const HOLDERS = [
   { color: "#2dd4bf", label: "locked pool (bonding)", pct: 78.4 },
   { color: "#5eead4", label: "dev wallet", pct: 4.2, dev: true },

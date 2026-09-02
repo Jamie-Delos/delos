@@ -4,7 +4,7 @@ import { CONTRACTS } from "./config";
 import { short } from "./lib/format";
 import { IcHome, IcToken, IcAdvanced, IcProfile, IcMore, IcSearch, IcPlus } from "./components/icons";
 import { Home } from "./pages/Home";
-import { Create } from "./pages/Create";
+import { Launch } from "./pages/Launch";
 import { Coin } from "./pages/Coin";
 import { Profile } from "./pages/Profile";
 import { Token } from "./pages/Token";
@@ -67,7 +67,7 @@ export function App() {
             <Route path="/" element={<Home />} />
             <Route path="/token" element={<Token />} />
             <Route path="/advanced" element={<Advanced />} />
-            <Route path="/create" element={<Create />} />
+            <Route path="/create" element={<Launch />} />
             <Route path="/coin/:address" element={<Coin />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/:address" element={<Profile />} />

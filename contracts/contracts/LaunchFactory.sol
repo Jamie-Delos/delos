@@ -90,7 +90,8 @@ contract LaunchFactory {
         if (leftover > 0) IERC20(token).transfer(msg.sender, leftover);
 
         // 6. Register the lock so fees route to the creator (and flip to 80/20 at graduation).
-        locker.register(tokenId, msg.sender, token0, token1, pool, p.graduationTick, tokenIsToken0);
+        //    feeRecipient = 0 => protocol share goes to the global FeeVault (v1 behaviour).
+        locker.register(tokenId, msg.sender, token0, token1, pool, p.graduationTick, tokenIsToken0, address(0));
 
         emit Launched(token, msg.sender, pool, tokenId, liquidity);
     }

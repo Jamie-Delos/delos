@@ -26,6 +26,7 @@ contract LaunchLocker is IERC721Receiver {
         bool tokenIsToken0; // true if the launch token sorts below WETH
         bool graduated; // latched once the graduation tick is crossed
         bool exists;
+        address feeRecipient; // where the protocol share goes (0 => global feeVault; v2 => DividendVault)
     }
 
     INonfungiblePositionManager public immutable npm;
@@ -79,7 +80,8 @@ contract LaunchLocker is IERC721Receiver {
         address token1,
         address pool,
         int24 graduationTick,
-        bool tokenIsToken0
+        bool tokenIsToken0,
+        address feeRecipient
     ) external {
         if (msg.sender != factory) revert NotFactory();
         locks[tokenId] = Lock({
@@ -90,7 +92,8 @@ contract LaunchLocker is IERC721Receiver {
             graduationTick: graduationTick,
             tokenIsToken0: tokenIsToken0,
             graduated: false,
-            exists: true
+            exists: true,
+            feeRecipient: feeRecipient
         });
         emit Registered(tokenId, creator, token0, token1);
     }
@@ -127,8 +130,10 @@ contract LaunchLocker is IERC721Receiver {
         (uint256 c0, uint256 p0) = _split(amount0, bps);
         (uint256 c1, uint256 p1) = _split(amount1, bps);
 
-        if (p0 > 0) IERC20(lock.token0).safeTransfer(feeVault, p0);
-        if (p1 > 0) IERC20(lock.token1).safeTransfer(feeVault, p1);
+        // Protocol share goes to the token's own recipient (v2 DividendVault) or the global vault.
+        address recipient = lock.feeRecipient == address(0) ? feeVault : lock.feeRecipient;
+        if (p0 > 0) IERC20(lock.token0).safeTransfer(recipient, p0);
+        if (p1 > 0) IERC20(lock.token1).safeTransfer(recipient, p1);
         if (c0 > 0) IERC20(lock.token0).safeTransfer(lock.creator, c0);
         if (c1 > 0) IERC20(lock.token1).safeTransfer(lock.creator, c1);
 
