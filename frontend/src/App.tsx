@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { CONTRACTS } from "./config";
 import { short } from "./lib/format";
@@ -71,6 +71,7 @@ export function App() {
             <Route path="/coin/:address" element={<Coin />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/:address" element={<Profile />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
 
