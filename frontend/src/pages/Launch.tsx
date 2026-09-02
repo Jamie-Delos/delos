@@ -5,19 +5,21 @@ import { getContractAddress, parseUnits, parseEventLogs, type Address } from "vi
 import { CONTRACTS, STANDARD, QUOTE } from "../config";
 import { factoryAbi } from "../abis";
 import { computeLaunchParams, computeGraduationTick } from "../lib/launchParams";
-import { STOCKS, type Stock } from "../lib/mock";
+import { STOCK_CATEGORIES, STOCKS, type Stock } from "../lib/mock";
+import { StockLogo } from "../components/StockLogo";
 import { IcBack } from "../components/icons";
 
 type Tier = "v1" | "v2" | "v3";
+const MAX_BASKET = 4;
 
 const BASE_ASSETS = [
   { ticker: "ETH", name: "Ethereum", color: "#627eea" },
   { ticker: "HOOD", name: "Robinhood", color: "#00c805" },
 ];
-const ALL_ASSETS = [...BASE_ASSETS, ...STOCKS];
+const ALL_ASSETS = [...BASE_ASSETS, ...STOCKS.map((s) => ({ ...s, color: undefined as string | undefined }))];
 
-function Dot({ color }: { color: string }) {
-  return <span className="tkr" style={{ background: color }} />;
+function AssetIcon({ a, size = 22 }: { a: { ticker: string; color?: string }; size?: number }) {
+  return a.color ? <span className="tkr" style={{ width: size, height: size, background: a.color }} /> : <StockLogo ticker={a.ticker} size={size} />;
 }
 
 function AssetSelect({ value, onChange }: { value: string; onChange: (t: string) => void }) {
@@ -26,13 +28,13 @@ function AssetSelect({ value, onChange }: { value: string; onChange: (t: string)
   return (
     <div className="assetsel">
       <button type="button" className="assetsel-btn" onClick={() => setOpen((o) => !o)}>
-        <Dot color={sel.color} /> <b>{sel.ticker}</b> <span className="chev">▾</span>
+        <AssetIcon a={sel} /> <b>{sel.ticker}</b> <span className="chev">▾</span>
       </button>
       {open && (
         <div className="assetsel-menu">
           {ALL_ASSETS.map((a) => (
             <div key={a.ticker} className="assetsel-row" onClick={() => { onChange(a.ticker); setOpen(false); }}>
-              <Dot color={a.color} /> <b>{a.ticker}</b> <span className="co">{a.name}</span>
+              <AssetIcon a={a} /> <b>{a.ticker}</b> <span className="co">{a.name}</span>
             </div>
           ))}
         </div>
@@ -54,12 +56,15 @@ export function Launch() {
   const [paired, setPaired] = useState("ETH");
   const [status, setStatus] = useState("");
 
-  // v2 basket
-  const [basket, setBasket] = useState<Stock[]>([STOCKS[1], STOCKS[8]]); // TSLA + COST
-  const [picking, setPicking] = useState(false);
-  const weight = basket.length ? Math.round(100 / basket.length) : 0;
-  const addStock = (s: Stock) => { if (basket.length < 4 && !basket.find((b) => b.ticker === s.ticker)) setBasket([...basket, s]); setPicking(false); };
-  const rmStock = (t: string) => setBasket(basket.filter((b) => b.ticker !== t));
+  // v2 dividend stocks
+  const [picks, setPicks] = useState<Stock[]>([{ ticker: "TSLA", name: "Tesla" }, { ticker: "COST", name: "Costco" }]);
+  const [openCat, setOpenCat] = useState<Record<string, boolean>>({ "Mega-cap tech": true });
+  const has = (t: string) => picks.some((p) => p.ticker === t);
+  const toggleStock = (s: Stock) => {
+    if (has(s.ticker)) setPicks(picks.filter((p) => p.ticker !== s.ticker));
+    else if (picks.length < MAX_BASKET) setPicks([...picks, s]);
+  };
+  const weight = picks.length ? Math.round(100 / picks.length) : 0;
 
   // v3 hook lab
   const [buyTax, setBuyTax] = useState(1);
@@ -72,7 +77,8 @@ export function Launch() {
   async function launch() {
     setStatus("");
     if (!name.trim() || !symbol.trim()) { setStatus("name and ticker required"); return; }
-    if (tier !== "v1") { setStatus(`${tier} submit wires to ${tier === "v2" ? "LaunchFactoryV2 (dividend vault)" : "the V4 hook"} — devnet-proven, testnet next`); return; }
+    if (tier === "v2" && picks.length === 0) { setStatus("pick at least one stock for your holders to earn"); return; }
+    if (tier !== "v1") { setStatus(`${tier} launch is devnet-proven — wiring to ${tier === "v2" ? "LaunchFactoryV2" : "the V4 hook"} on testnet next`); return; }
     if (!configured || !publicClient) { setStatus("contracts not deployed yet (preview)"); return; }
     try {
       const nonce = await publicClient.getTransactionCount({ address: CONTRACTS.factory });
@@ -105,7 +111,7 @@ export function Launch() {
       <div className="launch-grid">
         <div className="card">
           <div className="tier-tag">
-            {tier === "v1" ? "BASE · pair with anything" : tier === "v2" ? "DIVIDEND · pays holders a stock basket" : "HOOK LAB · custom taxes & V4 hooks"}
+            {tier === "v1" ? "BASE · pair with anything" : tier === "v2" ? "STOCK DIVIDENDS · holders earn real shares" : "HOOK LAB · custom taxes & V4 hooks"}
           </div>
           <div className="row" style={{ gap: 12 }}>
             <label className="field" style={{ flex: 1 }}><span>name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Iron Man" /></label>
@@ -113,40 +119,57 @@ export function Launch() {
           </div>
           <label className="field"><span>image url (optional)</span><input className="input" value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://…/logo.png" /></label>
 
-          <label className="field"><span>paired asset</span></label>
-          <AssetSelect value={paired} onChange={setPaired} />
-          {tier === "v1" && <div className="hint">pair against ETH, HOOD, or any tokenized stock. graduates once the curve fills.</div>}
+          {tier !== "v2" && (<>
+            <label className="field"><span>paired asset</span></label>
+            <AssetSelect value={paired} onChange={setPaired} />
+          </>)}
 
-          {/* ---- v2: dividend basket ---- */}
+          {/* ---- v2: pick the stocks holders earn ---- */}
           {tier === "v2" && (
-            <div style={{ marginTop: 18 }}>
-              <label className="field"><span>dividend basket — fees buy these & pay holders</span></label>
-              {basket.map((s) => (
-                <div className="basket-row" key={s.ticker}>
-                  <Dot color={s.color} /> <b>{s.ticker}</b> <span className="co dim" style={{ fontSize: 12 }}>{s.name}</span>
-                  <span className="wt">{weight}%</span>
-                  <button className="rm" onClick={() => rmStock(s.ticker)}>×</button>
-                </div>
-              ))}
-              {basket.length < 4 && (
-                <div style={{ position: "relative" }}>
-                  <button className="btn2" style={{ marginTop: 10 }} onClick={() => setPicking((p) => !p)}>+ add stock ({basket.length}/4)</button>
-                  {picking && (
-                    <div className="assetsel-menu" style={{ position: "absolute", width: 260 }}>
-                      {STOCKS.filter((s) => !basket.find((b) => b.ticker === s.ticker)).map((s) => (
-                        <div key={s.ticker} className="assetsel-row" onClick={() => addStock(s)}><Dot color={s.color} /> <b>{s.ticker}</b> <span className="co">{s.name}</span></div>
-                      ))}
-                    </div>
-                  )}
+            <div style={{ marginTop: 16 }}>
+              <div className="hint" style={{ fontSize: 13, color: "var(--text-2)" }}>
+                every trade automatically buys these stocks and pays them to your holders — they just hold your coin. pick up to {MAX_BASKET}.
+              </div>
+              {picks.length > 0 && (
+                <div className="picked">
+                  {picks.map((s) => (
+                    <span className="pick-chip" key={s.ticker}><StockLogo ticker={s.ticker} size={18} /> {s.ticker} <span className="dim" style={{ fontWeight: 400 }}>{weight}%</span>
+                      <button onClick={() => toggleStock(s)}>×</button></span>
+                  ))}
                 </div>
               )}
-              <div className="hint">post-graduation fees are swapped into the basket and claimable by holders, pro-rata. e.g. {basket.map((b) => `${weight}% ${b.ticker}`).join(" · ")}.</div>
+              <div className="dim" style={{ fontSize: 12, margin: "2px 0 4px" }}>{picks.length}/{MAX_BASKET} selected</div>
+
+              {STOCK_CATEGORIES.map((cat) => {
+                const hit = cat.stocks.filter((s) => has(s.ticker)).length;
+                const open = !!openCat[cat.label];
+                return (
+                  <div className="cat" key={cat.label}>
+                    <div className="cat-head" onClick={() => setOpenCat({ ...openCat, [cat.label]: !open })}>
+                      {cat.label}
+                      <span className={"n" + (hit ? " hit" : "")}>{hit ? `${hit} picked` : `${cat.stocks.length}`}</span>
+                      <span className="chev">{open ? "▴" : "▾"}</span>
+                    </div>
+                    {open && (
+                      <div className="cat-grid">
+                        {cat.stocks.map((s) => (
+                          <div key={s.ticker} className={"stock-opt" + (has(s.ticker) ? " on" : "")} onClick={() => toggleStock(s)}>
+                            <StockLogo ticker={s.ticker} />
+                            <div className="info"><b>{s.ticker}</b><div className="nm">{s.name}</div></div>
+                            <span className="tick">{has(s.ticker) ? "✓" : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
           {/* ---- v3: hook lab ---- */}
           {tier === "v3" && (
-            <div style={{ marginTop: 18 }}>
+            <div style={{ marginTop: 16 }}>
               <div className="sld">
                 <label>buy tax <b>{buyTax}%</b></label>
                 <input type="range" min={0} max={10} step={0.5} value={buyTax} onChange={(e) => setBuyTax(+e.target.value)} />
@@ -165,7 +188,6 @@ export function Launch() {
               <div className="hint" style={{ color: split.creator + split.dividend + split.burn === 100 ? "var(--text-dim)" : "var(--neg)" }}>
                 split must total 100% (now {split.creator + split.dividend + split.burn}%). asymmetric buy/sell taxes need a Uniswap V4 hook.
               </div>
-
               <label className="field" style={{ marginTop: 14 }}><span>hooks</span></label>
               <div className="hooks">
                 {([
@@ -197,14 +219,16 @@ export function Launch() {
               <div><div style={{ fontWeight: 700 }}>{name || "Your token"}</div><div className="dim" style={{ fontSize: 12 }}>{symbol ? "$" + symbol.toUpperCase() : "ticker"}</div></div>
             </div>
             <div className="row2"><span className="k">tier</span><span className="v accent">{tier.toUpperCase()}</span></div>
-            <div className="row2"><span className="k">paired with</span><span className="v">{paired}</span></div>
+            {tier === "v2"
+              ? <div className="row2"><span className="k">holders earn</span><span className="v" style={{ maxWidth: 190, textAlign: "right", display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "flex-end" }}>
+                  {picks.length ? picks.map((p) => <span key={p.ticker} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><StockLogo ticker={p.ticker} size={15} />{p.ticker}</span>) : "—"}</span></div>
+              : <div className="row2"><span className="k">paired with</span><span className="v">{paired}</span></div>}
             <div className="row2"><span className="k">launch fee</span><span className="v">0.0005 {QUOTE}</span></div>
             <div className="row2"><span className="k">trade fee</span><span className="v">1.00%</span></div>
-            {tier === "v2" && <div className="row2"><span className="k">dividends</span><span className="v" style={{ maxWidth: 190, textAlign: "right" }}>{basket.map((b) => `${weight}% ${b.ticker}`).join(" · ")}</span></div>}
             {tier === "v3" && <><div className="row2"><span className="k">buy / sell tax</span><span className="v">{buyTax}% / {sellTax}%</span></div>
               <div className="row2"><span className="k">tax split</span><span className="v">{split.creator}/{split.dividend}/{split.burn}</span></div>
-              <div className="row2"><span className="k">hooks</span><span className="v">{Object.entries(hooks).filter(([, on]) => on).length || "none"}</span></div></>}
-            <div className="row2"><span className="k">launch window</span><span className="v">{hooks.antiSnipe || tier !== "v3" ? "99% snipe tax, 3s" : "off"}</span></div>
+              <div className="row2"><span className="k">hooks</span><span className="v">{Object.values(hooks).filter(Boolean).length || "none"}</span></div></>}
+            <div className="row2"><span className="k">launch window</span><span className="v">{tier === "v3" && !hooks.antiSnipe ? "off" : "99% snipe tax, 3s"}</span></div>
             <div className="row2"><span className="k">graduation</span><span className="v">~$60k mcap</span></div>
             <div className="row2"><span className="k">liquidity</span><span className="v accent">locked forever</span></div>
           </div>

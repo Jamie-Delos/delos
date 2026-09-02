@@ -224,6 +224,31 @@ button, input, textarea, select { font-family: inherit; border-radius: 0; }
 .assetsel-row .co { margin-left: auto; color: var(--text-dim); font-size: 12px; }
 .tkr { width: 22px; height: 22px; border-radius: 50%; flex: none; }
 
+/* stock logos */
+.tkr-logo { border-radius: 50%; object-fit: contain; background: #fff; flex: none; }
+.tkr-badge { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; flex: none; }
+
+/* v2 stock picker — collapsible category panels */
+.picked { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.pick-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px; background: rgba(94,234,212,0.10); border: 1px solid var(--accent-border); font-size: 12.5px; font-weight: 600; }
+.pick-chip button { background: none; border: none; color: var(--accent-light); cursor: pointer; font-size: 15px; line-height: 1; }
+.cat { border: 1px solid var(--border); margin-top: 10px; }
+.cat-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; user-select: none; font-weight: 700; font-size: 14px; }
+.cat-head:hover { background: var(--border-subtle); }
+.cat-head .n { margin-left: auto; font-size: 12px; color: var(--text-dim); font-weight: 500; }
+.cat-head .n.hit { color: var(--accent-light); }
+.cat-head .chev { color: var(--text-dim); transition: transform .15s; }
+.cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border-top: 1px solid var(--border); }
+@media (max-width: 560px) { .cat-grid { grid-template-columns: 1fr; } }
+.stock-opt { display: flex; align-items: center; gap: 10px; padding: 10px 13px; background: var(--surface); cursor: pointer; }
+.stock-opt:hover { background: var(--border-subtle); }
+.stock-opt.on { background: rgba(94,234,212,0.08); }
+.stock-opt .info { min-width: 0; }
+.stock-opt .info b { font-size: 13px; }
+.stock-opt .info .nm { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stock-opt .tick { margin-left: auto; width: 18px; height: 18px; border: 1px solid var(--border-input); flex: none; display: flex; align-items: center; justify-content: center; }
+.stock-opt.on .tick { background: var(--accent); border-color: var(--accent); color: var(--cta-text); }
+
 /* dividend basket */
 .basket-row { display: flex; align-items: center; gap: 10px; padding: 9px 11px; background: var(--surface-alt); border: 1px solid var(--border-input); margin-top: 8px; }
 .basket-row .rm { margin-left: auto; color: var(--neg); cursor: pointer; background: none; border: none; font-size: 16px; }
