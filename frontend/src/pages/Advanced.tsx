@@ -35,8 +35,8 @@ export function Advanced() {
 
   return (
     <>
-      <div className="h1">advanced</div>
-      <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>the full board. sortable. degen mode.</div>
+      <div className="h1">board</div>
+      <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>every coin, sortable. degen mode.</div>
 
       <div className="controls">
         <input className="input" placeholder="filter by name or ticker" value={q} onChange={(e) => setQ(e.target.value)} />
