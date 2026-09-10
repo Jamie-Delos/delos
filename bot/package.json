@@ -8,7 +8,10 @@
     "start": "node src/index.js",
     "dry": "DRY_RUN=true node src/index.js",
     "buyback": "node src/buyback.js",
-    "buyback:dry": "DRY_RUN=true node src/buyback.js"
+    "buyback:dry": "DRY_RUN=true node src/buyback.js",
+    "keeper0x": "DRY_RUN=false node src/keeper0x.js",
+    "keeper0x:dry": "node src/keeper0x.js",
+    "probe0x": "node src/keeper0x.js probe"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

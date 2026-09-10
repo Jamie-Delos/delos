@@ -1,43 +1,23 @@
-import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
-import { parseEther, type Address } from "viem";
-import { CONTRACTS, DEFAULT_FEE, QUOTE, SWAP_HAS_DEADLINE } from "../config";
-import { wethAbi, swapRouterAbi, swapRouterV1Abi } from "../abis";
-import { COINS, HOLDERS, THREAD } from "../lib/mock";
-import { usd, price as fmtPrice, pct, short } from "../lib/format";
-import { IcBack, IcCopy, IcTg } from "../components/icons";
-
-function Chart() {
-  const path = useMemo(() => {
-    const pts: string[] = [];
-    let y = 150;
-    for (let i = 0; i <= 40; i++) {
-      y += ((i * 37) % 23) - 11 - (i > 20 ? 2 : 0);
-      y = Math.max(30, Math.min(180, y));
-      pts.push(`${(i / 40) * 640},${y}`);
-    }
-    return pts;
-  }, []);
-  const line = "M" + path.join(" L");
-  const area = `${line} L640,200 L0,200 Z`;
-  return (
-    <div className="chart">
-      <svg viewBox="0 0 640 200" preserveAspectRatio="none" style={{ height: 200 }}>
-        <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#2dd4bf" stopOpacity="0.28" /><stop offset="1" stopColor="#2dd4bf" stopOpacity="0" /></linearGradient></defs>
-        <path d={area} fill="url(#g)" />
-        <path d={line} fill="none" stroke="#2dd4bf" strokeWidth="2.5" />
-      </svg>
-    </div>
-  );
-}
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import { useAccount, usePublicClient, useSendTransaction, useWriteContract } from "wagmi";
+import { parseUnits, formatUnits, type Address } from "viem";
+import { CONTRACTS, DEFAULT_FEE, QUOTE, SWAP_HAS_DEADLINE, CHAIN } from "../config";
+import { wethAbi, erc20Abi, swapRouterAbi, swapRouterV1Abi, censusCurveAbi } from "../abis";
+import { zeroExPrice, zeroExQuote, allowanceSpender, routeSummary } from "../lib/zeroex";
+import { ANCHORS, ETH_USD } from "../lib/anchors";
+import { useCoinQuote } from "../lib/useCoinQuote";
+import { COINS } from "../lib/mock";
+import { usd, price as fmtPrice, short } from "../lib/format";
+import { CxAssetLogo, Num, StatBand, PendingPanel, GraduationBar, Icon, feeBreakdown, GRADUATION_RESERVE_ETH, initials, useWalletConnect } from "../census";
 
 export function Coin() {
   const { address } = useParams();
-  const nav = useNavigate();
   const { address: me, isConnected } = useAccount();
+  const { connect, connecting, ensureChain } = useWalletConnect();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { sendTransactionAsync } = useSendTransaction();
 
   const coin = COINS.find((c) => c.address.toLowerCase() === (address || "").toLowerCase())
     ?? { address: address || "", emoji: "🪙", name: "Token", symbol: "TOKEN", creator: "0x000000", age: "just now", mcap: 1200, price: 0.0000012, change24: 0, replies: 0, desc: "" };
@@ -46,117 +26,327 @@ export function Coin() {
   const [amount, setAmount] = useState("0.1");
   const [tf, setTf] = useState("1h");
   const [status, setStatus] = useState("");
+  const [quoteOut, setQuoteOut] = useState("");
+  const [via, setVia] = useState("");
+  const [gradBps, setGradBps] = useState<number | null>(null);
 
-  const configured = CONTRACTS.factory !== "0x0000000000000000000000000000000000000000";
+  const ZERO = "0x0000000000000000000000000000000000000000";
+
+  // What this coin is actually paired against (WETH default, or HOOD, …) + its real name/symbol.
+  const cq = useCoinQuote(coin.address);
+  const quote = cq.quote;
+  const isWethQuote = quote.toLowerCase() === CONTRACTS.weth.toLowerCase();
+  const quoteSym = ANCHORS.find((a) => a.quote.toLowerCase() === quote.toLowerCase())?.key ?? QUOTE;
+  // Non-graduated + registered on the curve → trade against the bonding curve (un-dodgeable 2% fee).
+  // Graduated (or unknown/preview) coins fall through to the 0x/pool path below.
+  const curveAddr = CONTRACTS.curve;
+  const hasCurve = curveAddr !== ZERO;
+  const onCurve = hasCurve && !!cq.routed && !cq.graduated;
+  const coinName = cq.name ?? coin.name;
+  const coinSym = cq.symbol ?? coin.symbol;
+
+  // Live spot price + market cap, straight off the curve (no indexer needed): spot = virtualQuote /
+  // tokenReserve (quote per token). USD via the app's ETH_USD calibration for ETH-quoted coins; for a
+  // non-ETH anchor we show the price in that anchor's units. Stays null (shows "new") until the coin is
+  // registered on the curve with reserves. Richer stats (24h, holders, history) need the indexer.
+  const liveStats = onCurve && cq.virtualQuote != null && cq.tokenReserve != null && cq.tokenReserve > 0n;
+  const quoteDec = ANCHORS.find((a) => a.quote.toLowerCase() === quote.toLowerCase())?.quoteDecimals ?? 18;
+  const priceQuote = liveStats ? (Number(cq.virtualQuote) / 10 ** quoteDec) / (Number(cq.tokenReserve) / 1e18) : null;
+  const supply = cq.totalSupply != null ? Number(cq.totalSupply) / 1e18 : null;
+  const priceUsd = priceQuote != null && isWethQuote ? priceQuote * ETH_USD : null;
+  const mcapUsd = priceUsd != null && supply != null ? priceUsd * supply : null;
+  const creatorDisp = cq.creator ? short(cq.creator) : coin.creator && coin.creator !== "0x000000" ? coin.creator : "—";
+  const priceDisp = priceUsd != null ? fmtPrice(priceUsd) : priceQuote != null ? `${priceQuote.toPrecision(3)} ${quoteSym}` : "new";
+  const mcapDisp = mcapUsd != null ? usd(mcapUsd) : priceQuote != null && supply != null ? `${(priceQuote * supply).toPrecision(3)} ${quoteSym}` : "new";
+
+  // Live indicative "you receive ≈" as the user types (debounced). On the bonding curve this reads
+  // quoteBuy/quoteSell (net of the 2% fee) straight off the curve; for graduated coins it falls back to
+  // the 0x proxy. Stays blank when there's no route (brand-new coin) or the dev proxy isn't running.
+  useEffect(() => {
+    let cancelled = false;
+    const coinAddr = coin.address as Address;
+    const n = Number(amount);
+    if (!coinAddr || !amount || !Number.isFinite(n) || n <= 0) { setQuoteOut(""); setVia(""); return; }
+    const t = setTimeout(async () => {
+      try {
+        if (onCurve && publicClient) {
+          const amt = parseUnits(amount, 18);
+          const out = (await publicClient.readContract({
+            address: curveAddr, abi: censusCurveAbi,
+            functionName: buy ? "quoteBuy" : "quoteSell", args: [coinAddr, amt],
+          })) as bigint;
+          if (cancelled) return;
+          setQuoteOut(out > 0n ? formatUnits(out, 18) : "");
+          setVia(out > 0n ? "census curve" : "");
+          return;
+        }
+        const sellToken = buy ? quote : coinAddr;
+        const buyToken = buy ? coinAddr : quote;
+        const q = await zeroExPrice({ sellToken, buyToken, sellAmount: parseUnits(amount, 18), taker: me, slippageBps: 200 });
+        if (cancelled) return;
+        if (q.liquidityAvailable === false || !q.buyAmount) { setQuoteOut(""); setVia(""); return; }
+        setQuoteOut(formatUnits(BigInt(q.buyAmount), 18));
+        setVia(routeSummary(q));
+      } catch { if (!cancelled) { setQuoteOut(""); setVia(""); } }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [amount, buy, coin.address, me, quote, onCurve, curveAddr, publicClient]);
+
+  // Live graduation progress (bps 0..10000) straight off the curve. Replaces the old hardcoded 42%.
+  useEffect(() => {
+    let cancelled = false;
+    const coinAddr = coin.address as Address;
+    if (!publicClient || !hasCurve || (coinAddr || "").length !== 42) { setGradBps(null); return; }
+    (async () => {
+      try {
+        const bps = (await publicClient.readContract({
+          address: curveAddr, abi: censusCurveAbi, functionName: "graduationProgress", args: [coinAddr],
+        })) as bigint;
+        if (!cancelled) setGradBps(Number(bps));
+      } catch { if (!cancelled) setGradBps(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [coin.address, publicClient, curveAddr, hasCurve, cq.graduated]);
 
   async function trade() {
     setStatus("");
-    if (!configured || !publicClient || !me) { setStatus("trading is placeholder until contracts are live"); return; }
-    if (!buy) { setStatus("sell coming soon"); return; }
+    if (!isConnected || !me || !publicClient) { setStatus("connect your wallet to trade"); return; }
+    const coinAddr = coin.address as Address;
+    let amountIn: bigint;
+    try { amountIn = parseUnits(amount || "0", 18); } catch { setStatus("enter a valid amount"); return; }
+    if (amountIn <= 0n) { setStatus("enter an amount"); return; }
+    // On the right network first — otherwise the trade goes to whatever chain the wallet is on and fails.
+    if (!(await ensureChain())) { setStatus(`switch your wallet to ${CHAIN.name}, then trade`); return; }
+    const sellToken = buy ? quote : coinAddr;
+    const buyToken = buy ? coinAddr : quote;
     try {
-      const amountIn = parseEther(amount || "0");
-      setStatus("wrapping…");
-      let h = await writeContractAsync({ address: CONTRACTS.weth, abi: wethAbi, functionName: "deposit", value: amountIn });
-      await publicClient.waitForTransactionReceipt({ hash: h });
-      setStatus("approving…");
-      h = await writeContractAsync({ address: CONTRACTS.weth, abi: wethAbi, functionName: "approve", args: [CONTRACTS.swapRouter, amountIn] });
-      await publicClient.waitForTransactionReceipt({ hash: h });
-      setStatus("trading…");
-      // Arc's UNITFLOW router (v1) needs a deadline; Robinhood's SwapRouter02 does not.
-      const common = { tokenIn: CONTRACTS.weth, tokenOut: coin.address as Address, fee: DEFAULT_FEE, recipient: me, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n };
-      h = SWAP_HAS_DEADLINE
+      // Non-graduated coin → trade against the CensusCurve. There is no pool to route around, so the
+      // flat 2% fee is taken on-chain (split 75% creator-side / 25% platform). BUY approves `quoteIn`
+      // of the quote asset to the curve then curve.buy; SELL approves the coin then curve.sell. Works
+      // for ETH- and HOOD-quoted coins.
+      if (onCurve) {
+        let minOut = 0n;
+        if (quoteOut) { try { minOut = (parseUnits(quoteOut, 18) * 98n) / 100n; } catch { minOut = 0n; } }
+        if (buy) {
+          if (isWethQuote) {
+            // one-tap: native ETH in, wrapped + bought in a single tx on the curve (no pre-wrap, no approval)
+            setStatus("buying · 2% fee…");
+            const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: "buyWithETH", args: [coinAddr, minOut], value: amountIn });
+            await publicClient.waitForTransactionReceipt({ hash: h });
+            setStatus("bought ✓");
+          } else {
+            // non-ETH anchor (e.g. HOOD): the trader must already hold the quote token
+            const bal = (await publicClient.readContract({ address: quote, abi: erc20Abi, functionName: "balanceOf", args: [me] })) as bigint;
+            if (bal < amountIn) { setStatus(`you need ${quoteSym} in your wallet to buy this coin`); return; }
+            setStatus("approving…");
+            const a = await writeContractAsync({ address: quote, abi: erc20Abi, functionName: "approve", args: [curveAddr, amountIn] });
+            await publicClient.waitForTransactionReceipt({ hash: a });
+            setStatus("buying · 2% fee…");
+            const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: "buy", args: [coinAddr, amountIn, minOut] });
+            await publicClient.waitForTransactionReceipt({ hash: h });
+            setStatus("bought ✓");
+          }
+        } else {
+          setStatus("approving…");
+          const a = await writeContractAsync({ address: coinAddr, abi: erc20Abi, functionName: "approve", args: [curveAddr, amountIn] });
+          await publicClient.waitForTransactionReceipt({ hash: a });
+          // ETH-quoted → sellForETH returns native ETH (unwrapped); non-ETH → sell returns the quote token
+          setStatus("selling · 2% fee…");
+          const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: isWethQuote ? "sellForETH" : "sell", args: [coinAddr, amountIn, minOut] });
+          await publicClient.waitForTransactionReceipt({ hash: h });
+          setStatus(isWethQuote ? "sold ✓ (ETH)" : "sold ✓");
+        }
+        return;
+      }
+      // --- graduated coin (or unknown/preview): the coin now trades on a real Uniswap pool ---
+      // Buying a WETH-paired coin spends native ETH -> wrap to WETH first (pools and 0x sell WETH).
+      // A non-WETH quote (e.g. HOOD) is a token the trader must already hold — no wrap.
+      if (buy && isWethQuote) {
+        setStatus("wrapping…");
+        const w = await writeContractAsync({ address: CONTRACTS.weth, abi: wethAbi, functionName: "deposit", value: amountIn });
+        await publicClient.waitForTransactionReceipt({ hash: w });
+      }
+      // 0x best execution — only for WETH-paired coins. 0x won't route tokenised-stock quotes like
+      // HOOD (the same legal restriction that blocks stock buys), so those go straight to the pool.
+      if (isWethQuote) {
+        const q = await zeroExQuote({ sellToken, buyToken, sellAmount: amountIn, taker: me, slippageBps: 200 }).catch(() => undefined);
+        if (q && q.liquidityAvailable !== false && q.transaction?.data) {
+          const spender = allowanceSpender(q);
+          if (spender) {
+            const current = (await publicClient.readContract({ address: sellToken, abi: erc20Abi, functionName: "allowance", args: [me, spender] })) as bigint;
+            if (current < amountIn) {
+              setStatus("approving…");
+              const a = await writeContractAsync({ address: sellToken, abi: erc20Abi, functionName: "approve", args: [spender, amountIn] });
+              await publicClient.waitForTransactionReceipt({ hash: a });
+            }
+          }
+          setStatus(`swapping · ${routeSummary(q)}…`);
+          const h = await sendTransactionAsync({ to: q.transaction.to, data: q.transaction.data, value: BigInt(q.transaction.value || "0") });
+          await publicClient.waitForTransactionReceipt({ hash: h });
+          setStatus(buy ? "bought ✓" : "sold ✓");
+          return;
+        }
+      }
+      // The coin's own Uniswap V3 pool (quote/coin at the 1% launch tier). This is the path for every
+      // HOOD-paired coin, and the fallback for any coin 0x hasn't indexed yet.
+      if (buy && !isWethQuote) {
+        const bal = (await publicClient.readContract({ address: sellToken, abi: erc20Abi, functionName: "balanceOf", args: [me] })) as bigint;
+        if (bal < amountIn) { setStatus(`you need ${quoteSym} in your wallet to buy this coin`); return; }
+      }
+      setStatus(isWethQuote ? "no 0x route — using the pool…" : `swapping via the ${quoteSym} pool…`);
+      const a2 = await writeContractAsync({ address: sellToken, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.swapRouter, amountIn] });
+      await publicClient.waitForTransactionReceipt({ hash: a2 });
+      const common = { tokenIn: sellToken, tokenOut: buyToken, fee: DEFAULT_FEE, recipient: me, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n };
+      const h2 = SWAP_HAS_DEADLINE
         ? await writeContractAsync({ address: CONTRACTS.swapRouter, abi: swapRouterV1Abi, functionName: "exactInputSingle", args: [{ ...common, deadline: BigInt(Math.floor(Date.now() / 1000) + 1200) }] })
         : await writeContractAsync({ address: CONTRACTS.swapRouter, abi: swapRouterAbi, functionName: "exactInputSingle", args: [common] });
-      await publicClient.waitForTransactionReceipt({ hash: h });
-      setStatus("bought ✓");
+      await publicClient.waitForTransactionReceipt({ hash: h2 });
+      setStatus(buy ? "bought ✓ (pool)" : "sold ✓ (pool)");
     } catch (e: any) { setStatus(e?.shortMessage ?? e?.message ?? String(e)); }
   }
 
+  // Live values for the census render. Graduation %: 100 once graduated, else the live curve progress.
+  const gradPct = cq.graduated ? 100 : gradBps != null ? Math.min(100, Math.round(gradBps / 100)) : 0;
+  const anchor = quoteSym;
+  const tier = cq.isV2 ? "Maxima" : "Prima";
+  const reserveEth = cq.realQuote != null ? Number(cq.realQuote) / 10 ** quoteDec : 0;
+  const feeAmt = feeBreakdown(Number(amount) || 0).fee;
+  const graduated = !!cq.graduated;
+
   return (
-    <>
-      <div className="back" onClick={() => nav("/")}><IcBack /> back to board</div>
-      <div className="coin-detail">
-        <div>
-          <div className="row" style={{ alignItems: "flex-start" }}>
-            <div className="coin-tile" style={{ background: "#e2b04a" }}>{coin.emoji}</div>
-            <div>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>{coin.name} <span className="dim" style={{ fontWeight: 400, fontSize: 15 }}>{coin.symbol}</span></div>
-              {coin.trending && <span className="pill gold" style={{ marginTop: 6 }}>🔥 trending</span>}
-              <div className="dim" style={{ fontSize: 12.5, marginTop: 8 }}>created by <span className="accent">{coin.creator}</span> · {coin.age}</div>
-              <div className="row" style={{ marginTop: 8, gap: 8 }}>
-                <span className="pill mono">{short(coin.address)} <IcCopy /></span>
-                <span className="pill"><IcTg /></span>
-              </div>
+    <div className="cx-coin">
+      {/* main column */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
+          <span className="cx-avatar" style={{ width: 80, height: 80, fontSize: 20 }}>{initials(coinName)}</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="cx-label">{tier} · anchored to {anchor}</div>
+            <h1 className="cx-h1" style={{ fontSize: 40, marginTop: 10 }}>{coinName}</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
+              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>${coinSym}</span>
+              <Sep />
+              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>Started by {creatorDisp} · {coin.age}</span>
+              <Sep />
+              <button className="cx-link-control" onClick={() => navigator.clipboard?.writeText(coin.address)} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                <span className="cx-num">{coin.address.slice(0, 6)}…{coin.address.slice(-6, -4)}<span style={{ color: "var(--census-lime)" }}>{coin.address.slice(-4)}</span></span>
+                <Icon name="copy" size={14} />
+              </button>
             </div>
           </div>
-
-          <div className="stats">
-            <div className="stat"><div className="k">market cap</div><div className="v accent">{usd(coin.mcap)}</div></div>
-            <div className="stat"><div className="k">price</div><div className="v">{fmtPrice(coin.price)}</div></div>
-            <div className="stat"><div className="k">24h</div><div className="v" style={{ color: coin.change24 >= 0 ? "var(--pos)" : "var(--neg)" }}>{pct(coin.change24)}</div></div>
-            <div className="stat"><div className="k">holders</div><div className="v">{218}</div></div>
-          </div>
-
-          <div className="row" style={{ justifyContent: "space-between", margin: "8px 0" }}>
-            <div className="tf">{["1m", "5m", "1h", "1d"].map((t) => <button key={t} className={tf === t ? "on" : ""} onClick={() => setTf(t)}>{t}</button>)}</div>
-            <span className="dim" style={{ fontSize: 12 }}>price in USD</span>
-          </div>
-          <Chart />
-
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="row" style={{ justifyContent: "space-between" }}><span className="h2">graduation</span><span className="accent" style={{ fontWeight: 700 }}>42%</span></div>
-            <div className="gradtrack"><div className="gradfill" style={{ width: "42%" }} /></div>
-            <div className="dim" style={{ fontSize: 12 }}>42% of the way to graduation · graduates at ~$60k mcap</div>
-          </div>
-
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="h2" style={{ marginBottom: 10 }}>holders</div>
-            {HOLDERS.map((h) => (
-              <div className="holder" key={h.label}>
-                <span className="swatch" style={{ background: h.color }} />
-                <span style={{ flex: 1 }}>{h.label} {h.dev && <span className="pill neg" style={{ marginLeft: 6 }}>dev</span>}</span>
-                <span className="mono dim">{h.pct}%</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="fees" style={{ marginTop: 16 }}>
-            <div style={{ marginBottom: 8 }}>you've earned <b className="accent">0.0000 ETH</b> in swap fees</div>
-            <button className="btn2" onClick={() => setStatus(configured ? "collecting…" : "placeholder")}>collect fees</button>
-          </div>
-
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="h2" style={{ marginBottom: 8 }}>thread</div>
-            <div className="row"><input className="input" placeholder="post a reply" /><button className="btn2">post</button></div>
-            {THREAD.map((c, i) => (
-              <div className="comment" key={i}>
-                <div className="avatar" style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{c.avatar}</div>
-                <div>
-                  <div style={{ fontSize: 13 }}><b>{c.name}</b> {c.dev && <span className="badge-dev">dev</span>} <span className="dim">· {c.age}</span></div>
-                  <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>{c.body}</div>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
 
-        {/* trade panel (sticky column on desktop) */}
-        <div className="card" style={{ position: "sticky", top: 16 }}>
-          <div className="seg">
-            <button className={buy ? "on" : ""} onClick={() => setBuy(true)}>buy</button>
-            <button className={!buy ? "on" : ""} onClick={() => setBuy(false)}>sell</button>
+        <div style={{ marginTop: 40 }}>
+          <StatBand stats={[
+            { label: "Market cap", value: mcapDisp, note: "Live from the curve", key: true },
+            { label: "Price", value: priceDisp, note: "Live from the curve" },
+            { label: "24h", value: "—", note: "Pending indexer" },
+            { label: "Holders", value: "—", note: "Pending indexer" },
+          ]} />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "44px 0 16px" }}>
+          <div className="cx-section-title">Price</div>
+          <div style={{ display: "flex", gap: 20 }}>{["1m", "5m", "1h", "1d"].map((t) => <button key={t} className="cx-link-control" aria-pressed={tf === t} onClick={() => setTf(t)}>{t}</button>)}</div>
+        </div>
+        <PendingPanel line="Price history appears once the indexer is connected" note="Price and market cap above are live from the curve." />
+
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "44px 0 14px" }}>
+          <div className="cx-section-title">Graduation</div>
+          <span className="cx-label">{graduated ? "Graduated · pool locked" : `${reserveEth.toFixed(2)} / ${GRADUATION_RESERVE_ETH.toFixed(2)} ${anchor} reserve`}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <GraduationBar pct={gradPct} large />
+          <span className="cx-num cx-num--key" style={{ fontSize: 24 }}>{gradPct}%</span>
+        </div>
+        <p style={{ margin: "16px 0 0", fontSize: 14, color: "var(--census-text-secondary)" }}>
+          {graduated ? "The curve closed. Liquidity is locked permanently in a Uniswap V3 pool." : `At ${GRADUATION_RESERVE_ETH} ${anchor} the curve closes and liquidity moves to a permanently locked Uniswap V3 pool.`}
+        </p>
+
+        <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Holders</div>
+        <PendingPanel line="Distribution appears once the indexer is connected." />
+
+        <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Creator fees</div>
+        <div className="cx-panel cx-panel--plain" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <div className="cx-stat__value"><Num>—</Num></div>
+            <div className="cx-stat__note">75% of the 2% trade fee accrues to the creator side.</div>
           </div>
-          <div className="amount" style={{ marginTop: 12 }}>
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} />
-            <span className="unit">{buy ? QUOTE : coin.symbol}</span>
+          <span className="cx-cta" aria-disabled="true" style={{ pointerEvents: "none" }}>Collect</span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 44, marginBottom: 16 }}>
+          <div className="cx-section-title">Thread</div><span className="cx-label">0 replies</span>
+        </div>
+        <label className="cx-field"><input placeholder="Add to the thread" aria-label="Add to the thread" /><span className="cx-link-control">POST</span></label>
+        <div className="cx-label" style={{ marginTop: 14 }}>No replies yet. The thread opens with the indexer.</div>
+      </div>
+
+      {/* trade panel */}
+      <div>
+        <div className="cx-panel" style={{ position: "sticky", top: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, borderBottom: "1px solid var(--census-border)" }}>
+            {(["buy", "sell"] as const).map((side) => (
+              <button key={side} onClick={() => setBuy(side === "buy")} aria-current={buy === (side === "buy")}
+                style={{ background: "none", border: 0, cursor: "pointer", fontSize: 15, paddingBottom: 14, marginBottom: -1,
+                  fontWeight: buy === (side === "buy") ? 500 : 400,
+                  color: buy === (side === "buy") ? "var(--census-text)" : "var(--census-text-muted)",
+                  borderBottom: `1px solid ${buy === (side === "buy") ? "var(--census-lime)" : "transparent"}` }}>
+                {side === "buy" ? "Buy" : "Sell"}
+              </button>
+            ))}
           </div>
-          <div className="quick">{["0.01", "0.1", "0.5", "1"].map((q) => <button key={q} onClick={() => setAmount(q)}>{q}</button>)}</div>
-          <div className="row" style={{ justifyContent: "space-between", margin: "4px 0 12px" }}><span className="dim" style={{ fontSize: 12 }}>slippage</span><span className="mono dim" style={{ fontSize: 12 }}>2%</span></div>
-          <button className="cta" onClick={trade} disabled={!isConnected}>{isConnected ? "place trade" : "log in to trade"}</button>
-          <div className="dim" style={{ textAlign: "center", fontSize: 12, marginTop: 8 }}>1% fee</div>
-          {status && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{status}</div>}
+
+          <div className="cx-field" style={{ marginTop: 26, paddingBottom: 14 }}>
+            <input value={amount} inputMode="decimal" aria-label="Amount" onChange={(e) => setAmount(e.target.value)}
+              style={{ fontFamily: "var(--census-font-mono)", fontSize: 30, fontVariantNumeric: "tabular-nums" }} />
+            <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <CxAssetLogo ticker={anchor} size={20} />
+              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>{buy ? anchor : coinSym}</span>
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: 22, marginTop: 16 }}>
+            {["0.01", "0.1", "0.5", "1"].map((a) => (
+              <button key={a} className="cx-link-control" aria-pressed={amount === a} onClick={() => setAmount(a)}>{a}</button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 28 }}>
+            <QuoteRow label="You receive ~" value={quoteOut ? `${Number(quoteOut).toLocaleString(undefined, { maximumSignificantDigits: 6 })} ${buy ? coinSym : anchor}` : "—"} bright />
+            <QuoteRow label="Fee (2%)" value={`${feeAmt.toFixed(3)} ${anchor}`} />
+            <QuoteRow label="Slippage" value="2%" />
+            <QuoteRow label="Route" value={graduated ? "Locked Uniswap pool" : via && via !== "census curve" ? via : onCurve ? "The Census curve" : `${anchor} pool`} />
+          </div>
+
+          <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={connecting} onClick={isConnected ? trade : connect}>{isConnected ? "Place trade" : connecting ? "Connecting…" : "Connect wallet"}</button>
+          <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>2% trade fee</div>
+          {status && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{status}</div>}
+        </div>
+
+        <div className="cx-panel cx-panel--plain" style={{ marginTop: 16 }}>
+          <div className="cx-label" style={{ marginBottom: 14 }}>The curve</div>
+          <CurveRow k="Supply" v="1,000,000,000" />
+          <CurveRow k="Anchored to" v={anchor} />
+          <CurveRow k="Graduation at" v={`${GRADUATION_RESERVE_ETH} ${anchor}`} />
+          <CurveRow k="Trade fee" v="2%" />
         </div>
       </div>
-    </>
+    </div>
   );
 }
+
+const Sep = () => <span style={{ width: 1, height: 11, background: "var(--census-border)" }} />;
+
+const QuoteRow = ({ label, value, bright }: { label: string; value: string; bright?: boolean }) => (
+  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16 }}>
+    <span style={{ fontSize: 13.5, color: "var(--census-text-secondary)" }}>{label}</span>
+    <span className="cx-num" style={{ fontSize: 13, color: bright ? "var(--census-bone)" : "var(--census-text-secondary)" }}>{value}</span>
+  </div>
+);
+
+const CurveRow = ({ k, v }: { k: string; v: string }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", fontSize: 13 }}>
+    <span style={{ color: "var(--census-text-secondary)" }}>{k}</span>
+    <span className="cx-num">{v}</span>
+  </div>
+);

@@ -1,0 +1,93 @@
+// Census indexer schema. Postgres via Prisma. uint256 amounts are stored as decimal strings
+// (they exceed int64); block numbers fit BigInt. Everything the board / coin pages / partners read
+// is denormalised onto Coin so the hot queries are single-table and fast.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Coin {
+  address         String   @id // token address, lowercased
+  name            String   @default("")
+  symbol          String   @default("")
+  decimals        Int      @default(18)
+  totalSupply     String   @default("0") // base units (string)
+  creator         String   @default("")
+  quote           String   @default("") // quote asset address (WETH / HOOD)
+  quoteSymbol     String   @default("ETH")
+  vault           String? // DividendVault (Maxima); null => Prima
+  holdersBps      Int      @default(0)
+  isV2            Boolean  @default(false)
+
+  // Live curve state (refreshed from the chain each reconcile).
+  virtualQuote    String   @default("0")
+  tokenReserve    String   @default("0")
+  realQuote       String   @default("0")
+  graduationQuote String   @default("0")
+  graduated       Boolean  @default(false)
+  pool            String? // graduated Uniswap V3 pool
+  progressBps     Int      @default(0) // 0..10000 toward graduation
+
+  // Aggregates for the board.
+  priceQuote      Float    @default(0) // spot price, quote per token
+  priceUsd        Float    @default(0)
+  marketCapUsd    Float    @default(0)
+  volumeQuote     Float    @default(0) // cumulative quote volume
+  volumeUsd       Float    @default(0)
+  tradeCount      Int      @default(0)
+
+  createdBlock    BigInt   @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trades          Trade[]
+  prices          PricePoint[]
+
+  @@index([graduated])
+  @@index([createdAt])
+  @@index([marketCapUsd])
+  @@index([updatedAt])
+}
+
+model Trade {
+  id          String   @id @default(cuid())
+  coin        Coin     @relation(fields: [coinAddress], references: [address])
+  coinAddress String
+  trader      String
+  isBuy       Boolean
+  amountIn    String // buy: quote in (incl. fee); sell: tokens in
+  amountOut   String // buy: tokens out; sell: quote out (net)
+  fee         String // in quote
+  priceQuote  Float // quote per token at this trade
+  block       BigInt
+  txHash      String
+  logIndex    Int
+  ts          DateTime @default(now())
+
+  @@unique([txHash, logIndex])
+  @@index([coinAddress, ts])
+  @@index([ts])
+}
+
+model PricePoint {
+  id          String   @id @default(cuid())
+  coin        Coin     @relation(fields: [coinAddress], references: [address])
+  coinAddress String
+  priceQuote  Float
+  priceUsd    Float    @default(0)
+  block       BigInt
+  ts          DateTime @default(now())
+
+  @@index([coinAddress, ts])
+}
+
+// Ingestion cursor so restarts resume instead of re-scanning from START_BLOCK.
+model Cursor {
+  id        String @id // e.g. "curve"
+  lastBlock BigInt @default(0)
+}

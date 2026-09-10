@@ -1,0 +1,92 @@
+/* Census — design tokens
+ * Single source of truth. Lime is the ONLY accent.
+ * Numbers/tickers/addresses are always mono + tabular-nums.
+ */
+:root {
+  /* Grounds */
+  --census-ink: #050d09;            /* landing base */
+  --census-ink-board: #090c0a;      /* brand-sheet base */
+  --census-ink-wizard: #07130d;     /* wizard base */
+  --census-green-deep: #081b12;
+  --census-hunter: #0e3020;
+  --census-hunter-alt: #103a28;
+
+  /* Surfaces */
+  --census-surface: #0c1c14;        /* inputs, cards */
+  --census-surface-board: #0d110f;
+  --census-track: #12291d;          /* progress-bar track, disabled fill */
+  --census-card-wash: linear-gradient(180deg, #0f2419, #0c1c14);
+
+  /* Accent — the only one */
+  --census-lime: #b4f03d;
+  --census-lime-shade: #86b82e;     /* progress-gradient start only */
+  --census-lime-fill: rgba(180, 240, 61, 0.06);
+  --census-lime-border: rgba(180, 240, 61, 0.34);
+  --census-lime-border-strong: rgba(180, 240, 61, 0.7);
+  --census-lime-glow: 0 0 30px rgba(180, 240, 61, 0.28);
+  --census-lime-glow-soft: 0 0 44px rgba(180, 240, 61, 0.07);
+
+  /* Ink on lime */
+  --census-on-lime: #0b130a;
+
+  /* Text */
+  --census-text: #f2f5f1;
+  --census-text-secondary: #8fa198;
+  --census-text-muted: #5c6b63;
+  --census-silver: #c9d2cb;
+  --census-bone: #e9e7dc;
+
+  /* Lines */
+  --census-hairline: rgba(242, 245, 241, 0.09);
+  --census-border: rgba(242, 245, 241, 0.14);
+  --census-border-board: rgba(255, 255, 255, 0.08);
+
+  /* Chrome — logo text only, never UI */
+  --census-chrome: linear-gradient(176deg, #fbfbfe, #cfd3dd 40%, #9298a6 60%, #e8eaf0 78%, #8b90a0);
+  --census-chrome-tile: linear-gradient(160deg, #eef0f4, #aeb3c0 55%, #7c828f);
+
+  /* Grounds as full backgrounds */
+  --census-bg-landing: radial-gradient(90% 70% at 50% 42%, #0e3020 0%, #081b12 46%, #050d09 78%) #050d09;
+  --census-bg-wizard: radial-gradient(120% 80% at 85% -10%, #123f2a 0%, #0a2016 34%, #07130d 68%) #07130d;
+  --census-bg-dock: rgba(8, 18, 12, 0.86);
+
+  /* Type */
+  --census-font-ui: "Manrope", system-ui, sans-serif;
+  --census-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --census-font-serif: "Cormorant Garamond", Georgia, serif;
+
+  --census-h1-landing: clamp(26px, 2.6vw, 38px);
+  --census-h1-wizard: clamp(30px, 3.4vw, 43px);
+  --census-body: 16px;
+  --census-label: 14px;
+  --census-meta: 13px;
+  --census-mono-meta: 12px;
+
+  /* Space (4px base) */
+  --census-space-1: 4px;
+  --census-space-2: 8px;
+  --census-space-3: 12px;
+  --census-space-4: 16px;
+  --census-space-5: 20px;
+  --census-space-6: 24px;
+  --census-space-8: 32px;
+  --census-space-10: 40px;
+  --census-space-12: 48px;
+
+  /* Radius */
+  --census-radius-pill: 999px;
+  --census-radius-card: 12px;
+  --census-radius-input: 10px;
+  --census-radius-tile: 9px;
+  --census-radius-button: 8px;
+
+  /* Motion */
+  --census-ease-rise: cubic-bezier(0.16, 0.8, 0.24, 1);
+  --census-ease-flip: cubic-bezier(0.4, 0, 0.2, 1);
+  --census-transition: 0.18s;
+  --census-transition-slow: 0.25s;
+
+  /* Layout */
+  --census-content-max: 1220px;
+  --census-aside-width: 372px;
+}

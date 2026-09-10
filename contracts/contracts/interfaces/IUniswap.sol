@@ -70,6 +70,21 @@ interface IUniswapV3Factory {
     function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address);
 }
 
+/// @dev SwapRouter02 exactInput (multi-hop, no deadline param — the SwapRouter02 shape used on Robinhood
+///      Chain). Used by CensusCurve's ETH zap to swap WETH<->a non-ETH quote (e.g. HOOD) in one tap.
+///      A path is abi.encodePacked(tokenIn, fee, tokenMid, fee, ..., tokenOut) so it supports HOOD, whose
+///      only real liquidity is HOOD/USDG (route WETH->USDG->HOOD), not a direct WETH pool.
+interface ISwapRouter {
+    struct ExactInputParams {
+        bytes path;
+        address recipient;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+    }
+
+    function exactInput(ExactInputParams calldata params) external payable returns (uint256 amountOut);
+}
+
 interface IWETH9 {
     function deposit() external payable;
     function withdraw(uint256) external;

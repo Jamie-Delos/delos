@@ -1,64 +1,95 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { useAccount } from "wagmi";
-import { COINS } from "../lib/mock";
-import { usd, pct, short } from "../lib/format";
+import { useParams } from "react-router-dom";
+import { useAccount, useBalance } from "wagmi";
+import { type Address } from "viem";
+import { useLaunches } from "../lib/useLaunches";
+import { useCurveStats } from "../lib/useCurveStats";
+import { CxAvatar, HomeRow, StatBand, PendingPanel, EmptyPanel, Icon, fmtUsd, shortAddr, CHAIN, useWalletConnect, type DisplayCoin } from "../census";
 
+const TABS = [
+  { key: "created", label: "Created" },
+  { key: "held", label: "Held", pending: true },
+  { key: "replies", label: "Replies", pending: true },
+] as const;
+
+// A profile is a wallet: real balance and the coins it launched (from the launch events). Fees, holdings
+// and replies wait on the indexer and keep honest pending slots.
 export function Profile() {
   const { address: param } = useParams();
   const { address: me } = useAccount();
-  const addr = param || me || "0xbullrunner000000000000000000000000000000";
+  const { connect, connecting, error: connectError } = useWalletConnect();
+  const addr = (param || me) as Address | undefined;
   const [tab, setTab] = useState<"created" | "held" | "replies">("created");
 
-  const created = COINS.slice(0, 3);
-  const held = COINS.slice(2, 6);
+  const { coins, live } = useLaunches();
+  const mine = addr && live ? coins.filter((c) => c.creatorAddress?.toLowerCase() === addr.toLowerCase()) : [];
+  const stats = useCurveStats(mine.map((c) => c.address));
+  const bal = useBalance({ address: addr });
+
+  if (!addr) {
+    return (
+      <div className="cx-panel cx-empty">
+        <div className="cx-avatar cx-avatar--wallet" style={{ width: 58, height: 58, margin: "0 auto" }}>0x</div>
+        <div className="cx-empty__title" style={{ marginTop: 20 }}>Your address is your profile</div>
+        <div className="cx-empty__body">Connect to see what you started and what you hold.</div>
+        <button className="cx-cta" style={{ marginTop: 26 }} onClick={connect} disabled={connecting}>{connecting ? "Connecting…" : "Connect wallet"}</button>
+        {connectError && <div style={{ marginTop: 14, fontSize: 13, color: "#e06c60", maxWidth: 320, marginLeft: "auto", marginRight: "auto" }}>{connectError}</div>}
+      </div>
+    );
+  }
+
+  const created: DisplayCoin[] = mine.map((c) => {
+    const s = stats[c.address.toLowerCase()];
+    return {
+      address: c.address, name: c.name, symbol: c.symbol, image: c.image, creator: c.creatorAddress, age: c.age,
+      anchor: s?.anchor ?? "ETH", marketCap: s?.mcapUsd ?? null, graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, replies: c.replies,
+    };
+  });
+  const best = created.reduce<DisplayCoin | null>((b, c) => (c.marketCap != null && (!b || (b.marketCap ?? 0) < c.marketCap) ? c : b), null);
+  const balStr = bal.data ? `${Number(bal.data.formatted).toFixed(3)} ${bal.data.symbol}` : "—";
 
   return (
     <>
-      <div className="row" style={{ alignItems: "flex-start", gap: 14 }}>
-        <div className="coin-tile" style={{ background: "#4a8f6b" }}>🐮</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 21, fontWeight: 700 }}>bullrunner</div>
-          <div className="mono dim" style={{ fontSize: 13, marginTop: 4 }}>{short(addr)}</div>
-          <div className="dim" style={{ fontSize: 12.5, marginTop: 4 }}>joined 2d ago · on Robinhood Chain</div>
-        </div>
-        <div className="row" style={{ gap: 8 }}>
-          <button className="btn2">edit</button>
-          <button className="btn2">share</button>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 24 }}>
+        <CxAvatar name={addr.slice(2, 4)} wallet />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div className="cx-label">On {CHAIN.name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 14 }}>
+            <h1 className="cx-num" style={{ margin: 0, fontWeight: 400, fontSize: 31, letterSpacing: "-0.01em" }}>{shortAddr(addr)}</h1>
+            <button className="cx-link-control" onClick={() => navigator.clipboard?.writeText(addr)} aria-label="Copy address"><Icon name="copy" size={16} /></button>
+          </div>
         </div>
       </div>
 
-      <div className="stats">
-        <div className="stat"><div className="k">coins created</div><div className="v">3</div></div>
-        <div className="stat"><div className="k">wallet balance</div><div className="v">1.84 ETH</div></div>
-        <div className="stat"><div className="k">fees earned</div><div className="v accent">0.21 ETH</div></div>
-        <div className="stat"><div className="k">best coin</div><div className="v">Bullko</div></div>
+      <div style={{ marginTop: 36 }}>
+        <StatBand stats={[
+          { label: "Companies started", value: String(created.length), note: "From the launch events", key: true },
+          { label: "Wallet balance", value: balStr, note: "Live on-chain" },
+          { label: "Fees earned", value: "—", note: "Pending indexer" },
+          { label: "Best company", value: best ? fmtUsd(best.marketCap) : "—", note: best ? best.name : "No launches yet" },
+        ]} />
       </div>
 
-      <div className="tabs">
-        <button className={tab === "created" ? "on" : ""} onClick={() => setTab("created")}>created</button>
-        <button className={tab === "held" ? "on" : ""} onClick={() => setTab("held")}>held</button>
-        <button className={tab === "replies" ? "on" : ""} onClick={() => setTab("replies")}>replies</button>
+      <div style={{ display: "flex", gap: 36, marginTop: 52, borderBottom: "1px solid var(--census-border)" }}>
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)} aria-current={tab === t.key}
+            style={{ background: "none", border: 0, cursor: "pointer", fontSize: 16, padding: "0 2px 16px", marginBottom: -1,
+              color: tab === t.key ? "var(--census-text)" : "var(--census-text-muted)",
+              borderBottom: `1px solid ${tab === t.key ? "var(--census-lime)" : "transparent"}` }}>
+            {t.label}
+            <span className="cx-num" style={{ fontSize: 11.5, color: "var(--census-text-muted)", marginLeft: 10 }}>{"pending" in t && t.pending ? "—" : created.length}</span>
+          </button>
+        ))}
       </div>
 
-      <div className="coin-list">
-        {tab === "created" && created.map((c) => (
-          <Link key={c.address} to={`/coin/${c.address}`} className="coin-row">
-            <div className="coin-tile" style={{ width: 56, height: 56, fontSize: 26, background: "#c9436b" }}>{c.emoji}</div>
-            <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{c.name}</div><div className="dim" style={{ fontSize: 12.5, marginTop: 3 }}>{usd(c.mcap)} · {c.age}</div></div>
-            <div className="accent" style={{ fontSize: 13 }}>fees 0.0{c.replies % 9} ETH</div>
-          </Link>
-        ))}
-        {tab === "held" && held.map((c) => (
-          <Link key={c.address} to={`/coin/${c.address}`} className="coin-row">
-            <div className="coin-tile" style={{ width: 44, height: 44, fontSize: 22, background: "#7a5cc0" }}>{c.emoji}</div>
-            <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{c.name}</div><div className="dim" style={{ fontSize: 12.5, marginTop: 3 }}>{(c.mcap / 5000).toFixed(0)}K {c.symbol}</div></div>
-            <div style={{ textAlign: "right" }}><div>{usd(c.mcap / 90)}</div><div style={{ fontSize: 12, color: c.change24 >= 0 ? "var(--pos)" : "var(--neg)" }}>{pct(c.change24)}</div></div>
-          </Link>
-        ))}
-        {tab === "replies" && (
-          <div className="card"><div className="dim" style={{ fontSize: 12.5, marginBottom: 6 }}>on <Link className="accent" to={`/coin/${COINS[0].address}`}>Bullko</Link> · 38m</div><div className="muted" style={{ fontSize: 13 }}>liquidity locked forever ser. wagmi 🐮</div></div>
-        )}
+      <div style={{ marginTop: 8 }}>
+        {tab === "created"
+          ? created.length
+            ? <div className="cx-table">{created.map((c) => <HomeRow key={c.address} c={c} />)}</div>
+            : <EmptyPanel title="Nothing started yet" body="Create a coin and it lands here." />
+          : tab === "held"
+            ? <PendingPanel line="Holdings appear once the indexer is connected" note="The wallet balance above is live on-chain." />
+            : <PendingPanel line="Replies appear once the indexer is connected" />}
       </div>
     </>
   );

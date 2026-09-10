@@ -1,0 +1,18 @@
+// Regenerates frontend/src/lib/launchTokenBytecode.ts from the compiled LaunchToken artifact, so the
+// frontend's in-browser c0de grind predicts the SAME CREATE2 address the deployed factory produces.
+// Run after any change to LaunchToken or the compiler settings, from the SAME build you deploy:
+//   npx hardhat compile && node scripts/exportTokenBytecode.js
+const fs = require("fs");
+const path = require("path");
+const artifact = require("../artifacts/contracts/LaunchToken.sol/LaunchToken.json");
+
+const out = `// AUTO-GENERATED — do not edit by hand.
+// LaunchToken CREATION bytecode, copied from contracts/artifacts/contracts/LaunchToken.sol/LaunchToken.json.
+// The in-browser c0de grind hashes this + the encoded constructor args to predict the CREATE2 address.
+// MUST match the LaunchToken the deployed factory creates — regenerate from the SAME build you deploy,
+// or a grinded launch will revert with "not a census address". Regenerate: node scripts/exportTokenBytecode.js
+export const LAUNCH_TOKEN_BYTECODE = "${artifact.bytecode}" as const;
+`;
+const dest = path.join(__dirname, "..", "..", "frontend", "src", "lib", "launchTokenBytecode.ts");
+fs.writeFileSync(dest, out);
+console.log("wrote", dest, "—", artifact.bytecode.length, "chars");

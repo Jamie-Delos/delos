@@ -11,6 +11,7 @@
     "deploy:uniswap:local": "hardhat run scripts/deployUniswapV3.js",
     "deploy:uniswap:robinhoodTestnet": "hardhat run scripts/deployUniswapV3.js --network robinhoodTestnet",
     "deploy:robinhoodTestnet": "hardhat run scripts/deploy.js --network robinhoodTestnet",
+    "rehearse:robinhoodTestnet": "npm run deploy:uniswap:robinhoodTestnet && npm run deploy:robinhoodTestnet",
     "launch:robinhoodTestnet": "hardhat run scripts/launch.js --network robinhoodTestnet",
     "deploy:robinhood": "hardhat run scripts/deploy.js --network robinhood",
     "launch:robinhood": "hardhat run scripts/launch.js --network robinhood",

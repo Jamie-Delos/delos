@@ -1,82 +1,67 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { COINS, type Coin } from "../lib/mock";
-import { usd, price as fmtPrice, pct } from "../lib/format";
+import { useLaunches } from "../lib/useLaunches";
+import { useCurveStats } from "../lib/useCurveStats";
+import { BoardRow, PendingPanel, EmptyPanel, Icon, type DisplayCoin } from "../census";
 
-// Full board — every coin, sortable. Placeholder rows (mock catalogue) until the indexer lands.
-type Key = "mcap" | "price" | "change24" | "replies" | "grad";
-const grad = (c: Coin) => (c.mcap % 100); // mock graduation %
-
+// The full sortable board. Market cap, price and graduation are live from the curve; 24h and replies
+// wait on the indexer, so their columns show "—" and are not sortable.
 export function Advanced() {
-  const nav = useNavigate();
+  const { coins, live, loading } = useLaunches();
+  const shown = live ? coins : []; // only real on-chain launches here (no mock catalogue)
+  const stats = useCurveStats(shown.map((c) => c.address));
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState<Key>("mcap");
-  const [dir, setDir] = useState<-1 | 1>(-1);
-  const [trendOnly, setTrendOnly] = useState(false);
+  const [sort, setSort] = useState("marketCap");
 
-  // Duplicate the mock set so the board looks fuller.
-  const base = useMemo(() => [...COINS, ...COINS.map((c, i) => ({ ...c, address: c.address + "b", name: c.name + " ii", mcap: Math.round(c.mcap * (0.3 + (i % 5) * 0.2)) }))], []);
+  const list: DisplayCoin[] = useMemo(() => shown.map((c) => {
+    const s = stats[c.address.toLowerCase()];
+    return {
+      address: c.address, name: c.name, symbol: c.symbol, image: c.image, anchor: s?.anchor ?? "ETH",
+      marketCap: s?.mcapUsd ?? null, price: s?.priceUsd ?? null,
+      graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve ?? 0,
+    };
+  }), [shown, stats]);
 
   const rows = useMemo(() => {
-    let r = base.filter((c) => c.name.toLowerCase().includes(q.toLowerCase()) || c.symbol.toLowerCase().includes(q.toLowerCase()));
-    if (trendOnly) r = r.filter((c) => c.trending);
-    const val = (c: Coin) => (sort === "grad" ? grad(c) : (c[sort] as number));
-    return [...r].sort((a, b) => (val(a) - val(b)) * dir);
-  }, [base, q, sort, dir, trendOnly]);
-
-  function th(key: Key, label: string, num = true) {
-    const on = sort === key;
-    return (
-      <th className={num ? "num" : ""} onClick={() => { if (on) setDir((d) => (d === 1 ? -1 : 1)); else { setSort(key); setDir(-1); } }}>
-        {label}{on ? (dir === -1 ? " ↓" : " ↑") : ""}
-      </th>
-    );
-  }
+    const query = q.trim().toLowerCase();
+    const r = list.filter((c) => c.name.toLowerCase().includes(query) || c.symbol.toLowerCase().includes(query));
+    const val = (c: DisplayCoin) => (sort === "graduation" ? c.graduation : sort === "price" ? c.price : c.marketCap) ?? -1;
+    return [...r].sort((a, b) => val(b) - val(a));
+  }, [list, q, sort]);
 
   return (
     <>
-      <div className="h1">board</div>
-      <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>every coin, sortable. degen mode.</div>
-
-      <div className="controls">
-        <input className="input" placeholder="filter by name or ticker" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="input" value={sort} onChange={(e) => setSort(e.target.value as Key)}>
-          <option value="mcap">sort: market cap</option>
-          <option value="change24">sort: 24h</option>
-          <option value="grad">sort: graduation</option>
-          <option value="replies">sort: replies</option>
-        </select>
-        <button className={trendOnly ? "cta" : "btn2"} style={{ width: "auto" }} onClick={() => setTrendOnly((v) => !v)}>trending only</button>
+      <div className="cx-pagehead">
+        <h1 className="cx-h1 cx-pagehead__title">Board</h1>
+        <p className="cx-sub cx-pagehead__sub">Every company, sortable. Market cap and graduation come straight from the curve.</p>
+        <label className="cx-field cx-pagehead__aside">
+          <Icon name="search" size={17} />
+          <input placeholder="Filter by name or ticker" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter companies" />
+        </label>
       </div>
 
-      <div className="board-wrap">
-        <table className="board">
-          <thead>
-            <tr>
-              <th style={{ cursor: "default" }}>coin</th>
-              {th("mcap", "mcap")}
-              {th("price", "price")}
-              {th("change24", "24h")}
-              {th("grad", "graduation")}
-              {th("replies", "replies")}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((c) => (
-              <tr key={c.address} onClick={() => nav(`/coin/${c.address.replace(/b$/, "")}`)}>
-                <td>
-                  <div className="cc"><span className="em">{c.emoji}</span><div><div style={{ fontWeight: 600 }}>{c.name}</div><div className="dim" style={{ fontSize: 11.5 }}>${c.symbol}</div></div></div>
-                </td>
-                <td className="num accent" style={{ fontWeight: 600 }}>{usd(c.mcap)}</td>
-                <td className="num mono">{fmtPrice(c.price)}</td>
-                <td className="num" style={{ color: c.change24 >= 0 ? "var(--pos)" : "var(--neg)" }}>{pct(c.change24)}</td>
-                <td className="num"><span className="minibar"><i style={{ width: grad(c) + "%" }} /></span> <span className="dim">{grad(c)}%</span></td>
-                <td className="num dim">{c.replies}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ marginTop: 44 }}>
+        {rows.length === 0 ? (
+          loading ? <PendingPanel line="Loading companies" /> : <EmptyPanel title="The board is empty" body="It fills as curves open." />
+        ) : (
+          <div className="cx-table">
+            <div className="cx-row cx-row--head cx-grid-board">
+              <span className="cx-col-head">Company</span>
+              <span style={{ textAlign: "right" }}><button className="cx-colsort" style={{ marginRight: -10 }} aria-pressed={sort === "marketCap"} onClick={() => setSort("marketCap")}>Market cap</button></span>
+              <span style={{ textAlign: "right" }}><button className="cx-colsort" style={{ marginRight: -10 }} aria-pressed={sort === "price"} onClick={() => setSort("price")}>Price</button></span>
+              <span className="cx-col-head" style={{ textAlign: "right" }}>24h</span>
+              <span><button className="cx-colsort" style={{ marginLeft: -10 }} aria-pressed={sort === "graduation"} onClick={() => setSort("graduation")}>Graduation</button></span>
+              <span className="cx-col-head" style={{ textAlign: "right" }}>Replies</span>
+            </div>
+            {rows.map((r) => <BoardRow key={r.address} r={r} />)}
+          </div>
+        )}
       </div>
+      {rows.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "4px 16px", marginTop: 16 }}>
+          <span className="cx-label">{rows.length} {rows.length === 1 ? "company" : "companies"}</span>
+          <span className="cx-label">24h and replies appear once the indexer is connected</span>
+        </div>
+      )}
     </>
   );
 }

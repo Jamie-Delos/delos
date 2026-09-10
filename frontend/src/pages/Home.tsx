@@ -1,80 +1,81 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { COINS, makeEvent, type Coin } from "../lib/mock";
-import { usd } from "../lib/format";
-import { IcSearch } from "../components/icons";
+import { useMemo, useState } from "react";
+import { useLaunches } from "../lib/useLaunches";
+import { useCurveStats } from "../lib/useCurveStats";
+import { HomeRow, TrendingCard, PendingPanel, EmptyPanel, Icon, type DisplayCoin } from "../census";
 
-function Tape() {
-  const [items, setItems] = useState(() => [0, 1, 2, 3].map(makeEvent));
-  const n = useRef(4);
-  useEffect(() => {
-    const t = setInterval(() => {
-      setItems((prev) => [makeEvent(n.current++), ...prev].slice(0, 6));
-    }, 2100);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <div className="tape">
-      {items.map((e) => (
-        <span key={e.id} className={"chip " + e.kind}>
-          <span className="dot" style={{ background: "currentColor" }} />
-          {e.text}<span className="mc">mcap {e.mc}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function CoinTile({ c, size }: { c: Coin; size: number }) {
-  const bg = ["#c9436b", "#3a3f4b", "#e2b04a", "#4a8f6b", "#7a5cc0", "#c07a3a"][c.name.length % 6];
-  return <div className="coin-tile" style={{ width: size, height: size, fontSize: size * 0.45, background: bg }}>{c.emoji}</div>;
-}
+const SORTS = [
+  { key: "new", label: "Newest active" },
+  { key: "marketCap", label: "Market cap" },
+  { key: "graduation", label: "Graduation" },
+];
 
 export function Home() {
-  const trending = COINS.filter((c) => c.trending);
+  const { coins, loading } = useLaunches();
+  const stats = useCurveStats(coins.map((c) => c.address));
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("new");
+
+  const list: DisplayCoin[] = useMemo(() => coins.map((c) => {
+    const s = stats[c.address.toLowerCase()];
+    return {
+      address: c.address, name: c.name, symbol: c.symbol, image: c.image,
+      creator: c.creatorAddress, age: c.age, anchor: s?.anchor ?? "ETH",
+      marketCap: s?.mcapUsd ?? null, price: s?.priceUsd ?? null,
+      graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, replies: c.replies,
+    };
+  }), [coins, stats]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let r = q ? list.filter((c) => c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q)) : list;
+    if (sort === "marketCap") r = [...r].sort((a, b) => (b.marketCap ?? -1) - (a.marketCap ?? -1));
+    else if (sort === "graduation") r = [...r].sort((a, b) => (b.graduation ?? -1) - (a.graduation ?? -1));
+    return r;
+  }, [list, query, sort]);
+
+  const trending = list.slice(0, 6);
+
   return (
     <>
-      <Tape />
-      <div className="h1" style={{ textAlign: "center", margin: "18px 0" }}>[ start a new coin ]</div>
-      <div className="searchwrap">
-        <input className="input" placeholder="search for token" />
-        <button className="search-btn"><IcSearch /></button>
+      <div className="cx-pagehead">
+        <h1 className="cx-h1 cx-pagehead__title">Every company, on a curve.</h1>
+        <p className="cx-sub cx-pagehead__sub">Buy in early, and the curve graduates to a permanently locked pool. Anchored to ETH or HOOD.</p>
+        <label className="cx-field cx-pagehead__aside">
+          <Icon name="search" size={17} />
+          <input placeholder="Search companies or tickers" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search companies" />
+        </label>
       </div>
 
-      <div className="section-head"><span className="dot" style={{ background: "var(--accent)" }} /><span className="h2">now trending</span></div>
-      <div className="trending">
-        {trending.map((c) => (
-          <Link key={c.address} to={`/coin/${c.address}`} className={"tcard" + (c.koth ? " koth" : "")}>
-            <div className="row" style={{ marginBottom: 10 }}>
-              <CoinTile c={c} size={48} />
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.name}</div>
-                <div className="dim" style={{ fontSize: 12 }}>${c.symbol}</div>
-              </div>
-            </div>
-            <div className="accent" style={{ fontWeight: 700 }}>{usd(c.mcap)} <span className="dim" style={{ fontWeight: 400 }}>· {c.replies} replies</span></div>
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{c.desc}</div>
-          </Link>
-        ))}
-      </div>
+      {trending.length > 0 && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, margin: "68px 0 20px" }}>
+            <span className="cx-pulse" /><span className="cx-section-title">Now trending</span>
+          </div>
+          <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: 262, gap: 14, overflowX: "auto" }}>
+            {trending.map((c, i) => <TrendingCard key={c.address} c={c} king={i === 0} />)}
+          </div>
+        </>
+      )}
 
-      <div className="section-head" style={{ marginTop: 22 }}><span className="h2">all coins</span></div>
-      <div className="coin-list">
-        {COINS.map((c) => (
-          <Link key={c.address} to={`/coin/${c.address}`} className="coin-row">
-            <CoinTile c={c} size={72} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="dim" style={{ fontSize: 12, marginBottom: 3 }}>by {c.creator} · {c.age}</div>
-              <div style={{ fontWeight: 700 }}>{c.name} <span className="dim" style={{ fontWeight: 400, fontSize: 13 }}>${c.symbol}</span></div>
-              <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>{c.desc}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div className="accent" style={{ fontWeight: 700 }}>{usd(c.mcap)}</div>
-              <div className="dim" style={{ fontSize: 12 }}>{c.replies} replies</div>
-            </div>
-          </Link>
-        ))}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "72px 0 4px", gap: 16, flexWrap: "wrap" }}>
+        <div className="cx-section-title">All companies</div>
+        <div style={{ display: "flex", gap: 22 }}>
+          {SORTS.map((s) => (
+            <button key={s.key} className="cx-sort" aria-pressed={sort === s.key} onClick={() => setSort(s.key)}>{s.label}</button>
+          ))}
+        </div>
       </div>
+      {loading
+        ? <PendingPanel line="Loading companies" />
+        : filtered.length
+          ? <div className="cx-table">{filtered.map((c) => <HomeRow key={c.address} c={c} />)}</div>
+          : <EmptyPanel title="Nothing counted yet" body="The first company opens the market." />}
+      {!loading && filtered.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+          <span className="cx-label">{filtered.length} {filtered.length === 1 ? "company" : "companies"}</span>
+          <span className="cx-label">Replies appear once the indexer is connected</span>
+        </div>
+      )}
     </>
   );
 }

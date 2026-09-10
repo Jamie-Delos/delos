@@ -9,10 +9,10 @@
       "cwd": "frontend"
     },
     {
-      "name": "token-distributor",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "http-server", "token-distributor", "-p", "8321", "-c-1"],
-      "port": 8321
+      "name": "gaea-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8137", "--directory", "C:/Users/johnk/AppData/Local/Temp/claude/C--Users-johnk-Documents-AJM-Pad/de6a2bb6-4b98-43a5-b0ed-34527774da32/scratchpad"],
+      "port": 8137
     }
   ]
 }

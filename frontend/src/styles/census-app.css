@@ -1,0 +1,443 @@
+/* Census — inner-app stylesheet (Home, Board, Coin, Profile)
+ * Built entirely on css/census-tokens.css. Import that first.
+ * No new colours. Flat surfaces. Hairlines instead of nested cards.
+ *
+ *   @import "./census-tokens.css";
+ *   @import "./census-app.css";
+ *
+ * Fonts (load once, in the document head):
+ *   Manrope 300;400;500;600 · IBM Plex Mono 400;500 · Cormorant Garamond 600
+ */
+
+/* ---------------------------------------------------------------- shell */
+
+.cx-app {
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  background: var(--census-bg-wizard);
+  color: var(--census-text);
+  font-family: var(--census-font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.cx-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--census-space-10);
+  padding: 34px 28px 30px;
+  border-right: 1px solid var(--census-hairline);
+}
+
+/* Utility lockup for the app. Serif, silver — NOT the chrome gradient (brand rule 3). */
+.cx-wordmark {
+  font-family: var(--census-font-serif);
+  font-weight: 600;
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  color: var(--census-silver);
+  text-decoration: none;
+}
+
+.cx-nav { display: flex; flex-direction: column; gap: 2px; margin-left: -14px; }
+
+.cx-nav a {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 11px 14px;
+  border-left: 2px solid transparent;
+  font-size: 15px;
+  color: var(--census-text-secondary);
+  text-decoration: none;
+  transition: color var(--census-transition);
+}
+.cx-nav a:hover { color: var(--census-text); }
+.cx-nav a[aria-current="page"] { color: var(--census-text); border-left-color: var(--census-lime); }
+.cx-nav a[aria-current="page"] svg { stroke: var(--census-lime); }
+.cx-nav svg { flex: none; width: 18px; height: 18px; stroke: currentColor; fill: none; }
+
+.cx-side-meta {
+  margin-top: auto;
+  font-family: var(--census-font-mono);
+  font-size: 11.5px;
+  line-height: 1.9;
+  color: var(--census-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cx-side-meta b { display: block; color: var(--census-text-secondary); margin-top: 14px; font-weight: 400; letter-spacing: 0.03em; }
+.cx-side-meta b i { color: var(--census-lime); font-style: normal; }
+
+/* Top bar: 58px, one hairline. Holds the tape (Home), back link (Coin), log-in. */
+.cx-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--census-space-8);
+  height: 58px;
+  padding: 0 var(--census-space-10);
+  border-bottom: 1px solid var(--census-hairline);
+}
+
+.cx-page { padding: 64px var(--census-space-10) 76px; max-width: var(--census-content-max); box-sizing: border-box; }
+
+/* ---------------------------------------------------- actions & controls */
+
+/* The ONE action shape: lime-hairline pill (matches the landing CTA). */
+.cx-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 14px 22px;
+  border-radius: var(--census-radius-pill);
+  border: 1px solid var(--census-lime-border);
+  background: rgba(180, 240, 61, 0.02);
+  color: var(--census-text);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--census-transition-slow), background var(--census-transition-slow);
+}
+.cx-cta:hover { border-color: var(--census-lime-border-strong); background: rgba(180, 240, 61, 0.07); }
+.cx-cta::after { content: "→"; color: var(--census-lime); }
+.cx-cta:disabled,
+.cx-cta[aria-disabled="true"] { border-color: var(--census-hairline); color: var(--census-text-muted); cursor: not-allowed; }
+.cx-cta:disabled::after { color: var(--census-text-muted); }
+
+/* Quiet pill: log in, share. */
+.cx-quiet {
+  padding: 9px 18px;
+  border-radius: var(--census-radius-pill);
+  border: 1px solid var(--census-border);
+  color: var(--census-text-secondary);
+  font-size: 14.5px;
+  text-decoration: none;
+  background: none;
+  cursor: pointer;
+  transition: color var(--census-transition), border-color var(--census-transition);
+}
+.cx-quiet:hover { color: var(--census-text); border-color: rgba(242, 245, 241, 0.34) }
+
+/* Underline text control: sort, timeframe, quick amount, tabs, POST. */
+.cx-link-control {
+  font-family: var(--census-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--census-text-muted);
+  padding-bottom: 5px;
+  border: 0;                             /* buttons ship a UA border — reset it, keep only the underline */
+  border-bottom: 1px solid transparent;
+  text-decoration: none;
+  background: none;
+  cursor: pointer;
+}
+.cx-link-control:hover { color: var(--census-text); }
+.cx-link-control[aria-pressed="true"],
+.cx-link-control[aria-current="true"] { color: var(--census-lime); border-bottom-color: var(--census-lime); }
+
+/* Underline field. No filled input boxes on these screens. */
+.cx-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 2px 12px;
+  border-bottom: 1px solid var(--census-border);
+}
+.cx-field svg { flex: none; width: 17px; height: 17px; stroke: var(--census-text-muted); fill: none; }
+.cx-field input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--census-text);
+  font-family: inherit;
+  font-size: 15px;
+}
+.cx-field input::placeholder { color: var(--census-text-muted); }
+.cx-field:focus-within { border-bottom-color: var(--census-lime-border); }
+
+/* ------------------------------------------------------------- headings */
+
+.cx-h1 { margin: 0; font-weight: 300; font-size: 44px; line-height: 1.08; letter-spacing: -0.02em; }
+.cx-sub { margin: 14px 0 0; color: var(--census-text-secondary); font-size: 16.5px; max-width: 52ch; }
+/* Page header: title + description + a trailing control (search). On desktop the control sits on the
+   right, aligned to the bottom of the title/description block. On mobile it must NOT share the title's
+   hierarchy or get squeezed into a narrow column — so it stacks full-width and, per feedback, sits
+   directly under the title, ABOVE the description. Children carry the __title / __sub / __aside areas. */
+.cx-pagehead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-areas: "title aside" "sub aside";
+  gap: 0 40px;
+  align-items: end;
+}
+.cx-pagehead__title { grid-area: title; }
+.cx-pagehead__sub { grid-area: sub; }
+.cx-pagehead__aside { grid-area: aside; align-self: end; }
+.cx-section-title { font-size: 17px; font-weight: 500; letter-spacing: -0.01em; }
+.cx-label {           /* small mono label. Sentence case; tracking stays under 0.05em. */
+  font-family: var(--census-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--census-text-muted);
+}
+.cx-col-head {        /* table column header — the one place caps are used */
+  font-family: var(--census-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--census-text-muted);
+}
+.cx-num { font-family: var(--census-font-mono); font-variant-numeric: tabular-nums; }
+.cx-num--key { color: var(--census-lime); }      /* one key numeral per screen */
+.cx-num--value { color: var(--census-bone); }    /* every other live figure */
+.cx-num--pending { color: var(--census-text-muted); } /* the em dash */
+
+/* ---------------------------------------------------------------- lists */
+
+.cx-table { border-top: 1px solid var(--census-border); }
+.cx-row {
+  display: grid;
+  align-items: center;
+  gap: 20px;
+  padding: 19px 4px;
+  border-bottom: 1px solid var(--census-hairline);
+  color: var(--census-text);
+  text-decoration: none;
+  transition: background var(--census-transition);
+}
+.cx-row:hover { background: rgba(180, 240, 61, 0.02); }
+.cx-row--head { padding: 14px 4px; }
+.cx-row__name { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx-row__meta { font-family: var(--census-font-mono); font-size: 12px; color: var(--census-text-secondary); margin-top: 4px; }
+
+/* Grid templates — desktop */
+.cx-grid-home  { grid-template-columns: 58px minmax(0,2.2fr) minmax(0,1.5fr) 190px 132px 84px; }
+.cx-grid-board { grid-template-columns: minmax(0,2.5fr) 140px 140px 92px 230px 92px; }
+.cx-grid-profile { grid-template-columns: 58px minmax(0,2.2fr) 240px 150px 92px; }
+
+/* Coin / company avatar. Real image when present, else a FLAT tile — never metal. */
+.cx-avatar {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: var(--census-radius-tile);
+  background: var(--census-surface);
+  border: 1px solid var(--census-border);
+  display: grid;
+  place-items: center;
+  font-family: var(--census-font-mono);
+  font-size: 13px;
+  color: var(--census-text-secondary);
+  overflow: hidden;
+}
+.cx-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.cx-avatar--wallet { border-radius: 50%; }   /* circles: avatars and status dots only */
+
+/* Anchor / stock logo. Same presentation everywhere (see AssetLogo in the app). */
+.cx-asset-logo {
+  border-radius: var(--census-radius-tile);
+  background: #fff;
+  object-fit: contain;
+  padding: 10%;
+  box-sizing: border-box;
+  flex: none;
+}
+
+/* --------------------------------------------------------- stats & bars */
+
+/* 4-up (or 2-up on mobile) ruled band. No card borders. */
+.cx-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--census-border);
+  border-bottom: 1px solid var(--census-hairline);
+}
+.cx-stats > div { padding: 22px var(--census-space-6) 22px 0; border-right: 1px solid var(--census-hairline); }
+.cx-stats > div:last-child { border-right: 0; }
+.cx-stat__value { font-family: var(--census-font-mono); font-size: 27px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; margin-top: 12px; }
+.cx-stat__note { font-size: 12px; color: var(--census-text-muted); margin-top: 8px; }
+
+.cx-bar { height: 3px; border-radius: 2px; background: var(--census-track); overflow: hidden; }
+.cx-bar--lg { height: 4px; }
+.cx-bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--census-lime-shade), var(--census-lime)); }
+.cx-bar--done > i { background: var(--census-lime); }
+.cx-bar--ghost > i { background: var(--census-track); }  /* pending distribution */
+
+/* ------------------------------------------------------------ live tape */
+
+.cx-tape { display: flex; align-items: center; gap: 22px; min-width: 0; overflow: hidden; }
+.cx-tape__item { display: flex; align-items: center; gap: 10px; flex: none; padding-right: 22px; border-right: 1px solid var(--census-hairline); }
+.cx-tape__dot { width: 5px; height: 5px; border-radius: 50%; }
+.cx-tape__dot--buy { background: var(--census-lime); }
+.cx-tape__dot--sell { background: #e0573a; }   /* sell red — per 01-home.md, no token equivalent */
+.cx-tape__dot--create { background: #e0b73a; } /* create gold — same */
+.cx-tape__dot--off { background: var(--census-track); }
+.cx-tape__who,
+.cx-tape__action { font-family: var(--census-font-mono); font-size: 12px; color: var(--census-text-secondary); font-variant-numeric: tabular-nums; }
+.cx-tape__coin { font-size: 12.5px; color: var(--census-silver); }
+
+/* ---------------------------------------------------- panels and states */
+
+.cx-panel {           /* the card wash — reserved for focal panels only */
+  background: var(--census-card-wash);
+  border: 1px solid var(--census-border);
+  border-radius: var(--census-radius-card);
+  padding: var(--census-space-6);
+}
+.cx-panel--hilite { border-color: var(--census-lime-border); }
+.cx-panel--plain { background: none; border-color: var(--census-hairline); }
+
+.cx-empty { text-align: center; padding: 52px 32px; }
+.cx-empty__count {   /* the brand full stop: a count, closed */
+  font-family: var(--census-font-serif);
+  font-size: 44px;
+  line-height: 1;
+  color: var(--census-text-muted);
+}
+.cx-empty__count i { color: var(--census-lime); font-style: normal; }
+.cx-empty__title { font-size: 22px; font-weight: 300; margin-top: 22px; letter-spacing: -0.01em; }
+.cx-empty__body { font-size: 14px; color: var(--census-text-secondary); margin-top: 9px; }
+
+.cx-pending {         /* "appears once the indexer is connected" */
+  display: grid;
+  place-items: center;
+  text-align: center;
+  border: 1px solid var(--census-hairline);
+  border-radius: var(--census-radius-card);
+  padding: 0 var(--census-space-8);
+  min-height: 250px;
+  background: repeating-linear-gradient(90deg, rgba(242, 245, 241, 0.02) 0 1px, transparent 1px 72px);
+}
+.cx-pending__line { font-size: 15.5px; font-weight: 300; color: var(--census-text-secondary); }
+.cx-pending__note { font-size: 13px; color: var(--census-text-muted); margin-top: 8px; }
+
+.cx-skeleton { background: var(--census-track); border-radius: 2px; display: block; }
+
+/* --------------------------------------------------------------- mobile */
+
+.cx-tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: end;
+  padding: 12px 14px 18px;
+  background: var(--census-bg-dock);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--census-hairline);
+}
+.cx-tabbar a { display: flex; flex-direction: column; align-items: center; gap: 7px; color: var(--census-text-secondary); text-decoration: none; font-size: 10.5px; letter-spacing: 0.04em; }
+/* Every tab's icon lives in the same-height zone so the Create pill doesn't ride higher than the icons. */
+.cx-tabbar__icon { height: 30px; display: grid; place-items: center; }
+.cx-tabbar a[aria-current="page"] { color: var(--census-lime); }
+.cx-tabbar svg { width: 19px; height: 19px; stroke: currentColor; fill: none; }
+.cx-tabbar__create {  /* centre action: lime hairline pill, 44px+ hit area with the label */
+  width: 38px; height: 28px;
+  border-radius: var(--census-radius-pill);
+  border: 1px solid var(--census-lime-border);
+  background: rgba(180, 240, 61, 0.02);
+  display: grid; place-items: center;
+  color: var(--census-lime);
+}
+
+/* Coin page trade sheet on mobile */
+.cx-sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 14px 20px 20px;
+  background: rgba(8, 18, 12, 0.94);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--census-border);
+}
+.cx-sheet__grab { width: 42px; height: 3px; border-radius: var(--census-radius-pill); background: var(--census-track); margin: 0 auto; }
+
+@media (max-width: 900px) {
+  .cx-app { grid-template-columns: minmax(0, 1fr); }
+  .cx-side { display: none; }
+  .cx-page { padding: 32px 20px 104px; }
+  .cx-topbar { padding: 0 20px; } /* align the top bar's edges with the page content (was 40px) */
+  .cx-h1 { font-size: 30px; }
+  .cx-sub { font-size: 14.5px; }
+  /* Stack: title, then the full-width search, then the description (search above the text). */
+  .cx-pagehead { grid-template-columns: 1fr; grid-template-areas: "title" "aside" "sub"; gap: 18px; }
+  .cx-pagehead__sub { margin-top: 0; }
+  .cx-stats { grid-template-columns: 1fr 1fr; border-bottom: 0; }
+  .cx-stats > div { padding: 18px 16px 18px 0; border-bottom: 1px solid var(--census-hairline); }
+  .cx-stats > div:nth-child(2n) { border-right: 0; }
+  .cx-stat__value { font-size: 20px; margin-top: 9px; }
+  .cx-row { grid-template-columns: 42px minmax(0, 1fr) auto !important; gap: 14px; padding: 16px 2px; }
+  .cx-row--head { display: none; }
+  .cx-avatar { width: 42px; height: 42px; }
+  .cx-pending { min-height: 140px; padding: 0 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cx-pulse { animation: none !important; }
+}
+
+/* Focal motion only: the king-of-the-hill dot. Nothing else animates. */
+@keyframes cx-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.4); }
+}
+.cx-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--census-lime); animation: cx-pulse 2.1s ease-in-out infinite; }
+
+/* Coin page: main + sticky trade aside; collapses to one column on mobile. */
+.cx-coin { display: grid; grid-template-columns: minmax(0, 1fr) var(--census-aside-width); gap: 44px; align-items: start; }
+@media (max-width: 900px) { .cx-coin { grid-template-columns: minmax(0, 1fr); gap: 28px; } .cx-coin .cx-panel { position: static !important; } }
+
+/* The bottom tab bar is mobile-only; on desktop the sidebar handles navigation. */
+.cx-tabbar { display: none; }
+@media (max-width: 900px) { .cx-tabbar { display: grid; } }
+/* Topbar wordmark shows only on mobile (the sidebar carries it on desktop, so it would duplicate). */
+.cx-mobile-only { display: none !important; }
+@media (max-width: 900px) { .cx-mobile-only { display: inline-flex !important; } }
+
+/* Sort controls — plain text that becomes a frosted-glass pill when pressed (no boxed buttons). */
+.cx-sort {
+  font-family: var(--census-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--census-text-secondary);
+  background: none;
+  border: 0;
+  padding: 7px 14px;
+  border-radius: var(--census-radius-pill);
+  cursor: pointer;
+  transition: background var(--census-transition), color var(--census-transition), box-shadow var(--census-transition);
+}
+.cx-sort:hover { color: var(--census-text); }
+.cx-sort[aria-pressed="true"] {
+  color: var(--census-lime);
+  background: rgba(180, 240, 61, 0.10);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 0 1px var(--census-lime-border);
+}
+
+/* Sortable table column header — the caps label, pressed to a glass pill when it is the active sort. */
+.cx-colsort {
+  font-family: var(--census-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--census-text-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: var(--census-radius-button);
+  transition: background var(--census-transition), color var(--census-transition), box-shadow var(--census-transition);
+}
+.cx-colsort:hover { color: var(--census-text-secondary); }
+.cx-colsort[aria-pressed="true"] {
+  color: var(--census-lime);
+  background: rgba(180, 240, 61, 0.10);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 0 1px var(--census-lime-border);
+}

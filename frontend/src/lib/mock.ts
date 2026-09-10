@@ -12,6 +12,8 @@ export interface Coin {
   change24: number;
   replies: number;
   desc: string;
+  image?: string; // real coin logo (from launch metadata / indexer); falls back to a serif lettermark
+  creatorAddress?: string; // full creator address (for "created by me" filtering); `creator` is the short form
   trending?: boolean;
   koth?: boolean;
 }
@@ -30,6 +32,8 @@ export const COINS: Coin[] = [
 // live pairs; the real build reads the liquid set from the on-chain registry.
 export interface Stock { ticker: string; name: string; }
 export interface StockCategory { label: string; stocks: Stock[]; }
+// Trimmed to the tokenized stocks that have Uniswap V3 liquidity the v2 vault can actually route
+// into (direct WETH or via the USDG hub). Routes + addresses per ticker live in stockRoutes.ts.
 export const STOCK_CATEGORIES: StockCategory[] = [
   { label: "Mega-cap tech", stocks: [
     { ticker: "NVDA", name: "NVIDIA" }, { ticker: "AAPL", name: "Apple" }, { ticker: "MSFT", name: "Microsoft" },
@@ -38,48 +42,41 @@ export const STOCK_CATEGORIES: StockCategory[] = [
   ] },
   { label: "Semiconductors", stocks: [
     { ticker: "TSM", name: "TSMC" }, { ticker: "MU", name: "Micron" }, { ticker: "AMD", name: "AMD" },
-    { ticker: "WDC", name: "Western Digital" }, { ticker: "SNDK", name: "SanDisk" }, { ticker: "INTC", name: "Intel" },
-    { ticker: "AMAT", name: "Applied Materials" }, { ticker: "ON", name: "ON Semiconductor" }, { ticker: "AMBA", name: "Ambarella" },
-    { ticker: "QUBT", name: "Quantum Computing" }, { ticker: "AAOI", name: "Applied Optoelectronics" },
+    { ticker: "SNDK", name: "SanDisk" }, { ticker: "INTC", name: "Intel" }, { ticker: "QUBT", name: "Quantum Computing" },
   ] },
   { label: "Retail & meme", stocks: [
     { ticker: "MRVL", name: "Marvell" }, { ticker: "RDDT", name: "Reddit" }, { ticker: "DJT", name: "Trump Media" },
     { ticker: "GME", name: "GameStop" }, { ticker: "AMC", name: "AMC" }, { ticker: "RBLX", name: "Roblox" },
     { ticker: "SNAP", name: "Snap" }, { ticker: "COIN", name: "Coinbase" }, { ticker: "MSTR", name: "Strategy" },
     { ticker: "PLTR", name: "Palantir" }, { ticker: "HIMS", name: "Hims & Hers" }, { ticker: "RIVN", name: "Rivian" },
-    { ticker: "CRCL", name: "Circle" }, { ticker: "BULL", name: "Webull" }, { ticker: "LULU", name: "Lululemon" },
-    { ticker: "ELF", name: "e.l.f. Beauty" }, { ticker: "CELH", name: "Celsius" },
+    { ticker: "CRCL", name: "Circle" }, { ticker: "LULU", name: "Lululemon" },
   ] },
   { label: "ETFs & commodities", stocks: [
     { ticker: "QQQ", name: "Nasdaq-100 ETF" }, { ticker: "SPY", name: "S&P 500 ETF" }, { ticker: "GLD", name: "Gold" },
     { ticker: "SLV", name: "Silver" }, { ticker: "USO", name: "Oil" }, { ticker: "SGOV", name: "T-Bills ETF" },
-    { ticker: "SOXX", name: "Semiconductor ETF" }, { ticker: "INDA", name: "India ETF" },
   ] },
   { label: "Pharma & health", stocks: [
     { ticker: "LLY", name: "Eli Lilly" }, { ticker: "PFE", name: "Pfizer" }, { ticker: "MRNA", name: "Moderna" },
     { ticker: "JNJ", name: "Johnson & Johnson" },
   ] },
   { label: "Aerospace & defense", stocks: [
-    { ticker: "BA", name: "Boeing" }, { ticker: "LMT", name: "Lockheed Martin" }, { ticker: "KTOS", name: "Kratos" },
-    { ticker: "ASTS", name: "AST SpaceMobile" }, { ticker: "JOBY", name: "Joby Aviation" }, { ticker: "RCAT", name: "Red Cat" },
+    { ticker: "BA", name: "Boeing" }, { ticker: "RCAT", name: "Red Cat" },
   ] },
   { label: "Private & other", stocks: [
     { ticker: "SPCX", name: "SpaceX" }, { ticker: "FIG", name: "Figma" }, { ticker: "BABA", name: "Alibaba" },
-    { ticker: "FUTU", name: "Futu" }, { ticker: "SHOP", name: "Shopify" }, { ticker: "DDOG", name: "Datadog" },
-    { ticker: "NET", name: "Cloudflare" }, { ticker: "ZM", name: "Zoom" }, { ticker: "DELL", name: "Dell" },
-    { ticker: "IBM", name: "IBM" }, { ticker: "WDAY", name: "Workday" }, { ticker: "COST", name: "Costco" },
-    { ticker: "TTWO", name: "Take-Two" }, { ticker: "F", name: "Ford" }, { ticker: "UPS", name: "UPS" },
-    { ticker: "USAR", name: "USA Rare Earth" },
+    { ticker: "NET", name: "Cloudflare" }, { ticker: "DELL", name: "Dell" }, { ticker: "IBM", name: "IBM" },
+    { ticker: "COST", name: "Costco" }, { ticker: "TTWO", name: "Take-Two" }, { ticker: "F", name: "Ford" },
+    { ticker: "UPS", name: "UPS" }, { ticker: "USAR", name: "USA Rare Earth" },
   ] },
 ];
 export const STOCKS: Stock[] = STOCK_CATEGORIES.flatMap((c) => c.stocks);
 
 export const HOLDERS = [
-  { color: "#2dd4bf", label: "locked pool (bonding)", pct: 78.4 },
-  { color: "#5eead4", label: "dev wallet", pct: 4.2, dev: true },
-  { color: "#6ee7b0", label: "0x9ab…331", pct: 3.1 },
-  { color: "#aab2c0", label: "0x77a…a02", pct: 2.6 },
-  { color: "#7b8494", label: "others (214)", pct: 11.7 },
+  { color: "#b4f03d", label: "locked pool (bonding)", pct: 78.4 },
+  { color: "#86b82e", label: "dev wallet", pct: 4.2, dev: true },
+  { color: "#5c8f52", label: "0x9ab…331", pct: 3.1 },
+  { color: "#8fa198", label: "0x77a…a02", pct: 2.6 },
+  { color: "#5c6b63", label: "others (214)", pct: 11.7 },
 ];
 
 export const THREAD = [

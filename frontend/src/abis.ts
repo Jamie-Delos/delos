@@ -1,8 +1,36 @@
 import { parseAbi } from "viem";
 
+// LaunchFactory (Prima) — deploys a fixed-supply ERC-20 and seeds the WHOLE supply into the CensusCurve
+// bonding curve. There is NO DEX pool at launch: trading is on the curve (`poolFee` is only the tier for
+// the pool the curve mints on graduation). `quote` = the reserve asset (WETH default, or e.g. HOOD).
+// The 2-arg overload still exists on-chain for legacy callers; the app always calls this 4-arg form,
+// passing an empty `exemptBuyers` (no launch-bundle anti-snipe exemptions).
 export const factoryAbi = parseAbi([
-  "function createLaunch((string name,string symbol,uint256 totalSupply,uint8 decimals,uint24 fee,uint160 sqrtPriceX96,int24 tickLower,int24 tickUpper,int24 graduationTick) p) returns (address token,address pool,uint256 tokenId)",
-  "event Launched(address indexed token,address indexed creator,address pool,uint256 tokenId,uint128 liquidity)",
+  "function createLaunch((string name,string symbol,uint256 totalSupply,uint8 decimals,uint24 poolFee,uint256 virtualQuote,uint256 graduationQuote) p, bytes32 salt, address quote, address[] exemptBuyers) returns (address token)",
+  "event Launched(address indexed token,address indexed creator,address curve,uint256 virtualQuote,uint256 graduationQuote)",
+]);
+
+// LaunchFactoryV2 (Maxima) — same curve launch plus a per-token DividendVault: basket of tokenised stocks
+// + bps weights (sum 10000) + per-stock swap route, a CREATE2 salt (bytes32(0) = plain deploy), and the
+// holders' fee share (holdersBps). `quote` is the curve's reserve asset AND the vault's fee/payout asset.
+// The 5-arg overload still exists on-chain for legacy callers; the app always calls this 8-arg form.
+export const factoryV2Abi = parseAbi([
+  "function createLaunch((string name,string symbol,uint256 totalSupply,uint8 decimals,uint24 poolFee,uint256 virtualQuote,uint256 graduationQuote) p, address[] basket, uint16[] weights, bytes[] paths, bytes32 salt, address quote, uint16 holdersBps, address[] exemptBuyers) returns (address token,address vault)",
+  "event LaunchedV2(address indexed token,address indexed creator,address curve,address vault,uint16 holdersBps)",
+]);
+
+// CensusCurve — the un-dodgeable bonding-curve venue every coin trades on until it graduates. buy/sell
+// trade against the curve (2% fee, split 75/25). `curves(coin)` is the per-coin state tuple; quoteBuy/
+// quoteSell are the fee-net readouts; graduationProgress is 0..10000 bps toward graduation.
+export const censusCurveAbi = parseAbi([
+  "function buy(address coin,uint256 quoteIn,uint256 minTokensOut) returns (uint256 tokensOut)",
+  "function buyWithETH(address coin,uint256 minTokensOut) payable returns (uint256 tokensOut)",
+  "function sell(address coin,uint256 tokensIn,uint256 minQuoteOut) returns (uint256 quoteOut)",
+  "function sellForETH(address coin,uint256 tokensIn,uint256 minQuoteOut) returns (uint256 quoteOut)",
+  "function curves(address coin) view returns (address quote,address creator,address vault,uint16 holdersBps,uint24 poolFee,uint256 virtualQuote,uint256 tokenReserve,uint256 realQuote,uint256 graduationQuote,bool graduated,bool exists)",
+  "function quoteBuy(address coin,uint256 quoteIn) view returns (uint256 tokensOut)",
+  "function quoteSell(address coin,uint256 tokensIn) view returns (uint256 quoteOut)",
+  "function graduationProgress(address coin) view returns (uint256)",
 ]);
 
 export const lockerAbi = parseAbi([
@@ -14,8 +42,18 @@ export const erc20Abi = parseAbi([
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
   "function balanceOf(address) view returns (uint256)",
   "function approve(address spender,uint256 amount) returns (bool)",
+  "function allowance(address owner,address spender) view returns (uint256)",
+]);
+
+// Minimal Uniswap V3 pool reads — used to price a non-ETH launch anchor (e.g. HOOD) from its
+// own quote/USDG pool so $-denominated launch/graduation targets hold. See lib/anchors.ts.
+export const poolAbi = parseAbi([
+  "function slot0() view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,uint8 feeProtocol,bool unlocked)",
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
 ]);
 
 export const wethAbi = parseAbi([

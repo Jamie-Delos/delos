@@ -68,7 +68,7 @@ describe("launch -> buy -> collect fees, with graduation split (Base fork)", fun
     const tx = await factory.connect(creator).createLaunch({
       name: "Fork Test", symbol: "FORK", totalSupply, decimals: 18, fee: FEE,
       sqrtPriceX96: params.sqrtPriceX96, tickLower: params.tickLower, tickUpper: params.tickUpper, graduationTick,
-    });
+    }, "0x0000000000000000000000000000000000000000000000000000000000000000");
     const receipt = await tx.wait();
     const ev = receipt.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "Launched");
     return { token: ev.args.token, tokenId: ev.args.tokenId, pool: ev.args.pool, liquidity: ev.args.liquidity };

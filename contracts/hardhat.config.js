@@ -10,6 +10,11 @@ module.exports = {
     settings: {
       optimizer: { enabled: true, runs: 200 },
       viaIR: true, // the launch flow has many locals; IR pipeline avoids "stack too deep"
+      // Strip require() string messages so LaunchFactoryV2 (which embeds the DividendVault creation
+      // code) stays under the 24576-byte EIP-170 limit. Custom errors (revert Foo()) are unaffected and
+      // still decode — the router/locker use those for their meaningful failures. (Per-file overrides
+      // don't compose with viaIR, so this is applied globally.)
+      debug: { revertStrings: "strip" },
     },
   },
   networks: {

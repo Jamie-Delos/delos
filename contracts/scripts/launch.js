@@ -5,6 +5,7 @@ const path = require("path");
 const ADDR = require("./addresses");
 const standardFor = require("./standards");
 const { computeLaunchParams, computeGraduationTick } = require("./lib/launchParams");
+const { grindSalt } = require("./lib/grindSalt");
 
 const TOKEN = { name: "Test Token", symbol: "TEST", decimals: 18, totalSupplyWhole: 1_000_000_000n };
 
@@ -34,9 +35,13 @@ async function main() {
   const quoteDecimals = uni.quoteDecimals ?? std.quoteDecimals;
   console.log(`Launch standard for ${netName}: quoteDecimals=${quoteDecimals} fee=${std.fee}`);
 
-  // Predict the token's CREATE address so tick geometry matches the deployed ordering.
-  const factoryNonce = await hre.ethers.provider.getTransactionCount(dep.LaunchFactory);
-  const predictedToken = hre.ethers.getCreateAddress({ from: dep.LaunchFactory, nonce: factoryNonce });
+  // Grind a CREATE2 vanity salt so the token deploys to a `…c0de` address (Census signifier);
+  // the deterministic address is also used for the tick geometry (ordering vs WETH).
+  const { salt, address: predictedToken, tries } = await grindSalt(dep.LaunchFactory, {
+    name: TOKEN.name, symbol: TOKEN.symbol,
+    totalSupply: TOKEN.totalSupplyWhole * 10n ** BigInt(TOKEN.decimals), decimals: TOKEN.decimals,
+  });
+  console.log(`Grinded c0de vanity salt in ${tries} tries -> ${predictedToken}`);
 
   const params = computeLaunchParams({
     token: predictedToken,
@@ -71,7 +76,7 @@ async function main() {
     tickLower: params.tickLower,
     tickUpper: params.tickUpper,
     graduationTick,
-  });
+  }, salt);
   console.log("createLaunch tx:", tx.hash);
   const receipt = await tx.wait();
 

@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool} from "./interfaces/IUniswap.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title LaunchLocker
 /// @notice Permanent home for launch LP NFTs. Positions can NEVER be withdrawn — there is no
@@ -14,7 +15,7 @@ import {INonfungiblePositionManager, IUniswapV3Pool} from "./interfaces/IUniswap
 ///         its graduation tick) the creator keeps 100% of fees. Once it graduates — latched, one
 ///         way — the protocol takes `protocolFeeBps` (destined for $TOKEN buyback & burn) and the
 ///         creator keeps the rest. Graduation is read live from the pool's current tick.
-contract LaunchLocker is IERC721Receiver {
+contract LaunchLocker is IERC721Receiver, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     struct Lock {
@@ -107,7 +108,7 @@ contract LaunchLocker is IERC721Receiver {
     }
 
     /// @notice Sweep accumulated V3 swap fees. Callable by anyone (the split is fixed on-chain).
-    function collectFees(uint256 tokenId) external returns (uint256 amount0, uint256 amount1) {
+    function collectFees(uint256 tokenId) external nonReentrant returns (uint256 amount0, uint256 amount1) {
         Lock storage lock = locks[tokenId];
         if (!lock.exists) revert UnknownPosition();
 

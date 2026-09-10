@@ -1,88 +1,50 @@
-import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { CONTRACTS } from "./config";
-import { short } from "./lib/format";
-import { IcHome, IcToken, IcAdvanced, IcProfile, IcMore, IcSearch, IcPlus } from "./components/icons";
+import { Navigate, Route, Routes, useLocation, Link } from "react-router-dom";
+import { AppShell, Tape, CensusConnect, Icon } from "./census";
 import { Home } from "./pages/Home";
 import { Launch } from "./pages/Launch";
 import { Coin } from "./pages/Coin";
 import { Profile } from "./pages/Profile";
-import { Token } from "./pages/Token";
+import { Paper } from "./pages/Paper";
 import { Advanced } from "./pages/Advanced";
+import { Landing } from "./pages/Landing";
 
-function Wordmark() {
-  return (
-    <div className="wordmark">
-      <span className="wm-mark"><i /></span>
-      <span className="wm-text">robinpad</span>
-    </div>
-  );
+function activeKey(path: string) {
+  if (path.startsWith("/board")) return "market";
+  if (path.startsWith("/paper")) return "paper";
+  if (path.startsWith("/profile")) return "profile";
+  if (path.startsWith("/home")) return "companies";
+  return "";
 }
 
-function ConnectBtn({ mini }: { mini?: boolean }) {
-  const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
-  const nav = useNavigate();
-  if (!isConnected) {
-    return <button className="btn2" onClick={() => connect({ connector: connectors[0] })}>log in</button>;
-  }
-  return (
-    <button className="btn2" onClick={() => (mini ? disconnect() : nav("/profile"))} title="profile / disconnect">
-      <span className="mono">{short(address)}</span>
-    </button>
+function TopBar({ path }: { path: string }) {
+  const left = path.startsWith("/coin/") ? (
+    <Link to="/board" className="cx-link-control" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <Icon name="back" size={15} /> Back to the board
+    </Link>
+  ) : path.startsWith("/home") ? (
+    <Tape />
+  ) : (
+    <Link className="cx-wordmark cx-mobile-only" to="/home" style={{ fontSize: 18 }}>census.fund</Link>
   );
+  return <>{left}<CensusConnect /></>;
 }
 
 export function App() {
-  const notDeployed = CONTRACTS.factory === "0x0000000000000000000000000000000000000000";
+  const loc = useLocation();
+  // Designer's brand splash and the full-page launch wizard render bare (no app chrome).
+  if (loc.pathname === "/") return <Landing />;
+  if (loc.pathname === "/create") return <Launch />;
   return (
-    <div className="app">
-      {/* desktop sidebar */}
-      <aside className="sidebar">
-        <Wordmark />
-        <NavLink to="/" end className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcHome /><span>home</span></NavLink>
-        <NavLink to="/board" className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcAdvanced /><span>board</span></NavLink>
-        <NavLink to="/token" className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcToken /><span>token</span><span className="soon">soon</span></NavLink>
-        <NavLink to="/profile" className={({ isActive }) => "side-link" + (isActive ? " active" : "")}><IcProfile /><span>profile</span></NavLink>
-        <span className="side-link disabled"><IcMore /><span>more</span></span>
-        <NavLink to="/create" className="side-cta">create coin</NavLink>
-        <div style={{ marginTop: "auto", paddingTop: 16 }}><ConnectBtn /></div>
-      </aside>
-
-      <div className="main">
-        {/* mobile top bar */}
-        <div className="topbar">
-          <Wordmark />
-          <div style={{ marginLeft: "auto" }}><ConnectBtn /></div>
-        </div>
-
-        <div className="content">
-          {notDeployed && (
-            <div className="banner">
-              dev: contracts not set — launches/trades are placeholder. deploy then set <code>VITE_FACTORY_ADDRESS</code> / <code>VITE_LOCKER_ADDRESS</code>.
-            </div>
-          )}
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/token" element={<Token />} />
-            <Route path="/board" element={<Advanced />} />
-            <Route path="/create" element={<Launch />} />
-            <Route path="/coin/:address" element={<Coin />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/profile/:address" element={<Profile />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-
-        {/* mobile bottom tab bar */}
-        <nav className="bottomnav">
-          <NavLink to="/" end className={({ isActive }) => "tab" + (isActive ? " active" : "")}><IcHome /><span>home</span></NavLink>
-          <NavLink to="/" className="tab"><IcSearch /><span>search</span></NavLink>
-          <NavLink to="/create" className="tab"><span className="tab-center"><IcPlus /></span><span>create</span></NavLink>
-          <NavLink to="/profile" className={({ isActive }) => "tab" + (isActive ? " active" : "")}><IcProfile /><span>profile</span></NavLink>
-        </nav>
-      </div>
-    </div>
+    <AppShell active={activeKey(loc.pathname)} topbar={<TopBar path={loc.pathname} />}>
+      <Routes>
+        <Route path="/home" element={<Home />} />
+        <Route path="/paper" element={<Paper />} />
+        <Route path="/board" element={<Advanced />} />
+        <Route path="/coin/:address" element={<Coin />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/profile/:address" element={<Profile />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
+      </Routes>
+    </AppShell>
   );
 }

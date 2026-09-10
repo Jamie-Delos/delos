@@ -29,14 +29,26 @@ export const CHAIN = defineChain({
 const zero = "0x0000000000000000000000000000000000000000" as Address;
 
 export const CONTRACTS = {
-  factory: (import.meta.env.VITE_FACTORY_ADDRESS ?? zero) as Address,
+  factory: (import.meta.env.VITE_FACTORY_ADDRESS ?? zero) as Address, // Prima (LaunchFactory)
+  factoryV2: (import.meta.env.VITE_FACTORY_V2_ADDRESS ?? zero) as Address, // Maxima (stock-dividend) launches
   locker: (import.meta.env.VITE_LOCKER_ADDRESS ?? zero) as Address,
+  curve: (import.meta.env.VITE_CURVE_ADDRESS ?? zero) as Address, // CensusCurve — the bonding-curve trading venue
+
   // Quote asset (the "WETH" side of every pool). Robinhood WETH by default; Arc = WUSDC via .env.
   weth: (import.meta.env.VITE_WETH ?? "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73") as Address,
   swapRouter: (import.meta.env.VITE_SWAP_ROUTER ?? "0xCaf681a66D020601342297493863E78C959E5cb2") as Address,
 };
 
-export const DEFAULT_FEE = 10000; // 1% tier — the launch standard
+export const DEFAULT_FEE = 10000; // 1% tier — the graduated pool standard
+
+// Optional: the deployed Census indexer API. When set, the board/coin pages read from it (fast, scales)
+// instead of scanning the chain in the browser. Empty => on-chain fallback. Flip this on once the
+// indexer is live on the company server + Postgres.
+export const INDEXER_URL = (import.meta.env.VITE_INDEXER_URL ?? "").replace(/\/$/, "");
+
+// Starting FDV (in ETH terms) baked into a new coin's curve. The curve's virtual quote reserve V0 is
+// this, converted to the quote asset (see lib/anchors.ts curveLaunchParams).
+export const START_FDV_ETH = 1.5;
 
 // Quote symbol for UI unit labels, and whether the DEX router's exactInputSingle takes a deadline
 // (Arc's UNITFLOW V3 is a v1-style SwapRouter that does; Robinhood's SwapRouter02 does not).

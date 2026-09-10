@@ -8,6 +8,7 @@ const hre = require("hardhat");
 const { ethers } = hre;
 const standardFor = require("./standards");
 const { computeLaunchParams, computeGraduationTick } = require("./lib/launchParams");
+const { grindSalt } = require("./lib/grindSalt");
 
 const FACTORY = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 const NFTDESC = require("@uniswap/v3-periphery/artifacts/contracts/libraries/NFTDescriptor.sol/NFTDescriptor.json");
@@ -63,14 +64,19 @@ async function main() {
   // --- 3. One-click launch (as the creator) --------------------------------
   const std = standardFor("robinhood"); // ETH-quoted standard
   const factoryAddr = await factory.getAddress();
-  const nonce = await ethers.provider.getTransactionCount(factoryAddr);
-  const predicted = ethers.getCreateAddress({ from: factoryAddr, nonce });
+  const supply = 1_000_000_000n * 10n ** 18n;
+  // Grind a CREATE2 vanity salt so the token deploys to a `…c0de` address; the deterministic
+  // address is also used for the tick geometry (token0/token1 ordering vs WETH).
+  const { salt, address: predicted, tries } = await grindSalt(factoryAddr, { name: "Devnet Doge", symbol: "DDOGE", totalSupply: supply, decimals: 18 });
+  console.log(`    [c0de] grinded a vanity salt in ${tries} tries -> ${predicted}`);
   const p = computeLaunchParams({ token: predicted, weth: WETH, tokenDecimals: 18, quoteDecimals: std.quoteDecimals, fee: std.fee, priceWethPerToken: std.launchPriceWethPerToken });
   const gradTick = computeGraduationTick({ token: predicted, weth: WETH, tokenDecimals: 18, quoteDecimals: std.quoteDecimals, graduationPriceWethPerToken: std.graduationPriceWethPerToken });
-  const supply = 1_000_000_000n * 10n ** 18n;
-  const rc = await (await factory.connect(creator).createLaunch({ name: "Devnet Doge", symbol: "DDOGE", totalSupply: supply, decimals: 18, fee: std.fee, sqrtPriceX96: p.sqrtPriceX96, tickLower: p.tickLower, tickUpper: p.tickUpper, graduationTick: gradTick })).wait();
+  const rc = await (await factory.connect(creator).createLaunch({ name: "Devnet Doge", symbol: "DDOGE", totalSupply: supply, decimals: 18, fee: std.fee, sqrtPriceX96: p.sqrtPriceX96, tickLower: p.tickLower, tickUpper: p.tickUpper, graduationTick: gradTick }, salt)).wait();
   const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((x) => x && x.name === "Launched");
   const token = ev.args.token, tokenId = ev.args.tokenId;
+  if (token.toLowerCase() !== predicted.toLowerCase()) throw new Error("[c0de] deployed != predicted vanity address");
+  if ((BigInt(token) & 0xffffn) !== 0xc0den) throw new Error("[c0de] token address does not end c0de: " + token);
+  console.log("    [c0de] verified on-chain: deployed at the predicted vanity address, ends", token.slice(-6));
   console.log("\n[3] Launched 'Devnet Doge' ($DDOGE)  — token:", token.slice(0, 10), "pool:", ev.args.pool.slice(0, 10), "liquidity:", ev.args.liquidity.toString());
   console.log("    graduated?", await locker.isGraduated(tokenId), "(fresh launch → creator keeps 100% of fees)");
 
@@ -88,6 +94,13 @@ async function main() {
     console.log(`    ${label}: creator +${eth(cg)} WETH | vault +${eth(vg)} WETH`);
     return { cg, vg };
   };
+
+  // --- anti-snipe: an oversized buy inside the restriction window is rejected ---
+  let sniped = false;
+  try { await buy("0.1"); } catch { sniped = true; }
+  console.log("\n[3b] anti-snipe: oversized buy inside window rejected?", sniped, "(expect true — capped at 1%/wallet)");
+  if (!sniped) throw new Error("anti-snipe FAILED: oversized in-window buy was not blocked");
+  await ethers.provider.send("hardhat_mine", ["0x65"]); // fast-forward past the ~100-block window
 
   // --- 4. Lifecycle --------------------------------------------------------
   console.log("\n[4] pre-graduation buy: 0.02 WETH");

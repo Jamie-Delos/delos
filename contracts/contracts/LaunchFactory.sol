@@ -3,96 +3,85 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {LaunchToken} from "./LaunchToken.sol";
-import {LaunchLocker} from "./LaunchLocker.sol";
-import {INonfungiblePositionManager} from "./interfaces/IUniswap.sol";
 
-/// @title LaunchFactory
-/// @notice Deploys a fixed-supply ERC-20 and opens a single-sided Uniswap V3 position for it
-///         in one transaction, then locks the LP NFT forever in the LaunchLocker.
-///
-/// @dev Tick math is done OFF-CHAIN by the caller (see scripts/lib/launchParams.js). The caller
-///      passes a `sqrtPriceX96` starting price and a `[tickLower, tickUpper]` range placed entirely
-///      on the sell side of that price, so the position is 100% token / 0% WETH ("single-sided").
+interface ICensusCurve {
+    function register(
+        address coin, address quote, address creator, address vault, uint16 holdersBps,
+        uint24 poolFee, uint256 virtualQuote, uint256 tokenSupply, uint256 graduationQuote
+    ) external;
+}
+
+/// @title LaunchFactory (Prima / v1)
+/// @notice Deploys a fixed-supply ERC-20 and seeds the WHOLE supply into the CensusCurve bonding curve
+///         in one transaction. There is no DEX pool at launch — trading happens on the curve (an
+///         un-dodgeable 2% fee, because there is nowhere else to trade) until the curve fills its
+///         graduation reserve, at which point the curve migrates the tokens + raised quote into a
+///         permanently-locked Uniswap V3 pool. Every Census token address ends in `…c0de`.
 contract LaunchFactory {
-    INonfungiblePositionManager public immutable npm;
-    address public immutable weth;
-    LaunchLocker public immutable locker;
+    address public immutable weth;  // default quote asset
+    address public immutable curve; // CensusCurve — the trading venue
+
+    // Anti-snipe defaults (armed on the curve; window is in blocks — ~10s at Robinhood Chain's ~0.1s blocks).
+    uint256 private constant ANTISNIPE_WINDOW = 100;
+    uint16 private constant ANTISNIPE_MAX_WALLET_BPS = 200; // 2% max wallet during the window
+    uint16 private constant ANTISNIPE_MAX_BUY_BPS = 100;    // 1% cumulative buy per wallet during the window
 
     struct LaunchParams {
         string name;
         string symbol;
-        uint256 totalSupply; // in base units (already scaled by decimals)
-        uint8 decimals;
-        uint24 fee; // Uniswap V3 fee tier: 500 / 3000 / 10000
-        uint160 sqrtPriceX96; // starting price, ordered as token1/token0
-        int24 tickLower;
-        int24 tickUpper;
-        int24 graduationTick; // tick at which the token graduates (fees flip 100% -> 80/20)
+        uint256 totalSupply;      // base units (e.g. 1_000_000_000 * 10**18)
+        uint8 decimals;           // 18
+        uint24 poolFee;           // Uniswap V3 fee tier for the graduated pool
+        uint256 virtualQuote;     // V0 — the curve's virtual quote reserve ≈ starting FDV (in quote)
+        uint256 graduationQuote;  // graduate once the curve has raised this much quote (e.g. 4 ETH)
     }
 
-    event Launched(
-        address indexed token,
-        address indexed creator,
-        address pool,
-        uint256 tokenId,
-        uint128 liquidity
-    );
+    event Launched(address indexed token, address indexed creator, address curve, uint256 virtualQuote, uint256 graduationQuote);
 
-    constructor(address npm_, address weth_, address locker_) {
-        npm = INonfungiblePositionManager(npm_);
+    constructor(address weth_, address curve_) {
+        require(weth_ != address(0) && curve_ != address(0), "zero");
         weth = weth_;
-        locker = LaunchLocker(locker_);
+        curve = curve_;
     }
 
-    function createLaunch(LaunchParams calldata p)
-        external
-        returns (address token, address pool, uint256 tokenId)
+    /// @dev Default entrypoint: ETH-quoted, no launch-bundle exemptions. Back-compatible arity.
+    function createLaunch(LaunchParams calldata p, bytes32 salt) external returns (address token) {
+        return createLaunch(p, salt, weth, new address[](0));
+    }
+
+    /// @notice Launch quoted in `quote` (WETH default, or e.g. HOOD).
+    /// @param salt CREATE2 salt; bytes32(0) for a plain deploy, or a grinded salt for a `…c0de` address.
+    /// @param exemptBuyers addresses exempt from the anti-snipe (a creator-authorised launch bundle, e.g.
+    ///        Sumo's block-0 wallets) — the Pons-V2-style "factory exemption list".
+    function createLaunch(LaunchParams calldata p, bytes32 salt, address quote, address[] memory exemptBuyers)
+        public
+        returns (address token)
     {
-        // 1. Deploy the token; whole supply is minted to this factory.
-        LaunchToken launchToken =
-            new LaunchToken(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
-        token = address(launchToken);
+        address q = quote == address(0) ? weth : quote;
 
-        // 2. Determine canonical Uniswap ordering.
-        (address token0, address token1) =
-            token < weth ? (token, weth) : (weth, token);
-        bool tokenIsToken0 = token == token0;
+        // 1. Deploy the token; whole supply mints to this factory. A grinded salt enforces `…c0de`.
+        LaunchToken t;
+        if (salt == bytes32(0)) {
+            t = new LaunchToken(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
+        } else {
+            t = new LaunchToken{salt: salt}(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
+            require((uint160(address(t)) & 0xFFFF) == 0xC0DE, "not a census address");
+        }
+        token = address(t);
 
-        // 3. Create + initialize the pool at the starting price.
-        pool = npm.createAndInitializePoolIfNecessary(token0, token1, p.fee, p.sqrtPriceX96);
+        // 2. Seed the whole supply into the curve (before arming anti-snipe, so this move isn't caught).
+        IERC20(token).transfer(curve, p.totalSupply);
 
-        // 4. Mint the single-sided position (all TOKEN, zero WETH) to the locker.
-        IERC20(token).approve(address(npm), p.totalSupply);
+        // 3. Arm anti-snipe with the CURVE as the "pool" (curve -> wallet = a buy). The creator and any
+        //    exempt launch-bundle wallets can buy at block 0; everyone else faces the ~10s fair window.
+        address[] memory exempt = new address[](1 + exemptBuyers.length);
+        exempt[0] = msg.sender;
+        for (uint256 i; i < exemptBuyers.length; i++) exempt[i + 1] = exemptBuyers[i];
+        t.initAntiSnipe(curve, ANTISNIPE_WINDOW, ANTISNIPE_MAX_WALLET_BPS, ANTISNIPE_MAX_BUY_BPS, address(0), exempt);
 
-        uint256 amount0Desired = tokenIsToken0 ? p.totalSupply : 0;
-        uint256 amount1Desired = tokenIsToken0 ? 0 : p.totalSupply;
+        // 4. Register the curve. Prima pays the creator (no holders vault).
+        ICensusCurve(curve).register(token, q, msg.sender, address(0), 0, p.poolFee, p.virtualQuote, p.totalSupply, p.graduationQuote);
 
-        uint128 liquidity;
-        (tokenId, liquidity, , ) = npm.mint(
-            INonfungiblePositionManager.MintParams({
-                token0: token0,
-                token1: token1,
-                fee: p.fee,
-                tickLower: p.tickLower,
-                tickUpper: p.tickUpper,
-                amount0Desired: amount0Desired,
-                amount1Desired: amount1Desired,
-                amount0Min: 0,
-                amount1Min: 0,
-                recipient: address(locker),
-                deadline: block.timestamp
-            })
-        );
-
-        // 5. Sweep any token dust the position rounding left behind to the creator, so nothing
-        //    is stranded in the factory.
-        uint256 leftover = IERC20(token).balanceOf(address(this));
-        if (leftover > 0) IERC20(token).transfer(msg.sender, leftover);
-
-        // 6. Register the lock so fees route to the creator (and flip to 80/20 at graduation).
-        //    feeRecipient = 0 => protocol share goes to the global FeeVault (v1 behaviour).
-        locker.register(tokenId, msg.sender, token0, token1, pool, p.graduationTick, tokenIsToken0, address(0));
-
-        emit Launched(token, msg.sender, pool, tokenId, liquidity);
+        emit Launched(token, msg.sender, curve, p.virtualQuote, p.graduationQuote);
     }
 }
