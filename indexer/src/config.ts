@@ -17,3 +17,8 @@ export const cfg = {
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   ethUsd: Number(process.env.ETH_USD ?? 3000),
 };
+
+if (!Number.isSafeInteger(cfg.chainId) || cfg.chainId <= 0 || !Number.isFinite(cfg.pollMs) || cfg.pollMs < 500 || cfg.logPage <= 0n || cfg.logPage > 5000n || cfg.startBlock < 0n) {
+  throw new Error("Invalid CHAIN_ID, POLL_MS, LOG_PAGE or START_BLOCK");
+}
+if (!/^0x[0-9a-f]{40}$/.test(cfg.curve)) throw new Error("Invalid CURVE_ADDRESS");

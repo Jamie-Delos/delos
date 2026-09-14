@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface ISwapRouter02 {
     struct ExactInputSingleParams {
@@ -66,6 +67,10 @@ contract DividendVault is ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public rewardDebt; // stock => holder => acc "paid up to" (balance×accPerShare/PREC at last settle)
     mapping(address => mapping(address => uint256)) public settled;    // stock => holder => harvested, not-yet-withdrawn dividends
     mapping(address => mapping(address => uint256)) public withdrawn;  // stock => holder => total withdrawn
+    // Reserved payouts include rounding dust. They can never fund another distribution.
+    mapping(address => uint256) public reserved;
+    mapping(address => mapping(address => uint256)) private debtFraction;
+    mapping(address => mapping(address => uint256)) private earnedFraction;
 
     bool private inited;
     address public operator; // only address allowed to run distribute() (supplies off-chain slippage bounds)
@@ -82,10 +87,26 @@ contract DividendVault is ReentrancyGuard {
         bytes[] memory paths_,
         address allowanceHolder_
     ) {
+        require(quote_.code.length > 0 && router_.code.length > 0, "contracts");
         require(basket_.length >= 1 && basket_.length <= 4 && basket_.length == weights_.length, "basket");
         require(paths_.length == basket_.length, "paths");
         uint256 sum;
-        for (uint256 i; i < weights_.length; i++) sum += weights_[i];
+        for (uint256 i; i < weights_.length; i++) {
+            require(basket_[i].code.length > 0 && weights_[i] > 0, "asset");
+            for (uint256 j; j < i; j++) require(basket_[i] != basket_[j], "duplicate");
+            bytes memory route = paths_[i];
+            if (route.length > 0) {
+                require(basket_[i] != quote_ && route.length >= 43 && (route.length - 20) % 23 == 0, "route");
+                address first;
+                address last;
+                assembly ("memory-safe") {
+                    first := shr(96, mload(add(route, 32)))
+                    last := shr(96, mload(add(add(route, 32), sub(mload(route), 20))))
+                }
+                require(first == quote_ && last == basket_[i], "endpoints");
+            }
+            sum += weights_[i];
+        }
         require(sum == 10_000, "weights");
         factory = msg.sender;
         quote = quote_;
@@ -100,6 +121,7 @@ contract DividendVault is ReentrancyGuard {
     /// @notice Wired once by the factory: the token to distribute to, and the addresses to exclude.
     function init(address token_, address[] calldata excluded_, address operator_) external {
         require(msg.sender == factory && !inited, "init");
+        require(token_.code.length > 0 && operator_ != address(0), "zero");
         inited = true;
         token = token_;
         operator = operator_;
@@ -115,6 +137,7 @@ contract DividendVault is ReentrancyGuard {
     ///         off-chain-computed minimum outputs so the basket swaps can't be sandwiched.
     function setOperator(address newOperator) external {
         require(msg.sender == operator, "not operator");
+        require(newOperator != address(0), "zero");
         operator = newOperator;
     }
 
@@ -153,8 +176,8 @@ contract DividendVault is ReentrancyGuard {
     /// @notice Called by the launch token on every transfer (post balance update). Harvests each
     ///         side's dividends earned on the balance they held since their last settle, then re-bases
     ///         their rewardDebt to their NEW balance — so future distributions only credit tokens held
-    ///         going forward. This is what stops "buy, then claim the past" draining. No external calls,
-    ///         cannot revert under normal use (so it can never brick token transfers).
+    ///         going forward. Fractional debt is retained so repeated dust transfers cannot manufacture
+    ///         whole-unit rewards. The token's balanceOf is read here; arithmetic failures revert.
     function onTokenTransfer(address from, address to, uint256 value) external {
         require(msg.sender == token, "only token");
         if (from == to || value == 0) return;
@@ -172,26 +195,46 @@ contract DividendVault is ReentrancyGuard {
         for (uint256 i; i < len; i++) {
             address s = basket[i];
             uint256 aps = accPerShare[s];
-            uint256 accPre = (preBalance * aps) / PREC; // acc on the balance held since last settle
-            uint256 debt = rewardDebt[s][account];      // acc paid up to at last settle (accPerShare is monotonic => accPre >= debt)
-            if (accPre > debt) settled[s][account] += accPre - debt;
-            rewardDebt[s][account] = (postBalance * aps) / PREC; // re-base to the NEW balance
+            (uint256 units, uint256 fraction) = _earned(account, s, preBalance);
+            settled[s][account] += units;
+            earnedFraction[s][account] = fraction;
+            rewardDebt[s][account] = Math.mulDiv(postBalance, aps, PREC);
+            debtFraction[s][account] = mulmod(postBalance, aps, PREC);
         }
+    }
+
+    function _earned(address account, address s, uint256 balance) internal view returns (uint256 units, uint256 fraction) {
+        uint256 aps = accPerShare[s];
+        units = Math.mulDiv(balance, aps, PREC) - rewardDebt[s][account];
+        uint256 rem = mulmod(balance, aps, PREC);
+        uint256 debt = debtFraction[s][account];
+        if (rem < debt) { units -= 1; rem += PREC; }
+        fraction = rem - debt + earnedFraction[s][account];
+        units += fraction / PREC;
+        fraction %= PREC;
+    }
+
+    function availableQuote() public view returns (uint256) {
+        return IERC20(quote).balanceOf(address(this)) - reserved[quote];
+    }
+
+    function _credit(address s, uint256 got, uint256 elig) internal {
+        reserved[s] += got;
+        accPerShare[s] += Math.mulDiv(got, PREC, elig);
     }
 
     /// @notice Convert all accumulated quote fees into the stock basket and credit holders per-share.
     /// @param minOut per-stock minimum output (computed off-chain from a fair price) — the swap reverts
-    ///        if the pool would give less, so the conversion can't be sandwiched.
+    ///        if the pool would give less. A minimum output bounds loss; it does not eliminate MEV.
     function distribute(uint256[] calldata minOut) external nonReentrant returns (uint256 spent) {
         require(msg.sender == operator, "not operator");
         require(minOut.length == basket.length, "minOut");
-        uint256 amt = IERC20(quote).balanceOf(address(this));
+        uint256 amt = availableQuote();
         uint256 elig = eligibleSupply();
         if (amt == 0 || elig == 0) return 0;
 
-        IERC20(quote).forceApprove(address(router), amt);
         for (uint256 i; i < basket.length; i++) {
-            uint256 portion = (amt * weights[i]) / 10_000;
+            uint256 portion = Math.mulDiv(amt, weights[i], 10_000);
             if (portion == 0) continue;
             bytes memory route = paths[i];
             uint256 got;
@@ -199,29 +242,39 @@ contract DividendVault is ReentrancyGuard {
                 // Anchor-paid dividend: fees are already in the payout asset (e.g. a HOOD-paired coin
                 // pays holders HOOD). No swap needed — credit the portion straight through.
                 got = portion;
-            } else if (route.length > 0) {
-                got = router.exactInput(
-                    ISwapRouter02.ExactInputParams({
-                        path: route,
-                        recipient: address(this),
-                        amountIn: portion,
-                        amountOutMinimum: minOut[i]
-                    })
-                );
             } else {
-                got = router.exactInputSingle(
-                    ISwapRouter02.ExactInputSingleParams({
-                        tokenIn: quote,
-                        tokenOut: basket[i],
-                        fee: swapFee,
-                        recipient: address(this),
-                        amountIn: portion,
-                        amountOutMinimum: minOut[i],
-                        sqrtPriceLimitX96: 0
-                    })
-                );
+                require(minOut[i] > 0, "minOut");
+                uint256 beforeQuote = IERC20(quote).balanceOf(address(this));
+                uint256 beforeStock = IERC20(basket[i]).balanceOf(address(this));
+                IERC20(quote).forceApprove(address(router), portion);
+                if (route.length > 0) {
+                    router.exactInput(
+                        ISwapRouter02.ExactInputParams({
+                            path: route,
+                            recipient: address(this),
+                            amountIn: portion,
+                            amountOutMinimum: minOut[i]
+                        })
+                    );
+                } else {
+                    router.exactInputSingle(
+                        ISwapRouter02.ExactInputSingleParams({
+                            tokenIn: quote,
+                            tokenOut: basket[i],
+                            fee: swapFee,
+                            recipient: address(this),
+                            amountIn: portion,
+                            amountOutMinimum: minOut[i],
+                            sqrtPriceLimitX96: 0
+                        })
+                    );
+                }
+                IERC20(quote).forceApprove(address(router), 0);
+                require(beforeQuote - IERC20(quote).balanceOf(address(this)) == portion, "spent");
+                got = IERC20(basket[i]).balanceOf(address(this)) - beforeStock;
             }
-            accPerShare[basket[i]] += (got * PREC) / elig;
+            require(got >= minOut[i], "minOut");
+            _credit(basket[i], got, elig);
             spent += portion;
         }
         emit Distributed(spent);
@@ -236,7 +289,7 @@ contract DividendVault is ReentrancyGuard {
     ///             entry point), never an address the API hands back — so opaque calldata can't retarget us;
     ///           - the quote allowance is set to the EXACT sellAmount and reset to 0 right after the call;
     ///           - the stock credited is the measured balance delta, and the swap reverts unless it clears
-    ///             `minOut` — so a bad or rogue quote can only grief (revert), never drain the vault.
+    ///             positive `minOut`. The operator still chooses price bounds and must be trusted.
     ///         The Uniswap `distribute()` above stays as the fallback if 0x is unavailable.
     function distributeVia0x(uint256[] calldata sellAmounts, bytes[] calldata swapData, uint256[] calldata minOut)
         external
@@ -250,24 +303,32 @@ contract DividendVault is ReentrancyGuard {
         uint256 elig = eligibleSupply();
         if (elig == 0) return 0;
 
-        uint256 total;
-        for (uint256 i; i < len; i++) total += sellAmounts[i];
-        require(total <= IERC20(quote).balanceOf(address(this)), "oversell");
+        uint256 available = availableQuote();
 
         for (uint256 i; i < len; i++) {
             uint256 sell = sellAmounts[i];
-            if (sell == 0 || swapData[i].length == 0) continue;
+            require(sell == Math.mulDiv(available, weights[i], 10_000), "allocation");
+            if (sell == 0) continue;
             address s = basket[i];
+            if (s == quote) {
+                require(swapData[i].length == 0 && sell >= minOut[i], "passthrough");
+                _credit(s, sell, elig);
+                spent += sell;
+                continue;
+            }
+            require(swapData[i].length > 0 && minOut[i] > 0, "swap");
             uint256 pre = IERC20(s).balanceOf(address(this));
+            uint256 preQuote = IERC20(quote).balanceOf(address(this));
 
             IERC20(quote).forceApprove(allowanceHolder, sell);
             (bool ok, ) = allowanceHolder.call(swapData[i]);
             require(ok, "0x swap failed");
             IERC20(quote).forceApprove(allowanceHolder, 0); // never leave a standing allowance
+            require(preQuote - IERC20(quote).balanceOf(address(this)) == sell, "spent");
 
             uint256 got = IERC20(s).balanceOf(address(this)) - pre;
             require(got >= minOut[i], "minOut");
-            accPerShare[s] += (got * PREC) / elig;
+            _credit(s, got, elig);
             spent += sell;
         }
         emit Distributed(spent);
@@ -276,10 +337,7 @@ contract DividendVault is ReentrancyGuard {
     /// @notice Dividends of `stock` the holder can withdraw right now = (harvested + accrued-since-last-settle) − withdrawn.
     function withdrawableOf(address holder, address stock) public view returns (uint256) {
         if (excluded[holder]) return 0;
-        uint256 aps = accPerShare[stock];
-        uint256 acc = (IERC20(token).balanceOf(holder) * aps) / PREC; // acc on current balance
-        uint256 debt = rewardDebt[stock][holder];
-        uint256 unsettled = acc > debt ? acc - debt : 0;              // earned since the last settle
+        (uint256 unsettled,) = _earned(holder, stock, IERC20(token).balanceOf(holder));
         uint256 total = settled[stock][holder] + unsettled;
         uint256 w = withdrawn[stock][holder];
         return total > w ? total - w : 0;
@@ -293,11 +351,9 @@ contract DividendVault is ReentrancyGuard {
             address s = basket[i];
             uint256 amt = withdrawableOf(msg.sender, s);
             if (amt == 0) continue;
-            // Cap at the vault's live balance so per-share rounding dust can never make a claim
-            // revert; any (sub-wei-scale) remainder stays owed and is paid from the next distribution.
-            uint256 bal = IERC20(s).balanceOf(address(this));
-            if (amt > bal) amt = bal;
-            if (amt == 0) continue;
+            // Never hide a reserve deficit by paying the first claimant preferentially.
+            require(IERC20(s).balanceOf(address(this)) >= reserved[s], "insolvent");
+            reserved[s] -= amt;
             withdrawn[s][msg.sender] += amt;
             IERC20(s).safeTransfer(msg.sender, amt);
             emit Claimed(msg.sender, s, amt);

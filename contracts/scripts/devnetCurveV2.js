@@ -35,6 +35,7 @@ async function dep(signer, art, bc, args = []) {
 }
 
 async function main() {
+  if (hre.network.name !== "hardhat") throw new Error("Local rehearsal only");
   const [deployer, platform, creator, buyer1, buyer2, , attacker] = await ethers.getSigners();
   console.log("=== Maxima-on-curve proof (stock-dividend basket) ===");
 
@@ -103,7 +104,9 @@ async function main() {
   console.log("    ✓ holder fee routed from the CURVE to the vault pre-graduation (no pool involved)");
 
   // --- distribute -> basket -> holders claim pro-rata ---
-  await (await vault.connect(creator).distribute([0, 0])).wait();
+  // Local pools above are deliberately deep and seeded 1:1; allow 1% for fee + price impact.
+  const half = (await vault.availableQuote()) / 2n;
+  await (await vault.connect(creator).distribute([half * 99n / 100n, half * 99n / 100n])).wait();
   const tslaBought = await tslaT.balanceOf(vaultAddr), costBought = await costT.balanceOf(vaultAddr);
   console.log("[5] vault bought basket — TSLA:", f(tslaBought), "COST (via WETH→USDG→COST):", f(costBought));
   if (tslaBought === 0n || costBought === 0n) throw new Error("basket swap failed");
@@ -131,10 +134,16 @@ async function main() {
   await (await weth.deposit({ value: E(2) })).wait();
   await (await uni.exactInputSingle([WETH, token, 10000, deployer.address, E(1), 0, 0])).wait();
   const tid = (await curve.queryFilter(curve.filters.Graduated(token)))[0].args.tokenId;
+  const beforeCollection = await weth.balanceOf(vaultAddr);
   await (await locker.collectFees(tid)).wait();
   const postVaultWeth = await weth.balanceOf(vaultAddr);
-  console.log("    post-grad: vault WETH from pool LP fees:", f(postVaultWeth), "(> 0 -> Maxima keeps paying after graduation)");
-  if (postVaultWeth === 0n) throw new Error("post-grad vault got no LP fee share");
+  const lpIncome = postVaultWeth - beforeCollection;
+  console.log("    post-grad: additional vault WETH from pool LP fees:", f(lpIncome));
+  if (lpIncome === 0n) throw new Error("post-grad vault got no LP fee share");
+  const postHalf = (await vault.availableQuote()) / 2n;
+  await (await vault.connect(creator).distribute([postHalf * 99n / 100n, postHalf * 99n / 100n])).wait();
+  for (const holder of [buyer1, buyer2, attacker, deployer]) await (await vault.connect(holder).claim()).wait();
+  console.log("    post-grad basket converted and claimed by all four holders");
 
   console.log("\n=== Maxima-on-curve proof complete ✓ ===");
 }

@@ -1,0 +1,46 @@
+// Explicit opt-in. Public RPC reads only; all deployment/trades are on the LOCAL Hardhat fork.
+const { expect } = require('chai');
+const { ethers, network } = require('hardhat');
+const a = require('../scripts/addresses').robinhood;
+const E = ethers.parseEther;
+const suite = process.env.AUDIT_MAINNET_FORK === '1' ? describe : describe.skip;
+suite('Local fork lifecycle against configured mainnet Uniswap dependencies', function () {
+  this.timeout(180000);
+  it('launches, trades, claims a dividend, graduates and trades the migrated pool locally', async () => {
+    if (network.name !== 'hardhat') throw new Error('LOCAL HARDHAT ONLY');
+    const rpc = 'https://rpc.mainnet.chain.robinhood.com';
+    const response = await fetch(rpc, { method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}),signal:AbortSignal.timeout(15000) });
+    const body = await response.json(); if (!body.result) throw new Error('missing fork block');
+    const blockNumber = Number(BigInt(body.result));
+    await network.provider.send('hardhat_reset',[{forking:{jsonRpcUrl:rpc,blockNumber}}]);
+    console.log('      mainnet dependency state pinned at block',blockNumber,'; transactions LOCAL ONLY');
+    const [owner,platform,creator,buyer,other] = await ethers.getSigners();
+    const deploy=async(name,...args)=>{const c=await(await ethers.getContractFactory(name)).deploy(...args);await c.waitForDeployment();return c;};
+    const locker=await deploy('LaunchLocker',a.NonfungiblePositionManager,platform.address,2500);
+    const curve=await deploy('CensusCurve',a.NonfungiblePositionManager,platform.address,locker.target,a.WETH,a.SwapRouter02);
+    await locker.initFactory(curve.target);
+    const factory=await deploy('LaunchFactoryV2',a.WETH,curve.target,a.SwapRouter02,3000,ethers.ZeroAddress);
+    await curve.setFactory(factory.target,true);
+    const rc=await(await factory.connect(creator)['createLaunch((string,string,uint256,uint8,uint24,uint256,uint256),address[],uint16[],bytes[],bytes32)'](['Audit fork','AFORK',E('1000000000'),18,10000,E('1.5'),E('4')],[a.WETH],[10000],['0x'],ethers.ZeroHash)).wait();
+    const ev=rc.logs.map(l=>{try{return factory.interface.parseLog(l);}catch{return null;}}).find(x=>x?.name==='LaunchedV2');
+    const token=await ethers.getContractAt('LaunchToken',ev.args.token),vault=await ethers.getContractAt('DividendVault',ev.args.vault);
+    const weth=new ethers.Contract(a.WETH,['function deposit() payable','function approve(address,uint256) returns(bool)','function balanceOf(address) view returns(uint256)'],buyer);
+    await network.provider.send('hardhat_mine',['0x65']);
+    await curve.connect(buyer).buyWithETH(token.target,0,{value:E('5')});
+    await vault.connect(creator).distribute([0]);
+    const before=await weth.balanceOf(buyer.address); await vault.connect(buyer).claim(); expect(await weth.balanceOf(buyer.address)).to.be.gt(before);
+    const graduation=await(await curve.graduate(token.target)).wait();
+    const ge=graduation.logs.map(l=>{try{return curve.interface.parseLog(l);}catch{return null;}}).find(x=>x?.name==='Graduated');
+    expect((await curve.curves(token.target)).graduated).to.equal(true);
+    const router=new ethers.Contract(a.SwapRouter02,['function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns(uint256)'],other);
+    await weth.connect(other).deposit({value:E('.01')}); await weth.connect(other).approve(a.SwapRouter02,E('.01'));
+    await router.exactInputSingle([a.WETH,token.target,10000,other.address,E('.01'),0,0]);
+    expect(await token.balanceOf(other.address)).to.be.gt(0);
+    const recipients=[platform.address,creator.address,vault.target];
+    const feesBefore=await Promise.all(recipients.map(w=>weth.balanceOf(w)));
+    await locker.collectFees(ge.args.tokenId);
+    const deltas=await Promise.all(recipients.map(async(w,i)=>(await weth.balanceOf(w))-feesBefore[i]));
+    expect(deltas[0]).to.be.gt(0);expect(deltas[1]).to.equal(0);expect(deltas[2]).to.be.closeTo(deltas[0]*3n,3n);
+    console.log('      lifecycle and repaired platform/holder split verified');
+  });
+});

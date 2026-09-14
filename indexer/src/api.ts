@@ -5,8 +5,17 @@ import { prisma } from "./db.js";
 import { cfg } from "./config.js";
 import { bus, type Update } from "./bus.js";
 import { serializeCoin } from "./ingest.js";
+import { ingestion } from "./status.js";
+import rateLimit from "@fastify/rate-limit";
 
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+function limitOf(value: string | undefined, fallback: number, maximum: number) {
+  if (value === undefined) return fallback;
+  const n = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(n) || n < 1 || n > maximum) {
+    throw Object.assign(new Error(`limit must be an integer from 1 to ${maximum}`), { statusCode: 400 });
+  }
+  return n;
+}
 const serializeTrade = (t: any) => ({
   coin: t.coinAddress, trader: t.trader, isBuy: t.isBuy,
   amountIn: t.amountIn, amountOut: t.amountOut, fee: t.fee,
@@ -14,17 +23,25 @@ const serializeTrade = (t: any) => ({
 });
 
 export async function runApi() {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, requestTimeout: 15000, bodyLimit: 16384 });
   await app.register(cors, { origin: cfg.corsOrigin });
   await app.register(websocket);
+  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
 
-  app.get("/health", async () => ({ ok: true, chainId: cfg.chainId, curve: cfg.curve }));
+  app.get("/live", async () => ({ ok: true }));
+  app.get("/health", async (_req, reply) => {
+    let database = false;
+    try { await prisma.$queryRaw`SELECT 1`; database = true; } catch { /* unavailable */ }
+    const ok = database && !ingestion.error && Date.now() - ingestion.lastSuccessAt < Math.max(60000, cfg.pollMs * 3);
+    return reply.code(ok ? 200 : 503).send({ ok, database, chainId: cfg.chainId, curve: cfg.curve, finalizedBlock: ingestion.lastBlock, ingestionError: ingestion.error });
+  });
 
   // Board: list coins. sort=new|mcap|volume, optional graduated filter.
   app.get("/coins", async (req) => {
     const q = req.query as Record<string, string>;
-    const limit = clamp(Number(q.limit ?? 50), 1, 200);
+    const limit = limitOf(q.limit, 50, 200);
     const sort = q.sort ?? "new";
+    if (!["new", "mcap", "volume", "active"].includes(sort) || q.graduated !== undefined && !["true", "false"].includes(q.graduated)) throw Object.assign(new Error("invalid filter"), { statusCode: 400 });
     const orderBy =
       sort === "mcap" ? { marketCapUsd: "desc" as const }
       : sort === "volume" ? { volumeQuote: "desc" as const }
@@ -45,7 +62,7 @@ export async function runApi() {
   app.get("/coins/:address/trades", async (req) => {
     const { address } = req.params as { address: string };
     const q = req.query as Record<string, string>;
-    const limit = clamp(Number(q.limit ?? 50), 1, 200);
+    const limit = limitOf(q.limit, 50, 200);
     const rows = await prisma.trade.findMany({
       where: { coinAddress: address.toLowerCase() }, orderBy: { ts: "desc" }, take: limit,
     });
@@ -55,11 +72,11 @@ export async function runApi() {
   app.get("/coins/:address/chart", async (req) => {
     const { address } = req.params as { address: string };
     const q = req.query as Record<string, string>;
-    const limit = clamp(Number(q.limit ?? 500), 1, 2000);
+    const limit = limitOf(q.limit, 500, 2000);
     const rows = await prisma.pricePoint.findMany({
-      where: { coinAddress: address.toLowerCase() }, orderBy: { ts: "asc" }, take: limit,
+      where: { coinAddress: address.toLowerCase() }, orderBy: [{ ts: "desc" }, { id: "desc" }], take: limit,
     });
-    return { points: rows.map((p) => ({ t: p.ts, priceQuote: p.priceQuote, priceUsd: p.priceUsd })) };
+    return { points: rows.reverse().map((p) => ({ t: p.ts, priceQuote: p.priceQuote, priceUsd: p.priceUsd })) };
   });
 
   app.get("/stats", async () => {
@@ -72,9 +89,14 @@ export async function runApi() {
 
   // Live stream: new coins, trades, graduations.
   app.get("/ws", { websocket: true }, (socket) => {
-    const onUpdate = (u: Update) => { try { socket.send(JSON.stringify(u)); } catch { /* client gone */ } };
+    if (bus.listenerCount("update") >= 1000) { socket.close(1013, "capacity"); return; }
+    const onUpdate = (u: Update) => {
+      if (socket.bufferedAmount > 1024 * 1024) { socket.terminate(); return; }
+      try { socket.send(JSON.stringify(u)); } catch { socket.terminate(); }
+    };
     bus.on("update", onUpdate);
     socket.on("close", () => bus.off("update", onUpdate));
+    socket.on("error", () => { bus.off("update", onUpdate); socket.terminate(); });
     try { socket.send(JSON.stringify({ type: "hello", data: { chainId: cfg.chainId } })); } catch { /* noop */ }
   });
 

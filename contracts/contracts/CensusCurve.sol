@@ -8,9 +8,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool, ISwapRouter} from "./interfaces/IUniswap.sol";
 
 interface ILauncherLocker {
-    function register(
+    function registerGraduated(
         uint256 tokenId, address creator, address token0, address token1, address pool,
-        int24 graduationTick, bool tokenIsToken0, address feeRecipient
+        bool tokenIsToken0, address vault, uint16 holdersBps
     ) external;
 }
 
@@ -24,11 +24,9 @@ interface IWETH {
 }
 
 /// @title CensusCurve
-/// @notice The bonding-curve venue for every Census coin — the answer to "how do Pons/Flap/pump.fun
-///         take a fee retail can't dodge." The whole supply mints straight into this contract; buys
-///         and sells trade against a constant-product curve here, NOT against any DEX pool, so there is
-///         no pool to route around: every trade — from our app, gmgn, fomo, an aggregator, anything —
-///         pays the 2% fee. When the curve fills to its graduation reserve, it deposits the remaining
+/// @notice The bonding-curve venue for Census coins. Trades executed here pay the 2% fee.
+///         Tokens remain transferable: external pools and OTC trades do not pay this curve's fee.
+///         When the curve fills to its graduation reserve, it deposits the remaining
 ///         tokens + the raised quote into a permanently-locked Uniswap V3 pool (the coin's home for
 ///         life) and stops.
 ///
@@ -45,6 +43,9 @@ contract CensusCurve is ReentrancyGuard {
     uint16 public constant FEE_BPS = 200;        // 2.00% trade fee
     uint16 public constant PROTOCOL_BPS = 2500;  // 25% of the fee -> platform; 75% -> creator side
     uint16 public constant BPS = 10_000;
+    uint16 public constant MIGRATION_MIN_BPS = 9_999; // retain at least 99.99% of each intended LP asset
+    mapping(address => uint256) public migrationTokenDust;
+    mapping(address => uint256) public migrationQuoteDust;
     int24 private constant MIN_TICK = -887272;
     int24 private constant MAX_TICK = 887272;
 
@@ -168,7 +169,9 @@ contract CensusCurve is ReentrancyGuard {
         if (!c.exists) revert UnknownCoin();
         if (c.graduated) revert AlreadyGraduated();
         require(quoteIn > 0, "amount");
+        uint256 beforeQuote = IERC20(c.quote).balanceOf(address(this));
         IERC20(c.quote).safeTransferFrom(msg.sender, address(this), quoteIn);
+        require(IERC20(c.quote).balanceOf(address(this)) - beforeQuote == quoteIn, "unsupported quote");
         return _buy(c, coin, quoteIn, minTokensOut);
     }
 
@@ -310,31 +313,28 @@ contract CensusCurve is ReentrancyGuard {
         (tokenId, , used0, used1) = npm.mint(
             INonfungiblePositionManager.MintParams({
                 token0: token0, token1: token1, fee: c.poolFee, tickLower: tickLower, tickUpper: tickUpper,
-                amount0Desired: amount0, amount1Desired: amount1, amount0Min: 0, amount1Min: 0,
+                amount0Desired: amount0, amount1Desired: amount1,
+                amount0Min: Math.mulDiv(amount0, MIGRATION_MIN_BPS, BPS),
+                amount1Min: Math.mulDiv(amount1, MIGRATION_MIN_BPS, BPS),
                 recipient: locker, deadline: block.timestamp
             })
         );
 
-        // Register with the locker as already-graduated (protocol takes its LP-fee share from block one
-        // of the pool): pass the pool's current tick as the graduation tick so isGraduated() is true now.
-        (, int24 tick, , , , , ) = IUniswapV3Pool(pool).slot0();
-        address feeRecipient = c.vault; // Maxima -> holders' vault; Prima -> 0 (global feeVault)
-        ILauncherLocker(locker).register(tokenId, c.creator, token0, token1, pool, tick, tokenIsToken0, feeRecipient);
+        ILauncherLocker(locker).registerGraduated(tokenId, c.creator, token0, token1, pool, tokenIsToken0, c.vault, c.holdersBps);
 
         // Maxima: the graduated pool holds LP token balance — exclude it from dividends so it can't accrue.
         if (c.vault != address(0)) IDividendVault(c.vault).excludeAddress(pool);
 
-        // Clear approvals and return THIS coin's own rounding leftovers (mint may use slightly less than
-        // desired) to the creator. Computed from the mint's reported amounts, so it never touches another
-        // coin's segregated reserves.
+        // Clear approvals and retain this coin's bounded leftovers separately from active reserves.
         IERC20(coin).forceApprove(address(npm), 0);
         IERC20(c.quote).forceApprove(address(npm), 0);
         uint256 leftToken = tokenAmt - (tokenIsToken0 ? used0 : used1);
         uint256 leftQuote = quoteAmt - (tokenIsToken0 ? used1 : used0);
-        if (leftToken > 0) IERC20(coin).safeTransfer(c.creator, leftToken);
-        if (leftQuote > 0) IERC20(c.quote).safeTransfer(c.creator, leftQuote);
+        // Retain and identify bounded rounding dust; the creator has no reserve-refund entitlement.
+        migrationTokenDust[coin] = leftToken;
+        migrationQuoteDust[coin] = leftQuote;
 
-        emit Graduated(coin, pool, tokenId, tokenAmt, quoteAmt);
+        emit Graduated(coin, pool, tokenId, tokenAmt - leftToken, quoteAmt - leftQuote);
     }
 
     function _fullRange(uint24 fee) internal pure returns (int24 lower, int24 upper) {

@@ -43,7 +43,7 @@ describe("DividendVault — HOOD-quoted coin pays a stock basket (unified model)
 
     // 10 HOOD of holder fees arrive at the vault, then distribute() swaps 60% -> NVDA, 40% -> AAPL.
     await (await hood.mint(await vault.getAddress(), E(10))).wait();
-    await (await vault.distribute([0, 0])).wait();
+    await (await vault.distribute([E(6), E(4)])).wait();
 
     // holderA holds 60% of supply -> 60% of each stock line (60% of 6 NVDA, 60% of 4 AAPL).
     expect(await vault.withdrawableOf(holderA.address, await stockA.getAddress())).to.equal(E(3.6));

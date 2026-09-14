@@ -40,9 +40,12 @@ contract LaunchLocker is IERC721Receiver, ReentrancyGuard {
     uint16 public constant BPS_DENOM = 10_000;
 
     mapping(uint256 => Lock) public locks; // tokenId => Lock
+    mapping(uint256 => bool) public curvePosition;
+    mapping(uint256 => uint16) public holdersBps;
 
     event Registered(uint256 indexed tokenId, address indexed creator, address token0, address token1);
     event Graduated(uint256 indexed tokenId);
+    event HolderFeesCollected(uint256 indexed tokenId, address indexed vault, uint256 amount0, uint256 amount1);
     event FeesCollected(
         uint256 indexed tokenId,
         address indexed creator,
@@ -85,6 +88,7 @@ contract LaunchLocker is IERC721Receiver, ReentrancyGuard {
         address feeRecipient
     ) external {
         if (msg.sender != factory) revert NotFactory();
+        require(!locks[tokenId].exists, "registered");
         locks[tokenId] = Lock({
             creator: creator,
             token0: token0,
@@ -97,6 +101,21 @@ contract LaunchLocker is IERC721Receiver, ReentrancyGuard {
             feeRecipient: feeRecipient
         });
         emit Registered(tokenId, creator, token0, token1);
+    }
+
+    /// @notice Curve liquidity is already graduated, independent of subsequent spot-price movement.
+    function registerGraduated(
+        uint256 tokenId, address creator, address token0, address token1,
+        address pool, bool tokenIsToken0, address vault, uint16 holderShare
+    ) external {
+        if (msg.sender != factory) revert NotFactory();
+        require(!locks[tokenId].exists && holderShare <= BPS_DENOM, "registration");
+        require(vault != address(0) || holderShare == 0, "vault");
+        locks[tokenId] = Lock(creator, token0, token1, pool, 0, tokenIsToken0, true, true, vault);
+        curvePosition[tokenId] = true;
+        holdersBps[tokenId] = holderShare;
+        emit Registered(tokenId, creator, token0, token1);
+        emit Graduated(tokenId);
     }
 
     /// @notice True once the pool price has crossed the token's graduation tick.
@@ -132,7 +151,16 @@ contract LaunchLocker is IERC721Receiver, ReentrancyGuard {
         (uint256 c1, uint256 p1) = _split(amount1, bps);
 
         // Protocol share goes to the token's own recipient (v2 DividendVault) or the global vault.
-        address recipient = lock.feeRecipient == address(0) ? feeVault : lock.feeRecipient;
+        address recipient = curvePosition[tokenId] || lock.feeRecipient == address(0) ? feeVault : lock.feeRecipient;
+        if (curvePosition[tokenId]) {
+            uint256 h0 = (c0 * holdersBps[tokenId]) / BPS_DENOM;
+            uint256 h1 = (c1 * holdersBps[tokenId]) / BPS_DENOM;
+            c0 -= h0;
+            c1 -= h1;
+            if (h0 > 0) IERC20(lock.token0).safeTransfer(lock.feeRecipient, h0);
+            if (h1 > 0) IERC20(lock.token1).safeTransfer(lock.feeRecipient, h1);
+            emit HolderFeesCollected(tokenId, lock.feeRecipient, h0, h1);
+        }
         if (p0 > 0) IERC20(lock.token0).safeTransfer(recipient, p0);
         if (p1 > 0) IERC20(lock.token1).safeTransfer(recipient, p1);
         if (c0 > 0) IERC20(lock.token0).safeTransfer(lock.creator, c0);

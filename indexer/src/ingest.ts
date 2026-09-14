@@ -2,7 +2,9 @@ import { createPublicClient, http, defineChain, parseAbiItem, getAddress, type P
 import { cfg } from "./config.js";
 import { erc20Abi } from "./abis.js";
 import { prisma } from "./db.js";
-import { publish } from "./bus.js";
+import { publish, type Update } from "./bus.js";
+import type { Prisma } from "@prisma/client";
+import { ingestion } from "./status.js";
 
 const chain = defineChain({
   id: cfg.chainId,
@@ -23,7 +25,9 @@ const GRADUATED = parseAbiItem(
 );
 const EVENTS = [REGISTERED, TRADED, GRADUATED] as const;
 
-const CURSOR_ID = "curve";
+const CURSOR_ID = "curve"; // One chain/curve per database; deployment identity is checked on startup.
+type Db = Prisma.TransactionClient;
+type Notify = (u: Update) => void;
 const lc = (a: string) => a.toLowerCase();
 
 // ---- block-timestamp cache ----
@@ -59,22 +63,19 @@ function derive(coin: {
 }
 
 // ---- handlers ----
-async function onRegistered(log: any) {
+async function onRegistered(log: any, db: Db, notify: Notify) {
   const coin = lc(log.args.coin as string);
   const quote = lc(log.args.quote as string);
   const vault = lc(log.args.vault as string);
   const isV2 = vault !== "0x0000000000000000000000000000000000000000";
 
-  let name = "", symbol = "TOKEN", decimals = 18, totalSupply = "0";
-  try {
-    const [n, s, d, ts] = await Promise.all([
-      client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "name" }),
-      client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "symbol" }),
-      client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "decimals" }),
-      client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "totalSupply" }),
-    ]);
-    name = n as string; symbol = s as string; decimals = Number(d); totalSupply = (ts as bigint).toString();
-  } catch { /* leave defaults */ }
+  const [n, s, tokenDecimals, ts] = await Promise.all([
+    client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "name", blockNumber: log.blockNumber }),
+    client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "symbol", blockNumber: log.blockNumber }),
+    client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "decimals", blockNumber: log.blockNumber }),
+    client.readContract({ address: coin as `0x${string}`, abi: erc20Abi, functionName: "totalSupply", blockNumber: log.blockNumber }),
+  ]);
+  const name = n as string, symbol = s as string, decimals = Number(tokenDecimals), totalSupply = (ts as bigint).toString();
 
   const quoteSymbol = quote === cfg.weth ? "ETH" : quote;
   const base = {
@@ -90,20 +91,23 @@ async function onRegistered(log: any) {
     graduationQuote: (log.args.graduationQuote as bigint).toString(),
     graduated: false,
     createdBlock: log.blockNumber as bigint,
+    createdAt: await blockTime(log.blockNumber),
   };
   const d = derive(base);
-  const row = await prisma.coin.upsert({
+  const row = await db.coin.upsert({
     where: { address: coin },
     create: { address: coin, ...base, ...d },
     update: { ...base, ...d },
   });
-  publish({ type: "coin", data: serializeCoin(row) });
+  notify({ type: "coin", data: serializeCoin(row) });
 }
 
-async function onTraded(log: any) {
+async function onTraded(log: any, db: Db, notify: Notify) {
   const coin = lc(log.args.coin as string);
-  const c = await prisma.coin.findUnique({ where: { address: coin } });
-  if (!c) return; // Registered always precedes trades; skip if somehow missing
+  const c = await db.coin.findUnique({ where: { address: coin } });
+  if (!c) throw new Error(`Missing registration for ${coin}; refusing to skip trade`);
+  const existing = await db.trade.findUnique({ where: { txHash_logIndex: { txHash: log.transactionHash, logIndex: Number(log.logIndex) } } });
+  if (existing) return;
 
   const isBuy = Boolean(log.args.isBuy);
   const amountIn = log.args.amountIn as bigint;
@@ -126,7 +130,7 @@ async function onTraded(log: any) {
   const volAdd = Number(grossQuote) / 10 ** 18;
   const ts = await blockTime(log.blockNumber as bigint);
 
-  await prisma.trade.upsert({
+  await db.trade.upsert({
     where: { txHash_logIndex: { txHash: log.transactionHash as string, logIndex: Number(log.logIndex) } },
     create: {
       coinAddress: coin, trader: lc(log.args.trader as string), isBuy,
@@ -139,7 +143,7 @@ async function onTraded(log: any) {
 
   const merged = { ...c, virtualQuote: vq.toString(), tokenReserve: tr.toString(), realQuote: rq.toString() };
   const d = derive(merged);
-  const row = await prisma.coin.update({
+  const row = await db.coin.update({
     where: { address: coin },
     data: {
       virtualQuote: vq.toString(), tokenReserve: tr.toString(), realQuote: rq.toString(),
@@ -147,52 +151,71 @@ async function onTraded(log: any) {
       tradeCount: c.tradeCount + 1,
     },
   });
-  await prisma.pricePoint.create({ data: { coinAddress: coin, priceQuote: tradePrice, priceUsd: d.priceUsd, block: log.blockNumber as bigint, ts } });
-  publish({ type: "trade", data: { coin, trader: lc(log.args.trader as string), isBuy, amountIn: amountIn.toString(), amountOut: amountOut.toString(), fee: fee.toString(), priceQuote: tradePrice, ts } });
-  publish({ type: "coin", data: serializeCoin(row) });
+  await db.pricePoint.create({ data: { coinAddress: coin, priceQuote: tradePrice, priceUsd: d.priceUsd, block: log.blockNumber as bigint, ts } });
+  notify({ type: "trade", data: { coin, trader: lc(log.args.trader as string), isBuy, amountIn: amountIn.toString(), amountOut: amountOut.toString(), fee: fee.toString(), priceQuote: tradePrice, ts } });
+  notify({ type: "coin", data: serializeCoin(row) });
 }
 
-async function onGraduated(log: any) {
+async function onGraduated(log: any, db: Db, notify: Notify) {
   const coin = lc(log.args.coin as string);
-  const row = await prisma.coin.update({
+  const row = await db.coin.update({
     where: { address: coin },
     data: { graduated: true, pool: lc(log.args.pool as string), progressBps: 10000 },
-  }).catch(() => null);
-  if (row) publish({ type: "graduate", data: serializeCoin(row) });
+  });
+  notify({ type: "graduate", data: serializeCoin(row) });
 }
 
-async function processLog(log: any) {
-  if (log.eventName === "Registered") return onRegistered(log);
-  if (log.eventName === "Traded") return onTraded(log);
-  if (log.eventName === "Graduated") return onGraduated(log);
+async function processLog(log: any, db: Db, notify: Notify) {
+  if (log.eventName === "Registered") return onRegistered(log, db, notify);
+  if (log.eventName === "Traded") return onTraded(log, db, notify);
+  if (log.eventName === "Graduated") return onGraduated(log, db, notify);
+  throw new Error("Unrecognized curve event");
 }
 
 // ---- cursor + loops ----
 async function getCursor(): Promise<bigint> {
   const c = await prisma.cursor.findUnique({ where: { id: CURSOR_ID } });
-  return c ? c.lastBlock : cfg.startBlock;
-}
-async function setCursor(block: bigint) {
-  await prisma.cursor.upsert({ where: { id: CURSOR_ID }, create: { id: CURSOR_ID, lastBlock: block }, update: { lastBlock: block } });
+  return c ? c.lastBlock : cfg.startBlock - 1n;
 }
 
 async function scan(fromBlock: bigint, toBlock: bigint) {
+  if (cfg.logPage <= 0n) throw new Error("LOG_PAGE must be positive");
   let from = fromBlock;
   while (from <= toBlock) {
     const to = from + cfg.logPage - 1n > toBlock ? toBlock : from + cfg.logPage - 1n;
-    let logs: any[] = [];
-    try {
-      logs = await client.getLogs({ address: cfg.curve, events: EVENTS as any, fromBlock: from, toBlock: to });
-    } catch (e: any) {
-      if (cfg.logPage > 1000n && to > from) { /* range too big — shrink for this pass */ }
-      console.error(`[ingest] getLogs ${from}-${to}:`, e?.shortMessage ?? e?.message ?? e);
-      await sleep(500);
-    }
+    // All RPC/decoder/write failures propagate. The live loop retries from the durable cursor.
+    const anchor = await client.getBlock({ blockNumber: to });
+    const logs: any[] = await client.getLogs({ address: cfg.curve, events: EVENTS as any, fromBlock: from, toBlock: to });
     logs.sort((a, b) => (a.blockNumber === b.blockNumber ? Number(a.logIndex) - Number(b.logIndex) : Number(a.blockNumber - b.blockNumber)));
-    for (const log of logs) {
-      try { await processLog(log); } catch (e: any) { console.error("[ingest] processLog:", e?.message ?? e); }
-    }
-    await setCursor(to);
+    const updates = await prisma.$transaction(async (db) => {
+      // Serializes workers sharing this database; rollback includes event receipts and cursor.
+      await db.$executeRaw`SELECT pg_advisory_xact_lock(1128615507)`;
+      const cursor = await db.cursor.findUnique({ where: { id: CURSOR_ID } });
+      if (cursor && cursor.lastBlock >= to) return [];
+      if ((cursor ? cursor.lastBlock + 1n : cfg.startBlock) !== from) throw new Error("Cursor changed; retry page");
+      if (cursor) {
+        if (cursor.chainId !== cfg.chainId || cursor.curve !== cfg.curve || !cursor.lastHash) throw new Error("Database identity/hash missing or mismatched; rebuild from a verified checkpoint");
+        const previous = await client.getBlock({ blockNumber: cursor.lastBlock });
+        if (previous.hash !== cursor.lastHash) throw new Error("Reorg at indexed checkpoint; stop and rebuild before resuming");
+      }
+      const pending: Update[] = [];
+      const hashes = new Map<bigint, string | null>();
+      for (const log of logs) {
+        if (!log.blockHash || !log.transactionHash || log.removed || log.blockNumber < from || log.blockNumber > to) throw new Error("Invalid/unconfirmed event");
+        if (!hashes.has(log.blockNumber)) hashes.set(log.blockNumber, (await client.getBlock({ blockNumber: log.blockNumber })).hash);
+        if (hashes.get(log.blockNumber) !== log.blockHash) throw new Error("Event block hash is not canonical");
+        const receipt = await db.indexedEvent.createMany({ data: [{ chainId: cfg.chainId, txHash: log.transactionHash, logIndex: Number(log.logIndex), block: log.blockNumber, blockHash: log.blockHash }], skipDuplicates: true });
+        if (receipt.count) await processLog(log, db, u => pending.push(u));
+      }
+      const check = await client.getBlock({ blockNumber: to });
+      if (!anchor.hash || anchor.hash !== check.hash) throw new Error("Chain changed while reading page");
+      const data = { lastBlock: to, lastHash: anchor.hash, chainId: cfg.chainId, curve: cfg.curve };
+      await db.cursor.upsert({ where: { id: CURSOR_ID }, create: { id: CURSOR_ID, ...data }, update: data });
+      return pending;
+    }, { isolationLevel: "Serializable", timeout: 60000, maxWait: 10000 });
+    // Clients only see durable state; a broken socket cannot undo or prevent indexing.
+    for (const update of updates) { try { publish(update); } catch { console.error("[ingest] update delivery failed"); } }
+    ingestion.lastBlock = to.toString();
     from = to + 1n;
   }
 }
@@ -200,18 +223,23 @@ async function scan(fromBlock: bigint, toBlock: bigint) {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function runIngest() {
-  console.log(`[ingest] curve=${getAddress(cfg.curve)} rpc=${cfg.rpcUrl} chain=${cfg.chainId}`);
-  const head0 = await client.getBlockNumber();
-  const start = await getCursor();
-  console.log(`[ingest] backfill ${start} -> ${head0}`);
-  await scan(start, head0);
-  console.log("[ingest] backfill complete; entering live poll");
+  console.log(`[ingest] curve=${getAddress(cfg.curve)} chain=${cfg.chainId}`);
+  if (await client.getChainId() !== cfg.chainId) throw new Error("RPC chain ID mismatch");
   for (;;) {
     try {
       const cursor = await getCursor();
-      const head = await client.getBlockNumber();
+      const finalized = await client.getBlock({ blockTag: "finalized" });
+      const head = finalized.number;
+      if (head === null) throw new Error("Finalized block unavailable");
+      // Check the checkpoint even when no new finalized blocks arrive.
+      const checkpoint = await prisma.cursor.findUnique({ where: { id: CURSOR_ID } });
+      if (checkpoint && (checkpoint.chainId !== cfg.chainId || checkpoint.curve !== cfg.curve || !checkpoint.lastHash || (await client.getBlock({ blockNumber: checkpoint.lastBlock })).hash !== checkpoint.lastHash)) throw new Error("Checkpoint identity or canonical hash mismatch; rebuild required");
       if (head > cursor) await scan(cursor + 1n, head);
+      ingestion.lastSuccessAt = Date.now();
+      ingestion.error = null;
     } catch (e: any) {
+      ingestion.error = "Ingestion stalled; inspect server logs";
+      tsCache.clear();
       console.error("[ingest] live loop:", e?.shortMessage ?? e?.message ?? e);
     }
     await sleep(cfg.pollMs);

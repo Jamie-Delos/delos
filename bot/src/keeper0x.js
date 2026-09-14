@@ -27,6 +27,7 @@ const QUOTER_ADDRESS = process.env.QUOTER_ADDRESS; // Uniswap V3 QuoterV2, for U
 const ZEROX_API_BASE = process.env.ZEROX_API_BASE || "https://api.0x.org";
 const ZEROX_API_KEY = process.env.ZEROX_API_KEY;
 const SLIPPAGE_BPS = Number(process.env.SLIPPAGE_BPS || 100); // 1% default
+if (!Number.isInteger(SLIPPAGE_BPS) || SLIPPAGE_BPS < 0 || SLIPPAGE_BPS >= 10000) throw new Error("SLIPPAGE_BPS must be 0..9999");
 
 const VAULT_ABI = [
   "function basketLength() view returns (uint256)",
@@ -37,6 +38,7 @@ const VAULT_ABI = [
   "function swapFee() view returns (uint24)",
   "function operator() view returns (address)",
   "function allowanceHolder() view returns (address)",
+  "function availableQuote() view returns (uint256)",
   "function distribute(uint256[] minOut) returns (uint256)",
   "function distributeVia0x(uint256[] sellAmounts, bytes[] swapData, uint256[] minOut) returns (uint256)",
 ];
@@ -71,7 +73,7 @@ async function zeroEx(endpoint, params) {
   const u = new URL(`${ZEROX_API_BASE}/swap/allowance-holder/${endpoint}`);
   u.searchParams.set("chainId", String(CHAIN_ID));
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) u.searchParams.set(k, String(v));
-  const res = await fetch(u, { headers: { "0x-api-key": ZEROX_API_KEY, "0x-version": "v2" } });
+  const res = await fetch(u, { headers: { "0x-api-key": ZEROX_API_KEY, "0x-version": "v2" }, signal: AbortSignal.timeout(15000) });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`0x ${endpoint} ${res.status}: ${body.reason || body.message || JSON.stringify(body).slice(0, 240)}`);
   return body;
@@ -104,13 +106,21 @@ async function probe() {
 // Try a 0x quote for every leg. Returns per-leg calldata + whether ALL legs are available on 0x.
 async function planZeroEx(vault, quote, basket, weights, dec, bal) {
   const sellAmounts = [], swapData = [], minOut = [], notes = [];
+  const target = (await vault.allowanceHolder()).toLowerCase();
   let allQuotable = true, anyQuotable = false;
   for (let i = 0; i < basket.length; i++) {
     const sell = (bal * BigInt(weights[i])) / 10000n;
     if (sell === 0n) { sellAmounts.push(0n); swapData.push("0x"); minOut.push(0n); continue; }
+    if (quote.toLowerCase() === basket[i].toLowerCase()) {
+      sellAmounts.push(sell); swapData.push("0x"); minOut.push(sell); anyQuotable = true;
+      notes.push(`${basket[i].slice(0, 8)} same-asset payout (no swap)`); continue;
+    }
     try {
       const q = await zeroEx("quote", { sellToken: quote, buyToken: basket[i], sellAmount: sell, taker: VAULT_ADDRESS, slippageBps: SLIPPAGE_BPS });
       if (q.liquidityAvailable === false || !q.transaction?.data) throw new Error("no liquidity");
+      if (q.transaction.to?.toLowerCase() !== target || q.issues?.allowance?.spender && q.issues.allowance.spender.toLowerCase() !== target) throw new Error("unexpected 0x target/spender");
+      if (q.sellToken?.toLowerCase() !== quote.toLowerCase() || q.buyToken?.toLowerCase() !== basket[i].toLowerCase() || BigInt(q.sellAmount) !== sell) throw new Error("quote asset/amount mismatch");
+      if (BigInt(q.minBuyAmount) <= 0n || BigInt(q.transaction.value || 0) !== 0n) throw new Error("unsafe quote bounds/value");
       sellAmounts.push(sell); swapData.push(q.transaction.data); minOut.push(BigInt(q.minBuyAmount));
       notes.push(`${basket[i].slice(0, 8)} ~${ethers.formatUnits(q.buyAmount, dec[i])} via ${routeSummary(q)}`);
       anyQuotable = true;
@@ -129,6 +139,9 @@ async function planUniswap(quoter, quote, swapFee, basket, weights, paths, dec, 
   for (let i = 0; i < basket.length; i++) {
     const portion = (bal * BigInt(weights[i])) / 10000n;
     if (portion === 0n) { minOut.push(0n); continue; }
+    if (quote.toLowerCase() === basket[i].toLowerCase()) {
+      minOut.push(portion); notes.push(`${basket[i].slice(0, 8)} same-asset payout (no swap)`); continue;
+    }
     if (!quoter) { minOut.push(0n); notes.push(`${basket[i].slice(0, 8)} minOut=0 (no QUOTER_ADDRESS)`); continue; }
     let out;
     if (paths[i] && paths[i] !== "0x" && paths[i].length > 2) {
@@ -137,6 +150,7 @@ async function planUniswap(quoter, quote, swapFee, basket, weights, paths, dec, 
       out = (await quoter.quoteExactInputSingle.staticCall({ tokenIn: quote, tokenOut: basket[i], amountIn: portion, fee: swapFee, sqrtPriceLimitX96: 0 }))[0];
     }
     const mo = applySlippage(out);
+    if (mo <= 0n) throw new Error("Uniswap output rounds to zero");
     minOut.push(mo);
     notes.push(`${basket[i].slice(0, 8)} ~${ethers.formatUnits(out, dec[i])} floor ${ethers.formatUnits(mo, dec[i])}`);
   }
@@ -149,6 +163,7 @@ async function main() {
   if (!["auto", "zerox", "uniswap"].includes(MODE)) throw new Error(`MODE must be auto|zerox|uniswap (got ${MODE})`);
 
   const provider = new ethers.JsonRpcProvider(RPC_URL);
+  if (Number((await provider.getNetwork()).chainId) !== CHAIN_ID) throw new Error("RPC chain does not match CHAIN_ID");
   let wallet = null;
   if (!DRY_RUN) {
     if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY required when DRY_RUN=false");
@@ -166,8 +181,8 @@ async function main() {
     throw new Error(`signer ${wallet.address} is not the vault operator ${operator}`);
   }
 
-  const bal = await new ethers.Contract(quote, ERC20_ABI, provider).balanceOf(VAULT_ADDRESS);
-  log(`vault quote balance: ${ethers.formatEther(bal)}`);
+  const bal = await vault.availableQuote();
+  log(`unallocated quote balance (base units): ${bal}`);
   if (bal === 0n) { log("nothing to distribute; done."); return; }
 
   const basket = [], weights = [], paths = [], dec = [];
@@ -188,7 +203,7 @@ async function main() {
       zx = await planZeroEx(vault, quote, basket, weights, dec, bal);
       zx.notes.forEach((n) => log("  0x:", n));
       if (MODE === "zerox") {
-        if (!zx.anyQuotable) throw new Error("0x returned no quotable legs (stocks likely restricted) — use MODE=uniswap or auto");
+        if (!zx.allQuotable) throw new Error("0x must quote the complete basket; partial allocations are disabled");
         use0x = true;
       } else { // auto: prefer 0x only if it covers the whole basket
         use0x = zx.allQuotable;
@@ -203,7 +218,7 @@ async function main() {
     plan = { fn: "distributeVia0x", args: [zx.sellAmounts, zx.swapData, zx.minOut], spend: total };
   } else {
     const quoter = QUOTER_ADDRESS ? new ethers.Contract(QUOTER_ADDRESS, QUOTER_ABI, provider) : null;
-    if (!quoter && !DRY_RUN) throw new Error("Uniswap path needs QUOTER_ADDRESS for slippage protection (won't send a swap with no minOut)");
+    if (!quoter && !DRY_RUN && basket.some(s => s.toLowerCase() !== quote.toLowerCase())) throw new Error("Uniswap path needs QUOTER_ADDRESS for slippage protection");
     const uni = await planUniswap(quoter, quote, swapFee, basket, weights, paths, dec, bal);
     uni.notes.forEach((n) => log("  uni:", n));
     plan = { fn: "distribute", args: [uni.minOut], spend: bal };

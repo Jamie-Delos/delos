@@ -14,5 +14,15 @@ const out = `// AUTO-GENERATED — do not edit by hand.
 export const LAUNCH_TOKEN_BYTECODE = "${artifact.bytecode}" as const;
 `;
 const dest = path.join(__dirname, "..", "..", "frontend", "src", "lib", "launchTokenBytecode.ts");
-fs.writeFileSync(dest, out);
-console.log("wrote", dest, "—", artifact.bytecode.length, "chars");
+if (process.argv.includes("--check")) {
+  const embedded = fs.readFileSync(dest, "utf8").match(/0x[0-9a-fA-F]{100,}/)?.[0];
+  if (embedded !== artifact.bytecode) throw new Error("Client creation bytecode differs from compiled LaunchToken; regenerate before release");
+  for (const name of ["LaunchFactory", "LaunchFactoryV2", "CensusCurve", "DividendVault", "LaunchLocker"]) {
+    const compiled = require(`../artifacts/contracts/${name}.sol/${name}.json`);
+    if ((compiled.deployedBytecode.length - 2) / 2 > 24576) throw new Error(`${name} exceeds EIP-170 size limit`);
+  }
+  console.log("Creation bytecode and contract size checks passed");
+} else {
+  fs.writeFileSync(dest, out);
+  console.log("Generated LaunchToken creation bytecode");
+}
