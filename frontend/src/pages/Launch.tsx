@@ -596,13 +596,16 @@ function EconomicsStep({ draft, set, isV2, usesBasket }: any) {
 }
 
 // Drag-and-drop (or click / paste) logo field. Shows the image the instant it's dropped (downscaled
-// data URL), then best-effort uploads it for a persistent hosted URL. If the image store isn't
-// provisioned the upload no-ops and we keep the local preview — the coin still launches.
+// data URL), then uploads it for a persistent hosted URL. Uploads are signed by the connected wallet
+// (the store is wallet-gated and quota-limited); if the store isn't provisioned, no wallet is
+// connected, or the signature is declined we keep the local preview — the coin still launches.
 function LogoDrop({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const { address: wallet } = useAccount();
+  const { signMessageAsync: signUpload } = useSignMessage();
 
   const handleFile = async (file?: File | null) => {
     if (!file) return;
@@ -611,9 +614,9 @@ function LogoDrop({ value, onChange }: { value: string; onChange: (v: string) =>
     try {
       const dataUrl = await prepareImage(file);
       onChange(dataUrl); // instant preview
-      const hosted = await uploadImage(dataUrl);
-      if (hosted) { onChange(hosted); setNote(""); }
-      else setNote("Shown here now — logo hosting turns on when the store is connected.");
+      const hosted = await uploadImage(dataUrl, wallet ? { address: wallet, chainId: CHAIN.id, signMessage: signUpload } : null);
+      if (hosted.url) { onChange(hosted.url); setNote(""); }
+      else setNote(`Shown here now — not hosted yet (${"reason" in hosted ? hosted.reason : "unknown"}).`);
     } catch {
       setNote("Couldn't read that image — try a PNG or JPG.");
     } finally {
