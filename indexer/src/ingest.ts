@@ -25,6 +25,15 @@ const GRADUATED = parseAbiItem(
 );
 const EVENTS = [REGISTERED, TRADED, GRADUATED] as const;
 
+// Post-graduation coverage: the coin's own locked pool (swaps) and its DividendVault (rewards).
+const POOL_SWAP = parseAbiItem(
+  "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
+);
+const VAULT_DISTRIBUTED = parseAbiItem("event Distributed(uint256 quoteSpent)");
+const VAULT_CLAIMED = parseAbiItem("event Claimed(address indexed holder, address indexed stock, uint256 amount)");
+const VAULT_CONVERTED = parseAbiItem("event LaunchFeesConverted(uint256 tokenIn, uint256 quoteOut)");
+const EXT_EVENTS = [POOL_SWAP, VAULT_DISTRIBUTED, VAULT_CLAIMED, VAULT_CONVERTED] as const;
+
 const CURSOR_ID = "curve"; // One chain/curve per database; deployment identity is checked on startup.
 type Db = Prisma.TransactionClient;
 type Notify = (u: Update) => void;
@@ -165,6 +174,74 @@ async function onGraduated(log: any, db: Db, notify: Notify) {
   notify({ type: "graduate", data: serializeCoin(row) });
 }
 
+// ---- post-graduation handlers ----
+async function onPoolSwap(log: any, coinAddress: string, db: Db, notify: Notify) {
+  const c = await db.coin.findUnique({ where: { address: coinAddress } });
+  if (!c) throw new Error(`Missing registration for pool coin ${coinAddress}`);
+  const tokenIsToken0 = BigInt(c.address) < BigInt(c.quote);
+  const a0 = log.args.amount0 as bigint; // pool perspective: positive = paid INTO the pool
+  const a1 = log.args.amount1 as bigint;
+  const quoteDelta = tokenIsToken0 ? a1 : a0;
+  const tokenDelta = tokenIsToken0 ? a0 : a1;
+  if (quoteDelta === 0n && tokenDelta === 0n) return;
+  const isBuy = quoteDelta > 0n; // quote in, tokens out
+  const amountIn = isBuy ? quoteDelta : tokenDelta;
+  const amountOut = isBuy ? -tokenDelta : -quoteDelta;
+
+  // Spot price from the pool's sqrtPriceX96 (token1 per token0), oriented to quote-per-token.
+  const s = Number(log.args.sqrtPriceX96 as bigint) / 2 ** 96;
+  const p01 = s * s;
+  const priceRaw = tokenIsToken0 ? p01 : p01 > 0 ? 1 / p01 : 0;
+  const priceQuote = priceRaw * 10 ** (c.decimals - 18);
+  const volAdd = Number(quoteDelta < 0n ? -quoteDelta : quoteDelta) / 10 ** 18;
+  const ts = await blockTime(log.blockNumber as bigint);
+
+  await db.trade.upsert({
+    where: { txHash_logIndex: { txHash: log.transactionHash as string, logIndex: Number(log.logIndex) } },
+    create: {
+      coinAddress: c.address, trader: lc(log.args.recipient as string), isBuy,
+      amountIn: amountIn.toString(), amountOut: amountOut.toString(), fee: "0",
+      priceQuote, venue: "pool", block: log.blockNumber as bigint, txHash: log.transactionHash as string,
+      logIndex: Number(log.logIndex), ts,
+    },
+    update: {},
+  });
+  const quoteUsd = lc(c.quote) === cfg.weth ? cfg.ethUsd : 0;
+  const priceUsd = priceQuote * quoteUsd;
+  const marketCapUsd = priceUsd * (Number(c.totalSupply) / 10 ** c.decimals);
+  const row = await db.coin.update({
+    where: { address: c.address },
+    data: {
+      priceQuote, priceUsd, marketCapUsd,
+      volumeQuote: c.volumeQuote + volAdd, volumeUsd: c.volumeUsd + volAdd * quoteUsd,
+      tradeCount: c.tradeCount + 1,
+    },
+  });
+  await db.pricePoint.create({ data: { coinAddress: c.address, priceQuote, priceUsd, block: log.blockNumber as bigint, ts } });
+  notify({ type: "trade", data: { coin: c.address, trader: lc(log.args.recipient as string), isBuy, amountIn: amountIn.toString(), amountOut: amountOut.toString(), fee: "0", priceQuote, venue: "pool", ts } });
+  notify({ type: "coin", data: serializeCoin(row) });
+}
+
+async function onVaultEvent(log: any, coinAddress: string, quote: string, db: Db, notify: Notify) {
+  const ts = await blockTime(log.blockNumber as bigint);
+  const base = { coinAddress, block: log.blockNumber as bigint, txHash: log.transactionHash as string, logIndex: Number(log.logIndex), ts };
+  let data: any;
+  if (log.eventName === "Distributed") {
+    data = { ...base, kind: "distributed", asset: quote, amount: (log.args.quoteSpent as bigint).toString() };
+  } else if (log.eventName === "Claimed") {
+    data = { ...base, kind: "claimed", holder: lc(log.args.holder as string), asset: lc(log.args.stock as string), amount: (log.args.amount as bigint).toString() };
+  } else if (log.eventName === "LaunchFeesConverted") {
+    data = { ...base, kind: "converted", asset: quote, amount: (log.args.tokenIn as bigint).toString(), amountB: (log.args.quoteOut as bigint).toString() };
+  } else {
+    throw new Error("Unrecognized vault event");
+  }
+  await db.rewardEvent.upsert({
+    where: { txHash_logIndex: { txHash: base.txHash, logIndex: base.logIndex } },
+    create: data, update: {},
+  });
+  notify({ type: "reward", data: { ...data, block: base.block.toString() } });
+}
+
 async function processLog(log: any, db: Db, notify: Notify) {
   if (log.eventName === "Registered") return onRegistered(log, db, notify);
   if (log.eventName === "Traded") return onTraded(log, db, notify);
@@ -198,14 +275,42 @@ async function scan(fromBlock: bigint, toBlock: bigint) {
         const previous = await client.getBlock({ blockNumber: cursor.lastBlock });
         if (previous.hash !== cursor.lastHash) throw new Error("Reorg at indexed checkpoint; stop and rebuild before resuming");
       }
+      // Post-graduation coverage: also read this page's events from the graduated pools and
+      // vaults of every indexed coin — including coins registered/graduated within THIS page,
+      // so a swap or reward landing right after graduation is never skipped.
+      const ZERO = "0x0000000000000000000000000000000000000000";
+      const known = await db.coin.findMany({ select: { address: true, pool: true, vault: true, quote: true } });
+      const poolMap = new Map<string, string>();
+      const vaultMap = new Map<string, { coin: string; quote: string }>();
+      for (const k of known) {
+        if (k.pool) poolMap.set(lc(k.pool), k.address);
+        if (k.vault) vaultMap.set(lc(k.vault), { coin: k.address, quote: k.quote });
+      }
+      for (const log of logs) {
+        if (log.eventName === "Graduated") poolMap.set(lc(log.args.pool), lc(log.args.coin));
+        if (log.eventName === "Registered" && lc(log.args.vault) !== ZERO) vaultMap.set(lc(log.args.vault), { coin: lc(log.args.coin), quote: lc(log.args.quote) });
+      }
+      const extAddrs = [...poolMap.keys(), ...vaultMap.keys()];
+      const extLogs: any[] = extAddrs.length
+        ? await client.getLogs({ address: extAddrs as `0x${string}`[], events: EXT_EVENTS as any, fromBlock: from, toBlock: to })
+        : [];
+
+      const all = [...logs.map((l: any) => ({ ...l, _ext: false })), ...extLogs.map((l: any) => ({ ...l, _ext: true }))]
+        .sort((a, b) => (a.blockNumber === b.blockNumber ? Number(a.logIndex) - Number(b.logIndex) : Number(a.blockNumber - b.blockNumber)));
+
       const pending: Update[] = [];
       const hashes = new Map<bigint, string | null>();
-      for (const log of logs) {
+      for (const log of all) {
         if (!log.blockHash || !log.transactionHash || log.removed || log.blockNumber < from || log.blockNumber > to) throw new Error("Invalid/unconfirmed event");
         if (!hashes.has(log.blockNumber)) hashes.set(log.blockNumber, (await client.getBlock({ blockNumber: log.blockNumber })).hash);
         if (hashes.get(log.blockNumber) !== log.blockHash) throw new Error("Event block hash is not canonical");
         const receipt = await db.indexedEvent.createMany({ data: [{ chainId: cfg.chainId, txHash: log.transactionHash, logIndex: Number(log.logIndex), block: log.blockNumber, blockHash: log.blockHash }], skipDuplicates: true });
-        if (receipt.count) await processLog(log, db, u => pending.push(u));
+        if (!receipt.count) continue;
+        if (!log._ext) { await processLog(log, db, u => pending.push(u)); continue; }
+        const addr = lc(log.address as string);
+        if (log.eventName === "Swap" && poolMap.has(addr)) await onPoolSwap(log, poolMap.get(addr)!, db, u => pending.push(u));
+        else if (vaultMap.has(addr)) await onVaultEvent(log, vaultMap.get(addr)!.coin, vaultMap.get(addr)!.quote, db, u => pending.push(u));
+        else throw new Error("Event from unwatched address");
       }
       const check = await client.getBlock({ blockNumber: to });
       if (!anchor.hash || anchor.hash !== check.hash) throw new Error("Chain changed while reading page");

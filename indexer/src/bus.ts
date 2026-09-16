@@ -7,6 +7,7 @@ bus.setMaxListeners(0);
 export type Update =
   | { type: "coin"; data: unknown }
   | { type: "trade"; data: unknown }
-  | { type: "graduate"; data: unknown };
+  | { type: "graduate"; data: unknown }
+  | { type: "reward"; data: unknown };
 
 export const publish = (u: Update) => bus.emit("update", u);

@@ -19,7 +19,11 @@ function limitOf(value: string | undefined, fallback: number, maximum: number) {
 const serializeTrade = (t: any) => ({
   coin: t.coinAddress, trader: t.trader, isBuy: t.isBuy,
   amountIn: t.amountIn, amountOut: t.amountOut, fee: t.fee,
-  priceQuote: t.priceQuote, block: t.block?.toString?.() ?? String(t.block), txHash: t.txHash, ts: t.ts,
+  priceQuote: t.priceQuote, venue: t.venue ?? "curve", block: t.block?.toString?.() ?? String(t.block), txHash: t.txHash, ts: t.ts,
+});
+const serializeReward = (r: any) => ({
+  coin: r.coinAddress, kind: r.kind, holder: r.holder, asset: r.asset,
+  amount: r.amount, amountB: r.amountB, block: r.block?.toString?.() ?? String(r.block), txHash: r.txHash, ts: r.ts,
 });
 
 export async function runApi() {
@@ -67,6 +71,20 @@ export async function runApi() {
       where: { coinAddress: address.toLowerCase() }, orderBy: { ts: "desc" }, take: limit,
     });
     return { trades: rows.map(serializeTrade) };
+  });
+
+  // Holder-reward ledger: distributions, claims and launch-token fee conversions for one coin.
+  app.get("/coins/:address/rewards", async (req) => {
+    const { address } = req.params as { address: string };
+    const q = req.query as Record<string, string>;
+    const limit = limitOf(q.limit, 50, 200);
+    const where: any = { coinAddress: address.toLowerCase() };
+    if (q.holder !== undefined) {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(q.holder)) throw Object.assign(new Error("invalid holder"), { statusCode: 400 });
+      where.holder = q.holder.toLowerCase();
+    }
+    const rows = await prisma.rewardEvent.findMany({ where, orderBy: { ts: "desc" }, take: limit });
+    return { rewards: rows.map(serializeReward) };
   });
 
   app.get("/coins/:address/chart", async (req) => {

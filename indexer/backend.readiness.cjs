@@ -34,7 +34,7 @@ async function ingestChecks(){
     $executeRaw:async()=>{},
     cursor:{findUnique:async()=>s.cursor,upsert:async({create})=>{if(failure==='cursor')throw Error('cursor failure');s.cursor=create;}},
     indexedEvent:{createMany:async({data})=>{const k=data[0].txHash+':'+data[0].logIndex;if(s.receipts.has(k))return{count:0};s.receipts.add(k);return{count:1};}},
-    coin:{findUnique:async()=>s.coin?{...s.coin}:null,update:async({data})=>{if(failure==='coin')throw Error('coin failure');return s.coin={...s.coin,...data};}},
+    coin:{findUnique:async()=>s.coin?{...s.coin}:null,findMany:async()=>s.coin?[{...s.coin}]:[],update:async({data})=>{if(failure==='coin')throw Error('coin failure');return s.coin={...s.coin,...data};}},
     trade:{findUnique:async({where})=>s.trades.get(JSON.stringify(where))||null,upsert:async({where,create})=>{s.trades.set(JSON.stringify(where),create);}},
     pricePoint:{create:async({data})=>{if(failure==='point')throw Error('point failure');s.points.push(data);}},
   });

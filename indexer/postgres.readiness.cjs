@@ -65,15 +65,17 @@ const QUOTE = '0x' + 'ee'.repeat(20);
 // logPage 20 blocks => every run commits many separate serializable transactions (pages).
 const CFG = { chainId: 4663, curve: '0x' + 'cc'.repeat(20), weth: QUOTE, ethUsd: 3000, logPage: 20n, startBlock: 1n, pollMs: 50 };
 
+const POOL = '0x' + 'dd'.repeat(20);
+const VAULT0 = '0x' + 'bb'.repeat(20);
 function makeStream(nTrades, nDupes) {
   const logs = [];
-  const mk = (eventName, block, tx, logIndex, args) => ({
-    eventName, args, blockNumber: BigInt(block), blockHash: 'hash' + block, transactionHash: tx, logIndex,
+  const mk = (address, eventName, block, tx, logIndex, args) => ({
+    address, eventName, args, blockNumber: BigInt(block), blockHash: 'hash' + block, transactionHash: tx, logIndex,
   });
   for (let i = 0; i < COINS.length; i++) {
-    logs.push(mk('Registered', 1, '0xreg' + i, i, {
+    logs.push(mk(CFG.curve, 'Registered', 1, '0xreg' + i, i, {
       coin: COINS[i], quote: QUOTE, creator: '0x' + 'aa'.repeat(20),
-      vault: i === 0 ? '0x' + 'bb'.repeat(20) : '0x0000000000000000000000000000000000000000',
+      vault: i === 0 ? VAULT0 : '0x0000000000000000000000000000000000000000',
       holdersBps: i === 0 ? 10000 : 0, virtualQuote: 10n ** 18n, graduationQuote: 4n * 10n ** 18n,
     }));
   }
@@ -85,7 +87,7 @@ function makeStream(nTrades, nDupes) {
     const amountIn = sell ? 1000n + BigInt(i) : (10n ** 14n) * BigInt(1 + (i % 50));
     const fee = amountIn / 50n;
     const amountOut = sell ? 10n ** 10n : (10n ** 15n) * BigInt(1 + (i % 30));
-    logs.push(mk('Traded', block, '0xtrade' + i, i % perBlock, {
+    logs.push(mk(CFG.curve, 'Traded', block, '0xtrade' + i, i % perBlock, {
       coin, trader: '0xf' + String(i % 9) + '00'.repeat(19), isBuy: !sell, amountIn, amountOut, fee,
     }));
   }
@@ -95,10 +97,23 @@ function makeStream(nTrades, nDupes) {
     const src = logs[COINS.length + (i % nTrades)];
     logs.push({ ...src, blockNumber: BigInt(lastBlock), blockHash: 'hash' + lastBlock });
   }
-  logs.push(mk('Graduated', lastBlock + 1, '0xgrad', 99, {
-    coin: COINS[0], pool: '0x' + 'dd'.repeat(20), tokenId: 1n, tokensIn: 1n, quoteIn: 1n,
+  logs.push(mk(CFG.curve, 'Graduated', lastBlock + 1, '0xgrad', 99, {
+    coin: COINS[0], pool: POOL, tokenId: 1n, tokensIn: 1n, quoteIn: 1n,
   }));
-  return { logs, endBlock: BigInt(lastBlock + 1) };
+  // Post-graduation: swaps in the coin's own locked pool + the vault reward lifecycle.
+  // COINS[0] (0xc1..) sorts below QUOTE (0xee..), so the coin is token0: quote flow = amount1.
+  logs.push(mk(POOL, 'Swap', lastBlock + 2, '0xswap1', 0, {
+    sender: '0xf1' + '00'.repeat(19), recipient: '0xf1' + '00'.repeat(19),
+    amount0: -(5n * 10n ** 20n), amount1: 10n ** 18n, sqrtPriceX96: 2n ** 96n / 1000n, liquidity: 10n ** 18n, tick: 100,
+  }));
+  logs.push(mk(POOL, 'Swap', lastBlock + 2, '0xswap2', 1, {
+    sender: '0xf2' + '00'.repeat(19), recipient: '0xf2' + '00'.repeat(19),
+    amount0: 6n * 10n ** 20n, amount1: -(9n * 10n ** 17n), sqrtPriceX96: 2n ** 96n / 1100n, liquidity: 10n ** 18n, tick: 90,
+  }));
+  logs.push(mk(VAULT0, 'LaunchFeesConverted', lastBlock + 3, '0xconv', 0, { tokenIn: 7n * 10n ** 18n, quoteOut: 10n ** 16n }));
+  logs.push(mk(VAULT0, 'Distributed', lastBlock + 3, '0xdist', 1, { quoteSpent: 10n ** 16n }));
+  logs.push(mk(VAULT0, 'Claimed', lastBlock + 4, '0xclaim', 0, { holder: '0xf1' + '00'.repeat(19), stock: QUOTE, amount: 3n * 10n ** 15n }));
+  return { logs, endBlock: BigInt(lastBlock + 4) };
 }
 
 function makeRpc(stream, hooks = {}) {
@@ -107,9 +122,10 @@ function makeRpc(stream, hooks = {}) {
       if (hooks.blockFail && hooks.blockFail(blockNumber)) throw new Error('injected RPC block outage');
       return { number: blockNumber, hash: 'hash' + blockNumber, timestamp: 1700000000n + blockNumber };
     },
-    getLogs: async ({ fromBlock, toBlock }) => {
+    getLogs: async ({ address, fromBlock, toBlock }) => {
       if (hooks.logsFail && hooks.logsFail(fromBlock, toBlock)) throw new Error('injected RPC logs outage');
-      return stream.logs.filter((l) => l.blockNumber >= fromBlock && l.blockNumber <= toBlock);
+      const set = (Array.isArray(address) ? address : [address]).map((a) => a.toLowerCase());
+      return stream.logs.filter((l) => set.includes(l.address.toLowerCase()) && l.blockNumber >= fromBlock && l.blockNumber <= toBlock);
     },
     readContract: async ({ address, functionName }) => {
       const i = COINS.indexOf(address.toLowerCase());
@@ -138,9 +154,10 @@ async function digest(prisma) {
   const trades = (await prisma.trade.findMany({ orderBy: [{ txHash: 'asc' }, { logIndex: 'asc' }] })).map(strip);
   const points = (await prisma.pricePoint.findMany({ orderBy: [{ coinAddress: 'asc' }, { block: 'asc' }, { priceQuote: 'asc' }, { ts: 'asc' }] })).map(strip);
   const receipts = await prisma.indexedEvent.findMany({ orderBy: [{ txHash: 'asc' }, { logIndex: 'asc' }] });
+  const rewards = (await prisma.rewardEvent.findMany({ orderBy: [{ txHash: 'asc' }, { logIndex: 'asc' }] })).map(strip);
   const cursor = await prisma.cursor.findUnique({ where: { id: 'curve' } });
-  const body = jsonBig({ coins, trades, points, receipts, cursor });
-  return { hash: crypto.createHash('sha256').update(body).digest('hex'), counts: { coins: coins.length, trades: trades.length, points: points.length, receipts: receipts.length, cursor: cursor?.lastBlock } };
+  const body = jsonBig({ coins, trades, points, receipts, rewards, cursor });
+  return { hash: crypto.createHash('sha256').update(body).digest('hex'), counts: { coins: coins.length, trades: trades.length, points: points.length, receipts: receipts.length, rewards: rewards.length, cursor: cursor?.lastBlock } };
 }
 
 async function main() {
@@ -169,15 +186,23 @@ async function main() {
     let t0 = Date.now();
     await refIngest.scan(1n, stream.endBlock);
     const refDigest = await digest(ref);
-    assert.equal(refDigest.counts.trades, 2000);
-    assert.equal(refDigest.counts.receipts, 2004); // 3 registrations + 2000 trades + 1 graduation
+    assert.equal(refDigest.counts.trades, 2002); // 2000 curve trades + 2 post-graduation pool swaps
+    assert.equal(refDigest.counts.receipts, 2009); // 3 reg + 2000 trades + 1 grad + 2 swaps + 3 reward events
+    assert.equal(refDigest.counts.rewards, 3); // converted + distributed + claimed
     assert.equal(refDigest.counts.coins, 3);
     assert.equal(refDigest.counts.cursor, stream.endBlock);
     assert.ok(refPublished.length >= 2004, 'updates published after commit');
+    // Post-graduation swaps landed as venue=pool trades and moved the coin's spot price.
+    const poolTrades = await ref.trade.findMany({ where: { venue: 'pool' } });
+    assert.equal(poolTrades.length, 2);
+    assert.equal(poolTrades.filter((t) => t.isBuy).length, 1);
+    const gradCoin = await ref.coin.findUnique({ where: { address: COINS[0] } });
+    assert.ok(gradCoin.graduated && gradCoin.pool === POOL);
+    assert.ok(Math.abs(gradCoin.priceQuote - 1 / 1100 ** 2) / (1 / 1100 ** 2) < 1e-9, 'price follows the pool sqrtPrice');
     // Replaying the whole range changes nothing (restart determinism).
     await refIngest.scan(1n, stream.endBlock);
     assert.equal((await digest(ref)).hash, refDigest.hash);
-    console.log(`PASS reference: 2000 trades + 200 duplicate replays + graduation applied exactly once on real Postgres (${Date.now() - t0}ms); full-range replay is a no-op`);
+    console.log(`PASS reference: 2000 trades + 200 duplicate replays + graduation + pool swaps + reward events applied exactly once on real Postgres (${Date.now() - t0}ms); full-range replay is a no-op`);
 
     // ---- 3. RPC fault mid-run rolls back atomically; resume converges to the same digest ----
     const rec = track(prismaClient(dbUrl(PORT, 'recovery')));
@@ -248,6 +273,7 @@ async function main() {
     await restore.coin.createMany({ data: await ref.coin.findMany() });
     await restore.trade.createMany({ data: await ref.trade.findMany() });
     await restore.pricePoint.createMany({ data: await ref.pricePoint.findMany() });
+    await restore.rewardEvent.createMany({ data: await ref.rewardEvent.findMany() });
     await restore.indexedEvent.createMany({ data: await ref.indexedEvent.findMany() });
     const cur = await ref.cursor.findUnique({ where: { id: 'curve' } });
     await restore.cursor.create({ data: cur });
@@ -266,8 +292,8 @@ async function main() {
     await loadIngestCtx.scan(1n, bigStream.endBlock);
     const loadDigest = await digest(load);
     const loadMs = Date.now() - t0;
-    assert.equal(loadDigest.counts.trades, 10000);
-    assert.equal(loadDigest.counts.receipts, 10004);
+    assert.equal(loadDigest.counts.trades, 10002);
+    assert.equal(loadDigest.counts.receipts, 10009);
     console.log(`PASS load: 10000 unique + 1000 duplicate events through real serializable transactions in ${loadMs}ms (${Math.round(11000 / (loadMs / 1000))} events/s incl. duplicates; local single-node, not a production capacity claim)`);
 
     // ---- 8. the actual API served from real Postgres data ----
@@ -288,6 +314,14 @@ async function main() {
       assert.equal(coins.coins.length, 3);
       const detail = (await app.inject(`/coins/${COINS[0]}`)).json();
       assert.equal(detail.coin.tradeCount, await ref.trade.count({ where: { coinAddress: COINS[0] } }));
+      const trades = (await app.inject(`/coins/${COINS[0]}/trades?limit=5`)).json();
+      assert.ok(trades.trades.some((t) => t.venue === 'pool'), 'post-graduation pool swaps served');
+      const rewards = (await app.inject(`/coins/${COINS[0]}/rewards`)).json();
+      assert.equal(rewards.rewards.length, 3);
+      assert.deepEqual(rewards.rewards.map((r) => r.kind).sort(), ['claimed', 'converted', 'distributed']);
+      const holderRewards = (await app.inject(`/coins/${COINS[0]}/rewards?holder=0xf1${'00'.repeat(19)}`)).json();
+      assert.equal(holderRewards.rewards.length, 1);
+      assert.equal((await app.inject(`/coins/${COINS[0]}/rewards?holder=zzz`)).statusCode, 400);
       const chart = (await app.inject(`/coins/${COINS[0]}/chart?limit=50`)).json();
       assert.ok(chart.points.length > 0 && chart.points.length <= 50);
       for (let i = 1; i < chart.points.length; i++) assert.ok(chart.points[i].t >= chart.points[i - 1].t, 'chart ascending, recent window');
