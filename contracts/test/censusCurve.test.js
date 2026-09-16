@@ -70,6 +70,7 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     const pathOut = hre.ethers.solidityPacked(["address", "uint24", "address"], [hoodAddr, 3000, wethAddr]);
     await (await coin.mint(curveAddr, PARAMS.totalSupply)).wait();
     await (await curve.setFactory(deployer.address, true)).wait();
+    await (await curve.setQuoteAllowed(hoodAddr, true)).wait(); // HOOD must be an approved collateral
     await (await curve.register(coinAddr, hoodAddr, creator.address, ZERO, 0, PARAMS.poolFee, PARAMS.virtualQuote, PARAMS.totalSupply, PARAMS.graduationQuote)).wait();
     await (await curve.setZapPath(hoodAddr, pathIn, pathOut)).wait();
     return { deployer, platform, creator, trader, quote, hood, curve, coin, router };
@@ -172,6 +173,7 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     const hood2 = await MockERC20.deploy("Hood2", "HOOD2"); await hood2.waitForDeployment();
     const coin2 = await MockERC20.deploy("NoZap", "NOZAP"); await coin2.waitForDeployment();
     await (await coin2.mint(await curve.getAddress(), PARAMS.totalSupply)).wait();
+    await (await curve.setQuoteAllowed(await hood2.getAddress(), true)).wait();
     await (await curve.register(await coin2.getAddress(), await hood2.getAddress(), creator.address, ZERO, 0, PARAMS.poolFee, PARAMS.virtualQuote, PARAMS.totalSupply, PARAMS.graduationQuote)).wait();
     await expect(curve.buyWithETH(await coin2.getAddress(), 0, { value: E(1) })).to.be.reverted; // NotZappable
     void deployer; void router;

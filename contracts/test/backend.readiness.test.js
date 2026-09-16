@@ -104,6 +104,16 @@ describe('Backend regressions and remaining external risks', function () {
     const liabilities=(await curve.curves(a.target)).realQuote+(await curve.curves(b.target)).realQuote;
     expect(liabilities-await q.balanceOf(curve.target)).to.equal(0);
   });
+  it('rejects launches with unsupported quote collateral until the deployer enables it', async () => {
+    const [owner,platform]=await ethers.getSigners(); const q=await deploy('AuditQuote'); const weth=await deploy('WETH9'); const r=await deploy('MockSwapRouter'); const t=await deploy('MockERC20','A','A');
+    const c=await deploy('CensusCurve',owner.address,platform.address,owner.address,weth.target,r.target); await c.setFactory(owner.address,true); await t.mint(c.target,E('1000000'));
+    const register=()=>c.register(t.target,q.target,owner.address,ethers.ZeroAddress,0,10000,E('1.5'),E('1000000'),E('4'));
+    await expect(register()).to.be.reverted; // arbitrary collateral is refused
+    await expect(c.connect(platform).setQuoteAllowed(q.target,true)).to.be.reverted; // deployer-only
+    await c.setQuoteAllowed(q.target,true);
+    await register(); // approved collateral registers
+    expect(await c.allowedQuote(weth.target)).to.equal(true); // WETH enabled at deployment
+  });
   it('blocked fee recipient halts trading despite a valid curve and funded buyer', async () => {
     const [owner,platform,buyer]=await ethers.getSigners(); const q=await deploy('AuditQuote'); const r=await deploy('MockSwapRouter'); const t=await deploy('MockERC20','A','A');
     const c=await deploy('CensusCurve',owner.address,platform.address,owner.address,q.target,r.target); await c.setFactory(owner.address,true); await t.mint(c.target,E('1000000'));

@@ -63,6 +63,11 @@ contract CensusCurve is ReentrancyGuard {
     ISwapRouter public immutable swapRouter; // Uniswap V3 SwapRouter02 — for the ETH zap on non-ETH coins
     address public immutable deployer;
     mapping(address => bool) public factory; // authorised launch factories
+    /// @notice Supported quote (collateral) assets. Arbitrary quote tokens are rejected at
+    ///         registration: shared custody means one misbehaving quote asset (fee-on-transfer,
+    ///         rebasing, freezable) could otherwise damage every launch using it. Deployer-managed;
+    ///         WETH is enabled at deployment.
+    mapping(address => bool) public allowedQuote;
 
     /// @notice The ETH "zap": for a coin quoted in a non-ETH asset (e.g. HOOD), one-tap ETH buy/sell
     ///         routes WETH<->quote through a Uniswap V3 multi-hop path. Keyed by the quote token and set by
@@ -89,6 +94,7 @@ contract CensusCurve is ReentrancyGuard {
     mapping(address => Curve) public curves; // coin => curve
 
     event FactorySet(address indexed factory, bool allowed);
+    event QuoteAllowed(address indexed quote, bool allowed);
     event ZapPathSet(address indexed quote, bytes pathIn, bytes pathOut);
     event Registered(address indexed coin, address quote, address creator, address vault, uint16 holdersBps, uint256 virtualQuote, uint256 graduationQuote);
     event Traded(address indexed coin, address indexed trader, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 fee);
@@ -112,6 +118,8 @@ contract CensusCurve is ReentrancyGuard {
         weth = weth_;
         swapRouter = ISwapRouter(swapRouter_);
         deployer = msg.sender;
+        allowedQuote[weth_] = true;
+        emit QuoteAllowed(weth_, true);
     }
 
     /// @dev Accept native ETH from WETH.withdraw() during sellForETH. Not a general deposit.
@@ -121,6 +129,15 @@ contract CensusCurve is ReentrancyGuard {
         if (msg.sender != deployer) revert NotDeployer();
         factory[f] = ok;
         emit FactorySet(f, ok);
+    }
+
+    /// @notice Enable/disable a quote (collateral) asset for NEW launches. Review the token's
+    ///         transfer/rebase/freeze/upgrade behavior before enabling. Existing curves keep working;
+    ///         this gates registration only.
+    function setQuoteAllowed(address quote, bool ok) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        allowedQuote[quote] = ok;
+        emit QuoteAllowed(quote, ok);
     }
 
     /// @notice Enable the ETH zap for a non-ETH quote token by setting its Uniswap V3 multi-hop paths:
@@ -145,6 +162,7 @@ contract CensusCurve is ReentrancyGuard {
     ) external {
         if (!factory[msg.sender]) revert NotFactory();
         if (curves[coin].exists) revert AlreadyRegistered();
+        require(allowedQuote[quote], "quote not supported");
         require(holdersBps <= BPS, "bps");
         require(vault != address(0) || holdersBps == 0, "vault required for holders");
         require(virtualQuote > 0 && tokenSupply > 0 && graduationQuote > 0, "params");
