@@ -1,5 +1,5 @@
-/* Census inner-app UI kit — ported from the designer's reference
- * (FromDesigner/InnerPages/.../census-app-reference.jsx), wired to react-router + the real wallet.
+/* Census inner-app UI kit — ported from the designer's reference (census-app-reference.jsx), wired to
+ * react-router + the real wallet.
  * Rules (do not "improve" away): lime is the only accent + one key numeral per screen; every numeral is
  * mono/tabular; coin avatars are the real image or a FLAT tile (never metal); anchors/stocks always use
  * the real logo; a value we do not have renders as "—", never 0 or a fabricated number.
@@ -12,12 +12,6 @@ import { CHAIN as CONFIG_CHAIN } from "./config";
 // Real, env-driven chain (46630 on testnet, 4663 on mainnet) — used for the sidebar meta and for
 // connecting on the correct network.
 export const CHAIN = { name: CONFIG_CHAIN.name, id: CONFIG_CHAIN.id };
-export const GRADUATION_RESERVE_ETH = 4;
-export const FEE = { total: 0.02, creator: 0.75, platform: 0.25 };
-export function feeBreakdown(amount: number) {
-  const fee = amount * FEE.total;
-  return { fee, creator: fee * FEE.creator, platform: fee * FEE.platform, net: amount - fee };
-}
 
 const ANCHOR_LOGO: Record<string, string> = {
   ETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
@@ -38,6 +32,7 @@ export const fmtUsd = (n: number | null | undefined) =>
     : `$${n.toFixed(2)}`;
 export const fmtPrice = (n: number | null | undefined) => (n == null ? "—" : `$${n.toPrecision(3)}`);
 export const fmtPct = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n)}%`);
+export const fmtAmount = (n: number, digits = 4) => n.toLocaleString(undefined, { maximumFractionDigits: digits });
 export const shortAddr = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—");
 export const initials = (name: string) =>
   (name || "").split(/\s+/).filter((w) => /[a-z0-9]/i.test(w)).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "C";
@@ -47,7 +42,7 @@ export type DisplayCoin = {
   address: string; name: string; symbol: string; image?: string;
   creator?: string; age?: string; anchor?: string;
   marketCap?: number | null; price?: number | null; graduation?: number | null;
-  graduated?: boolean; reserve?: number; replies?: number | null;
+  graduated?: boolean; reserve?: number; graduationTarget?: number | null; replies?: number | null;
 };
 
 /* -------- primitives -------- */
@@ -55,10 +50,11 @@ export const Num = ({ children, kind = "value" }: { children: ReactNode; kind?: 
   <span className={`cx-num cx-num--${children === "—" ? "pending" : kind}`}>{children}</span>
 );
 
-export function CxAvatar({ name, image, wallet = false }: { name?: string; image?: string; wallet?: boolean }) {
+export function CxAvatar({ name, image, wallet = false, size }: { name?: string; image?: string; wallet?: boolean; size?: number }) {
   const [failed, setFailed] = useState(false);
+  const style = size ? { width: size, height: size, fontSize: Math.round(size * 0.26) } : undefined;
   return (
-    <span className={`cx-avatar${wallet ? " cx-avatar--wallet" : ""}`}>
+    <span className={`cx-avatar${wallet ? " cx-avatar--wallet" : ""}`} style={style}>
       {image && !failed ? <img src={image} alt="" onError={() => setFailed(true)} /> : initials(name || "")}
     </span>
   );
@@ -107,13 +103,16 @@ export const EmptyPanel = ({ title, body, action = "Create coin" }: { title: str
   </div>
 );
 
-/* -------- icons (paths from the reference / icons.tsx) -------- */
+/* Search/filter came back empty — not the same thing as an empty market. */
+export const NoMatchPanel = ({ query }: { query: string }) => (
+  <PendingPanel line={`Nothing matches “${query}”`} note="Try a company name or ticker." />
+);
+
+/* -------- icons (paths from the designer's reference) -------- */
 const ICON: Record<string, ReactNode> = {
   home: <path d="M3 11l9-8 9 8M5 10v10h14V10" strokeWidth={1.9} />,
   board: <><circle cx="7" cy="8" r="2.4" /><circle cx="16" cy="16" r="2.4" /><path d="M2 8h3M9.4 8H22M2 16h11.6M18.4 16H22" /></>,
-  token: <><circle cx="12" cy="12" r="9" /><path d="M12 7.4v9.2M14.3 9.2c-.5-.8-1.4-1.3-2.4-1.3-1.5 0-2.6 1-2.6 2.2 0 2.6 5.2 1.4 5.2 4 0 1.2-1.1 2.2-2.6 2.2-1 0-1.9-.5-2.4-1.3" /></>,
   profile: <><circle cx="12" cy="12" r="9.2" /><circle cx="12" cy="9.5" r="3" /><path d="M6 19a6 6 0 0112 0" /></>,
-  more: <><circle cx="12" cy="5" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="19" r="1.4" fill="currentColor" /></>,
   paper: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9.5 12.5h5M9.5 16h5" /></>,
   search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeWidth={1.9} /></>,
   plus: <path d="M12 5v14M5 12h14" strokeWidth={2} />,
@@ -121,7 +120,7 @@ const ICON: Record<string, ReactNode> = {
   copy: <path d="M9 9h10v10H9zM5 15H4V4h11v1" />,
 };
 export const Icon = ({ name, size = 18 }: { name: string; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{ICON[name]}</svg>
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON[name]}</svg>
 );
 
 /* -------- shell -------- */
@@ -135,13 +134,14 @@ const MOBILE_TABS = [
   { key: "companies", label: "Companies", icon: "home", to: "/home" },
   { key: "market", label: "Market", icon: "board", to: "/board" },
   { key: "create", label: "Create", icon: "plus", to: "/create", action: true },
+  { key: "paper", label: "Paper", icon: "paper", to: "/paper" },
   { key: "profile", label: "Profile", icon: "profile", to: "/profile" },
 ];
 
-// One wallet-connect flow, shared by the app chrome (CensusConnect) and the launch wizard, so "Connect
-// wallet" behaves identically everywhere. It opens the wallet FIRST (no chainId), then best-effort
-// switches to Robinhood Chain — decoupling the two means a network add/switch hiccup can never stop the
-// wallet window from opening (the failure mode Jamie kept hitting). Errors come back clear, not silent.
+// One wallet-connect flow, shared by the app chrome (CensusConnect), the coin page and the launch
+// wizard, so "Connect wallet" behaves identically everywhere. It opens the wallet FIRST (no chainId),
+// then best-effort switches to Robinhood Chain — decoupling the two means a network add/switch hiccup
+// can never stop the wallet window from opening. Errors come back as clear text, never silence.
 export function useWalletConnect() {
   const { connectAsync, connectors } = useConnect();
   const { switchChainAsync } = useSwitchChain();
@@ -185,8 +185,8 @@ export function useWalletConnect() {
   }, [connectAsync, connectors, switchChainAsync]);
 
   // Make sure the wallet is on Robinhood Chain before a tx. Without this a user connected to Ethereum
-  // mainnet would be asked to pay real gas (the "$0.72 in wETH on Ethereum" bug) and the tx would fail —
-  // there are no Census contracts there. Returns false (with a clear error) if the switch is declined.
+  // mainnet would be asked to pay real gas there and the tx would fail — there are no Census contracts
+  // on Ethereum. Returns false (with a clear error) if the switch is declined.
   const ensureChain = useCallback(async (): Promise<boolean> => {
     try {
       await switchChainAsync({ chainId: CHAIN.id });
@@ -260,7 +260,8 @@ export const MobileTabBar = ({ active }: { active: string }) => (
   </nav>
 );
 
-/* Transaction tape — renders the single hidden line until a real feed exists (no fabricated trades). */
+/* Transaction tape — renders the single hidden line until a real feed exists (no fabricated trades). The
+ * events shape is what the indexer's websocket will push. */
 export function Tape({ events }: { events?: { id: string; kind: string; actor: string; amount?: string; quote?: string; coinName: string }[] }) {
   if (!events?.length) {
     return (
@@ -286,6 +287,13 @@ export function Tape({ events }: { events?: { id: string; kind: string; actor: s
   );
 }
 
+/* Graduation caption shared by rows and the coin page: "3.10 / 4.00 ETH reserve", or the honest
+ * partial when the target isn't known yet. */
+export const reserveCaption = (c: { reserve?: number; graduationTarget?: number | null; anchor?: string }) =>
+  c.graduationTarget != null
+    ? `${(c.reserve ?? 0).toFixed(2)} / ${c.graduationTarget.toFixed(2)} ${c.anchor ?? "ETH"} reserve`
+    : `${(c.reserve ?? 0).toFixed(2)} ${c.anchor ?? "ETH"} raised`;
+
 /* -------- shared rows -------- */
 export const HomeRow = ({ c }: { c: DisplayCoin }) => (
   <Link className="cx-row cx-grid-home" to={`/coin/${c.address}`}>
@@ -308,7 +316,7 @@ export const HomeRow = ({ c }: { c: DisplayCoin }) => (
 
 export const TrendingCard = ({ c, king }: { c: DisplayCoin; king?: boolean }) => (
   <Link to={`/coin/${c.address}`} className={`cx-panel${king ? " cx-panel--hilite" : " cx-panel--plain"}`} style={{ padding: 22, textDecoration: "none", color: "var(--census-text)" }}>
-    <div className="cx-label" style={{ height: 14, color: king ? "var(--census-lime)" : "transparent" }}>King of the hill</div>
+    <div className="cx-label" aria-hidden={!king} style={{ height: 14, color: king ? "var(--census-lime)" : "transparent" }}>King of the hill</div>
     <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16 }}>
       <CxAvatar name={c.name} image={c.image} />
       <span style={{ minWidth: 0 }}>
@@ -358,7 +366,7 @@ export function BoardRow({ r }: { r: DisplayCoin }) {
           <span style={{ width: 42, textAlign: "right" }}><Num kind={g >= 100 ? "key" : "value"}>{fmtPct(r.graduation)}</Num></span>
         </span>
         <span className="cx-label" style={{ display: "block", marginTop: 8 }}>
-          {g >= 100 ? "Graduated · pool locked" : `${(r.reserve ?? 0).toFixed(2)} / ${GRADUATION_RESERVE_ETH.toFixed(2)} ETH reserve`}
+          {g >= 100 ? "Graduated · pool locked" : reserveCaption(r)}
         </span>
       </span>
       <span style={{ textAlign: "right" }}><Num>—</Num></span>

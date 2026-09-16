@@ -1,0 +1,17 @@
+/* Census — global base (reset + document defaults).
+ * The only site-wide rules; everything visual lives in census-tokens.css (tokens),
+ * census.css (landing + launch wizard) and census-app.css (the in-app screens). */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  background: var(--census-bg-wizard);
+  background-attachment: fixed;
+  color: var(--census-text);
+  font-family: var(--census-font-ui);
+  font-size: 14.5px;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { font-family: inherit; }
+::placeholder { color: var(--census-text-muted); }
+::-webkit-scrollbar { width: 0; height: 0; }

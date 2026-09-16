@@ -1,235 +1,314 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useAccount, usePublicClient, useSendTransaction, useWriteContract } from "wagmi";
-import { parseUnits, formatUnits, type Address } from "viem";
-import { CONTRACTS, DEFAULT_FEE, QUOTE, SWAP_HAS_DEADLINE, CHAIN } from "../config";
-import { wethAbi, erc20Abi, swapRouterAbi, swapRouterV1Abi, censusCurveAbi } from "../abis";
+import { parseUnits, formatUnits, isAddress, zeroAddress, type Address } from "viem";
+import { CONTRACTS, DEFAULT_FEE, CHAIN, TRADE_FEE_BPS, TRADE_FEE_LABEL } from "../config";
+import { wethAbi, erc20Abi, swapRouterAbi, censusCurveAbi } from "../abis";
 import { zeroExPrice, zeroExQuote, allowanceSpender, routeSummary } from "../lib/zeroex";
-import { ANCHORS, ETH_USD } from "../lib/anchors";
+import { anchorByQuote, cachedQuoteUsd } from "../lib/anchors";
+import { poolSpotOut } from "../lib/pool";
 import { useCoinQuote } from "../lib/useCoinQuote";
-import { COINS } from "../lib/mock";
-import { usd, price as fmtPrice, short } from "../lib/format";
-import { CxAssetLogo, Num, StatBand, PendingPanel, GraduationBar, Icon, feeBreakdown, GRADUATION_RESERVE_ETH, initials, useWalletConnect } from "../census";
+import { getMetadata, type CoinMetadata } from "../lib/metadata";
+import { CxAvatar, CxAssetLogo, Num, StatBand, PendingPanel, GraduationBar, Icon, fmtUsd, fmtPrice, fmtAmount, shortAddr, reserveCaption, useWalletConnect } from "../census";
+
+const SLIPPAGE_BPS = 200; // 2% — the minimum-out on every trade path
+const BUY_PRESETS = ["0.01", "0.1", "0.5", "1"];
+const SELL_PRESETS = [25, 50, 75, 100]; // % of the coins you hold
+
+const friendly = (e: any) => {
+  const raw = String(e?.shortMessage ?? e?.message ?? e ?? "");
+  if (/reject|denied|cancel/i.test(raw)) return "Cancelled in your wallet.";
+  return raw.slice(0, 140) || "Something went wrong.";
+};
 
 export function Coin() {
-  const { address } = useParams();
+  const { address: param } = useParams();
+  const loc = useLocation();
+  const coinAddr = param && isAddress(param) ? (param as Address) : undefined;
   const { address: me, isConnected } = useAccount();
-  const { connect, connecting, ensureChain } = useWalletConnect();
+  const { connect, connecting, error: connectError, ensureChain } = useWalletConnect();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
-
-  const coin = COINS.find((c) => c.address.toLowerCase() === (address || "").toLowerCase())
-    ?? { address: address || "", emoji: "🪙", name: "Token", symbol: "TOKEN", creator: "0x000000", age: "just now", mcap: 1200, price: 0.0000012, change24: 0, replies: 0, desc: "" };
+  const cq = useCoinQuote(coinAddr);
 
   const [buy, setBuy] = useState(true);
   const [amount, setAmount] = useState("0.1");
-  const [tf, setTf] = useState("1h");
   const [status, setStatus] = useState("");
-  const [quoteOut, setQuoteOut] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [quoteOut, setQuoteOut] = useState<bigint | null>(null); // what you'd receive, raw units of the out-asset
   const [via, setVia] = useState("");
   const [gradBps, setGradBps] = useState<number | null>(null);
+  const [meta, setMeta] = useState<CoinMetadata | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [coinBal, setCoinBal] = useState<bigint | null>(null);
+  const [quoteBal, setQuoteBal] = useState<bigint | null>(null);
+  const [quoteUsd, setQuoteUsd] = useState<number | null>(null);
+  const [poolPrice, setPoolPrice] = useState<number | null>(null); // quote per coin, graduated coins only
+  const [tick, setTick] = useState(0); // bumps after a trade to refresh balances + quote
 
-  const ZERO = "0x0000000000000000000000000000000000000000";
-
-  // What this coin is actually paired against (WETH default, or HOOD, …) + its real name/symbol.
-  const cq = useCoinQuote(coin.address);
+  // What this coin is anchored to (WETH default, or HOOD, …) and where it trades right now.
   const quote = cq.quote;
+  const anchorMeta = anchorByQuote(quote);
+  const anchor = anchorMeta?.key ?? "ETH";
+  const quoteDec = anchorMeta?.quoteDecimals ?? 18;
   const isWethQuote = quote.toLowerCase() === CONTRACTS.weth.toLowerCase();
-  const quoteSym = ANCHORS.find((a) => a.quote.toLowerCase() === quote.toLowerCase())?.key ?? QUOTE;
-  // Non-graduated + registered on the curve → trade against the bonding curve (un-dodgeable 2% fee).
-  // Graduated (or unknown/preview) coins fall through to the 0x/pool path below.
-  const curveAddr = CONTRACTS.curve;
-  const hasCurve = curveAddr !== ZERO;
-  const onCurve = hasCurve && !!cq.routed && !cq.graduated;
-  const coinName = cq.name ?? coin.name;
-  const coinSym = cq.symbol ?? coin.symbol;
+  const hasCurve = CONTRACTS.curve !== zeroAddress;
+  const registered = !!cq.routed;
+  const graduated = !!cq.graduated;
+  const onCurve = registered && !graduated; // pre-graduation: every trade is on the CensusCurve
+  const poolFee = cq.routerPoolFee || DEFAULT_FEE;
+  const coinName = cq.name ?? (cq.resolved ? "Unknown token" : "…");
+  const coinSym = cq.symbol ?? "";
+  const tier = cq.isV2 ? "Maxima" : "Prima";
+  const tradeBlock = !hasCurve ? "Trading isn't configured on this deployment." : cq.resolved && !registered ? "This address isn't a Census coin." : "";
+  const canTrade = hasCurve && cq.resolved && registered;
 
-  // Live spot price + market cap, straight off the curve (no indexer needed): spot = virtualQuote /
-  // tokenReserve (quote per token). USD via the app's ETH_USD calibration for ETH-quoted coins; for a
-  // non-ETH anchor we show the price in that anchor's units. Stays null (shows "new") until the coin is
-  // registered on the curve with reserves. Richer stats (24h, holders, history) need the indexer.
-  const liveStats = onCurve && cq.virtualQuote != null && cq.tokenReserve != null && cq.tokenReserve > 0n;
-  const quoteDec = ANCHORS.find((a) => a.quote.toLowerCase() === quote.toLowerCase())?.quoteDecimals ?? 18;
-  const priceQuote = liveStats ? (Number(cq.virtualQuote) / 10 ** quoteDec) / (Number(cq.tokenReserve) / 1e18) : null;
+  // Price + market cap. On the curve: spot = virtualQuote / tokenReserve. Graduated: the pool's spot.
+  // USD via the anchor's live price (null => shown in anchor units, never a made-up dollar figure).
+  const curvePrice = onCurve && cq.virtualQuote != null && cq.tokenReserve != null && cq.tokenReserve > 0n
+    ? (Number(cq.virtualQuote) / 10 ** quoteDec) / (Number(cq.tokenReserve) / 1e18) : null;
+  const priceQuote = onCurve ? curvePrice : graduated ? poolPrice : null;
   const supply = cq.totalSupply != null ? Number(cq.totalSupply) / 1e18 : null;
-  const priceUsd = priceQuote != null && isWethQuote ? priceQuote * ETH_USD : null;
+  const priceUsd = priceQuote != null && quoteUsd != null ? priceQuote * quoteUsd : null;
   const mcapUsd = priceUsd != null && supply != null ? priceUsd * supply : null;
-  const creatorDisp = cq.creator ? short(cq.creator) : coin.creator && coin.creator !== "0x000000" ? coin.creator : "—";
-  const priceDisp = priceUsd != null ? fmtPrice(priceUsd) : priceQuote != null ? `${priceQuote.toPrecision(3)} ${quoteSym}` : "new";
-  const mcapDisp = mcapUsd != null ? usd(mcapUsd) : priceQuote != null && supply != null ? `${(priceQuote * supply).toPrecision(3)} ${quoteSym}` : "new";
+  const priceDisp = priceUsd != null ? fmtPrice(priceUsd) : priceQuote != null ? `${priceQuote.toPrecision(3)} ${anchor}` : "—";
+  const mcapDisp = mcapUsd != null ? fmtUsd(mcapUsd) : priceQuote != null && supply != null ? `${fmtAmount(priceQuote * supply, 2)} ${anchor}` : "—";
+  const liveNote = onCurve ? "Live from the curve" : graduated ? "Live from the pool" : "—";
+  const reserve = cq.realQuote != null ? Number(cq.realQuote) / 10 ** quoteDec : 0;
+  const graduationTarget = cq.graduationQuote != null && cq.graduationQuote > 0n ? Number(cq.graduationQuote) / 10 ** quoteDec : null;
+  const gradPct = graduated ? 100 : gradBps != null ? Math.min(100, Math.round(gradBps / 100)) : 0;
 
-  // Live indicative "you receive ≈" as the user types (debounced). On the bonding curve this reads
-  // quoteBuy/quoteSell (net of the 2% fee) straight off the curve; for graduated coins it falls back to
-  // the 0x proxy. Stays blank when there's no route (brand-new coin) or the dev proxy isn't running.
+  // The anchor's USD price (cached per minute across pages).
   useEffect(() => {
     let cancelled = false;
-    const coinAddr = coin.address as Address;
-    const n = Number(amount);
-    if (!coinAddr || !amount || !Number.isFinite(n) || n <= 0) { setQuoteOut(""); setVia(""); return; }
-    const t = setTimeout(async () => {
-      try {
-        if (onCurve && publicClient) {
-          const amt = parseUnits(amount, 18);
-          const out = (await publicClient.readContract({
-            address: curveAddr, abi: censusCurveAbi,
-            functionName: buy ? "quoteBuy" : "quoteSell", args: [coinAddr, amt],
-          })) as bigint;
-          if (cancelled) return;
-          setQuoteOut(out > 0n ? formatUnits(out, 18) : "");
-          setVia(out > 0n ? "census curve" : "");
-          return;
-        }
-        const sellToken = buy ? quote : coinAddr;
-        const buyToken = buy ? coinAddr : quote;
-        const q = await zeroExPrice({ sellToken, buyToken, sellAmount: parseUnits(amount, 18), taker: me, slippageBps: 200 });
-        if (cancelled) return;
-        if (q.liquidityAvailable === false || !q.buyAmount) { setQuoteOut(""); setVia(""); return; }
-        setQuoteOut(formatUnits(BigInt(q.buyAmount), 18));
-        setVia(routeSummary(q));
-      } catch { if (!cancelled) { setQuoteOut(""); setVia(""); } }
-    }, 350);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [amount, buy, coin.address, me, quote, onCurve, curveAddr, publicClient]);
+    if (!publicClient || !cq.resolved) return;
+    cachedQuoteUsd(publicClient, quote).then((p) => { if (!cancelled) setQuoteUsd(p); });
+    return () => { cancelled = true; };
+  }, [publicClient, quote, cq.resolved]);
 
-  // Live graduation progress (bps 0..10000) straight off the curve. Replaces the old hardcoded 42%.
+  // Graduated coins: spot price from the locked pool (1 anchor unit -> coins).
   useEffect(() => {
     let cancelled = false;
-    const coinAddr = coin.address as Address;
-    if (!publicClient || !hasCurve || (coinAddr || "").length !== 42) { setGradBps(null); return; }
+    setPoolPrice(null);
+    if (!publicClient || !coinAddr || !graduated) return;
+    poolSpotOut(publicClient, quote, coinAddr, parseUnits("1", quoteDec), poolFee).then((out) => {
+      if (cancelled || out == null || out <= 0n) return;
+      setPoolPrice(1 / (Number(out) / 1e18));
+    });
+    return () => { cancelled = true; };
+  }, [publicClient, coinAddr, graduated, quote, quoteDec, poolFee, tick]);
+
+  // Off-chain details from the launch wizard (thesis, description, logo) — null until the store is live.
+  useEffect(() => {
+    let cancelled = false;
+    setMeta(null);
+    if (!coinAddr) return;
+    getMetadata(coinAddr).then((m) => { if (!cancelled) setMeta(m); });
+    return () => { cancelled = true; };
+  }, [coinAddr]);
+
+  // Your balances: the coin (for the sell presets) and the anchor (native ETH, or the anchor token).
+  useEffect(() => {
+    let cancelled = false;
+    setCoinBal(null); setQuoteBal(null);
+    if (!publicClient || !coinAddr || !me || !cq.resolved) return;
     (async () => {
       try {
-        const bps = (await publicClient.readContract({
-          address: curveAddr, abi: censusCurveAbi, functionName: "graduationProgress", args: [coinAddr],
-        })) as bigint;
-        if (!cancelled) setGradBps(Number(bps));
-      } catch { if (!cancelled) setGradBps(null); }
+        const [c, q] = await Promise.all([
+          publicClient.readContract({ address: coinAddr, abi: erc20Abi, functionName: "balanceOf", args: [me] }),
+          isWethQuote ? publicClient.getBalance({ address: me }) : publicClient.readContract({ address: quote, abi: erc20Abi, functionName: "balanceOf", args: [me] }),
+        ]);
+        if (!cancelled) { setCoinBal(c); setQuoteBal(q); }
+      } catch { /* leave unknown */ }
     })();
     return () => { cancelled = true; };
-  }, [coin.address, publicClient, curveAddr, hasCurve, cq.graduated]);
+  }, [publicClient, coinAddr, me, quote, isWethQuote, cq.resolved, tick]);
+
+  // Live graduation progress (bps 0..10000) straight off the curve.
+  useEffect(() => {
+    let cancelled = false;
+    if (!publicClient || !hasCurve || !coinAddr || !registered || graduated) { setGradBps(null); return; }
+    publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "graduationProgress", args: [coinAddr] })
+      .then((bps) => { if (!cancelled) setGradBps(Number(bps)); })
+      .catch(() => { if (!cancelled) setGradBps(null); });
+    return () => { cancelled = true; };
+  }, [publicClient, coinAddr, hasCurve, registered, graduated, tick]);
+
+  // Indicative "you receive ~" as the user types (debounced). On the curve this is quoteBuy/quoteSell
+  // (fee-net) straight off the contract; graduated WETH-anchored coins ask 0x, everything else reads
+  // the pool's spot. Blank when there's no price for the amount.
+  useEffect(() => {
+    let cancelled = false;
+    setQuoteOut(null); setVia("");
+    if (!coinAddr || !publicClient || !canTrade) return;
+    const n = Number(amount);
+    if (!amount || !Number.isFinite(n) || n <= 0) return;
+    const t = setTimeout(async () => {
+      try {
+        const amt = parseUnits(amount, buy ? quoteDec : 18);
+        if (onCurve) {
+          const out = await publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: buy ? "quoteBuy" : "quoteSell", args: [coinAddr, amt] });
+          if (!cancelled) { setQuoteOut(out > 0n ? out : null); setVia(out > 0n ? "curve" : ""); }
+          return;
+        }
+        const sellToken = buy ? quote : coinAddr, buyToken = buy ? coinAddr : quote;
+        if (isWethQuote) {
+          try {
+            const q = await zeroExPrice({ sellToken, buyToken, sellAmount: amt, taker: me, slippageBps: SLIPPAGE_BPS });
+            if (cancelled) return;
+            if (q.liquidityAvailable !== false && q.buyAmount) { setQuoteOut(BigInt(q.buyAmount)); setVia(routeSummary(q)); return; }
+          } catch { /* fall through to the pool */ }
+        }
+        const out = await poolSpotOut(publicClient, sellToken, buyToken, amt, poolFee);
+        if (!cancelled) { setQuoteOut(out); setVia(out ? "pool" : ""); }
+      } catch { if (!cancelled) { setQuoteOut(null); setVia(""); } }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [amount, buy, coinAddr, me, quote, onCurve, canTrade, publicClient, quoteDec, isWethQuote, poolFee, tick]);
 
   async function trade() {
+    if (!coinAddr || !publicClient || busy) return;
     setStatus("");
-    if (!isConnected || !me || !publicClient) { setStatus("connect your wallet to trade"); return; }
-    const coinAddr = coin.address as Address;
+    if (!isConnected || !me) { setStatus("Connect your wallet to trade."); return; }
+    if (!canTrade) { setStatus(tradeBlock || "Still loading — try again in a moment."); return; }
     let amountIn: bigint;
-    try { amountIn = parseUnits(amount || "0", 18); } catch { setStatus("enter a valid amount"); return; }
-    if (amountIn <= 0n) { setStatus("enter an amount"); return; }
-    // On the right network first — otherwise the trade goes to whatever chain the wallet is on and fails.
-    if (!(await ensureChain())) { setStatus(`switch your wallet to ${CHAIN.name}, then trade`); return; }
-    const sellToken = buy ? quote : coinAddr;
-    const buyToken = buy ? coinAddr : quote;
+    try { amountIn = parseUnits(amount || "0", buy ? quoteDec : 18); } catch { setStatus("Enter a valid amount."); return; }
+    if (amountIn <= 0n) { setStatus("Enter an amount."); return; }
+    if (!buy && coinBal != null && amountIn > coinBal) { setStatus(`You hold ${fmtAmount(Number(formatUnits(coinBal, 18)))} ${coinSym}.`); return; }
+    if (quoteOut == null) { setStatus("No price for this amount right now — adjust it or try again."); return; }
+    const minOut = (quoteOut * BigInt(10000 - SLIPPAGE_BPS)) / 10000n; // never trade unprotected
+    setBusy(true);
     try {
-      // Non-graduated coin → trade against the CensusCurve. There is no pool to route around, so the
-      // flat 2% fee is taken on-chain (split 75% creator-side / 25% platform). BUY approves `quoteIn`
-      // of the quote asset to the curve then curve.buy; SELL approves the coin then curve.sell. Works
-      // for ETH- and HOOD-quoted coins.
+      // On the right network first — otherwise the trade goes to whatever chain the wallet is on and fails.
+      if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then trade.`); return; }
+      const sellToken = buy ? quote : coinAddr;
+      const buyToken = buy ? coinAddr : quote;
+
       if (onCurve) {
-        let minOut = 0n;
-        if (quoteOut) { try { minOut = (parseUnits(quoteOut, 18) * 98n) / 100n; } catch { minOut = 0n; } }
+        // Pre-graduation: trade against the CensusCurve (the fee is taken on-chain). BUY: an ETH-anchored
+        // coin takes native ETH in one tx (buyWithETH wraps for you); another anchor means approving that
+        // token, then curve.buy. SELL approves the coin, then sells — ETH-anchored coins pay out native ETH.
         if (buy) {
           if (isWethQuote) {
-            // one-tap: native ETH in, wrapped + bought in a single tx on the curve (no pre-wrap, no approval)
-            setStatus("buying · 2% fee…");
-            const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: "buyWithETH", args: [coinAddr, minOut], value: amountIn });
+            setStatus("Confirm in your wallet…");
+            const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "buyWithETH", args: [coinAddr, minOut], value: amountIn });
+            setStatus("Buying…");
             await publicClient.waitForTransactionReceipt({ hash: h });
-            setStatus("bought ✓");
+            setStatus("Bought ✓");
           } else {
-            // non-ETH anchor (e.g. HOOD): the trader must already hold the quote token
-            const bal = (await publicClient.readContract({ address: quote, abi: erc20Abi, functionName: "balanceOf", args: [me] })) as bigint;
-            if (bal < amountIn) { setStatus(`you need ${quoteSym} in your wallet to buy this coin`); return; }
-            setStatus("approving…");
-            const a = await writeContractAsync({ address: quote, abi: erc20Abi, functionName: "approve", args: [curveAddr, amountIn] });
+            if (quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${anchor} in your wallet to buy this coin.`); return; }
+            setStatus("Approving…");
+            const a = await writeContractAsync({ chainId: CHAIN.id, address: quote, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.curve, amountIn] });
             await publicClient.waitForTransactionReceipt({ hash: a });
-            setStatus("buying · 2% fee…");
-            const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: "buy", args: [coinAddr, amountIn, minOut] });
+            setStatus("Confirm in your wallet…");
+            const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "buy", args: [coinAddr, amountIn, minOut] });
+            setStatus("Buying…");
             await publicClient.waitForTransactionReceipt({ hash: h });
-            setStatus("bought ✓");
+            setStatus("Bought ✓");
           }
         } else {
-          setStatus("approving…");
-          const a = await writeContractAsync({ address: coinAddr, abi: erc20Abi, functionName: "approve", args: [curveAddr, amountIn] });
+          setStatus("Approving…");
+          const a = await writeContractAsync({ chainId: CHAIN.id, address: coinAddr, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.curve, amountIn] });
           await publicClient.waitForTransactionReceipt({ hash: a });
-          // ETH-quoted → sellForETH returns native ETH (unwrapped); non-ETH → sell returns the quote token
-          setStatus("selling · 2% fee…");
-          const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: isWethQuote ? "sellForETH" : "sell", args: [coinAddr, amountIn, minOut] });
+          setStatus("Confirm in your wallet…");
+          const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.curve, abi: censusCurveAbi, functionName: isWethQuote ? "sellForETH" : "sell", args: [coinAddr, amountIn, minOut] });
+          setStatus("Selling…");
           await publicClient.waitForTransactionReceipt({ hash: h });
-          setStatus(isWethQuote ? "sold ✓ (ETH)" : "sold ✓");
+          setStatus(isWethQuote ? "Sold ✓ — paid out in ETH" : "Sold ✓");
         }
         return;
       }
-      // --- graduated coin (or unknown/preview): the coin now trades on a real Uniswap pool ---
-      // Buying a WETH-paired coin spends native ETH -> wrap to WETH first (pools and 0x sell WETH).
-      // A non-WETH quote (e.g. HOOD) is a token the trader must already hold — no wrap.
+
+      // Graduated: the coin trades on its permanently locked Uniswap pool. WETH-anchored coins try 0x
+      // first (best execution; 0x won't route tokenised-stock anchors like HOOD), else the pool directly.
+      if (buy && !isWethQuote && quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${anchor} in your wallet to buy this coin.`); return; }
       if (buy && isWethQuote) {
-        setStatus("wrapping…");
-        const w = await writeContractAsync({ address: CONTRACTS.weth, abi: wethAbi, functionName: "deposit", value: amountIn });
+        setStatus("Wrapping ETH…");
+        const w = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.weth, abi: wethAbi, functionName: "deposit", value: amountIn });
         await publicClient.waitForTransactionReceipt({ hash: w });
       }
-      // 0x best execution — only for WETH-paired coins. 0x won't route tokenised-stock quotes like
-      // HOOD (the same legal restriction that blocks stock buys), so those go straight to the pool.
       if (isWethQuote) {
-        const q = await zeroExQuote({ sellToken, buyToken, sellAmount: amountIn, taker: me, slippageBps: 200 }).catch(() => undefined);
+        const q = await zeroExQuote({ sellToken, buyToken, sellAmount: amountIn, taker: me, slippageBps: SLIPPAGE_BPS }).catch(() => undefined);
         if (q && q.liquidityAvailable !== false && q.transaction?.data) {
           const spender = allowanceSpender(q);
           if (spender) {
-            const current = (await publicClient.readContract({ address: sellToken, abi: erc20Abi, functionName: "allowance", args: [me, spender] })) as bigint;
+            const current = await publicClient.readContract({ address: sellToken, abi: erc20Abi, functionName: "allowance", args: [me, spender] });
             if (current < amountIn) {
-              setStatus("approving…");
-              const a = await writeContractAsync({ address: sellToken, abi: erc20Abi, functionName: "approve", args: [spender, amountIn] });
+              setStatus("Approving…");
+              const a = await writeContractAsync({ chainId: CHAIN.id, address: sellToken, abi: erc20Abi, functionName: "approve", args: [spender, amountIn] });
               await publicClient.waitForTransactionReceipt({ hash: a });
             }
           }
-          setStatus(`swapping · ${routeSummary(q)}…`);
-          const h = await sendTransactionAsync({ to: q.transaction.to, data: q.transaction.data, value: BigInt(q.transaction.value || "0") });
+          setStatus(`Swapping via ${routeSummary(q)}…`);
+          const h = await sendTransactionAsync({ chainId: CHAIN.id, to: q.transaction.to, data: q.transaction.data, value: BigInt(q.transaction.value || "0") });
           await publicClient.waitForTransactionReceipt({ hash: h });
-          setStatus(buy ? "bought ✓" : "sold ✓");
+          setStatus(buy ? "Bought ✓" : "Sold ✓");
           return;
         }
       }
-      // The coin's own Uniswap V3 pool (quote/coin at the 1% launch tier). This is the path for every
-      // HOOD-paired coin, and the fallback for any coin 0x hasn't indexed yet.
-      if (buy && !isWethQuote) {
-        const bal = (await publicClient.readContract({ address: sellToken, abi: erc20Abi, functionName: "balanceOf", args: [me] })) as bigint;
-        if (bal < amountIn) { setStatus(`you need ${quoteSym} in your wallet to buy this coin`); return; }
-      }
-      setStatus(isWethQuote ? "no 0x route — using the pool…" : `swapping via the ${quoteSym} pool…`);
-      const a2 = await writeContractAsync({ address: sellToken, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.swapRouter, amountIn] });
+      setStatus("Approving…");
+      const a2 = await writeContractAsync({ chainId: CHAIN.id, address: sellToken, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.swapRouter, amountIn] });
       await publicClient.waitForTransactionReceipt({ hash: a2 });
-      const common = { tokenIn: sellToken, tokenOut: buyToken, fee: DEFAULT_FEE, recipient: me, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n };
-      const h2 = SWAP_HAS_DEADLINE
-        ? await writeContractAsync({ address: CONTRACTS.swapRouter, abi: swapRouterV1Abi, functionName: "exactInputSingle", args: [{ ...common, deadline: BigInt(Math.floor(Date.now() / 1000) + 1200) }] })
-        : await writeContractAsync({ address: CONTRACTS.swapRouter, abi: swapRouterAbi, functionName: "exactInputSingle", args: [common] });
+      setStatus("Swapping on the pool…");
+      const h2 = await writeContractAsync({
+        chainId: CHAIN.id, address: CONTRACTS.swapRouter, abi: swapRouterAbi, functionName: "exactInputSingle",
+        args: [{ tokenIn: sellToken, tokenOut: buyToken, fee: poolFee, recipient: me, amountIn, amountOutMinimum: minOut, sqrtPriceLimitX96: 0n }],
+      });
       await publicClient.waitForTransactionReceipt({ hash: h2 });
-      setStatus(buy ? "bought ✓ (pool)" : "sold ✓ (pool)");
-    } catch (e: any) { setStatus(e?.shortMessage ?? e?.message ?? String(e)); }
+      setStatus(buy ? "Bought ✓" : "Sold ✓");
+    } catch (e: any) {
+      setStatus(friendly(e));
+    } finally {
+      setBusy(false);
+      setTick((t) => t + 1);
+    }
   }
 
-  // Live values for the census render. Graduation %: 100 once graduated, else the live curve progress.
-  const gradPct = cq.graduated ? 100 : gradBps != null ? Math.min(100, Math.round(gradBps / 100)) : 0;
-  const anchor = quoteSym;
-  const tier = cq.isV2 ? "Maxima" : "Prima";
-  const reserveEth = cq.realQuote != null ? Number(cq.realQuote) / 10 ** quoteDec : 0;
-  const feeAmt = feeBreakdown(Number(amount) || 0).fee;
-  const graduated = !!cq.graduated;
+  if (!coinAddr) {
+    return (
+      <div className="cx-panel cx-empty">
+        <div className="cx-empty__title">That's not a coin address</div>
+        <div className="cx-empty__body">A Census coin address is 42 characters long and ends in c0de. Check the link and try again.</div>
+        <Link className="cx-cta" style={{ marginTop: 26 }} to="/board">Open the market</Link>
+      </div>
+    );
+  }
+
+  const copy = () => { navigator.clipboard?.writeText(coinAddr); setCopied(true); setTimeout(() => setCopied(false), 1200); };
+  const metaNote = (loc.state as any)?.metaSaved === false ? "Launched. Your logo and thesis couldn't be saved yet — the metadata store isn't connected." : "";
+  const feeRate = onCurve ? TRADE_FEE_BPS / 10000 : poolFee / 1e6;
+  const feePctLabel = `${+(feeRate * 100).toFixed(2)}%`;
+  const outUnits = buy ? 18 : quoteDec;
+  const outHuman = quoteOut != null ? Number(formatUnits(quoteOut, outUnits)) : null;
+  const feeDisp = buy
+    ? `${fmtAmount((Number(amount) || 0) * feeRate, 5)} ${anchor}`
+    : outHuman != null ? `${fmtAmount((outHuman * feeRate) / (1 - feeRate), 5)} ${anchor}` : "—";
+  const routeDisp = onCurve ? "The Census curve" : graduated ? (via && via !== "pool" ? `0x · ${via}` : "Locked Uniswap pool") : "—";
+  const balDisp = !me ? "" : buy
+    ? quoteBal != null ? `Balance ${fmtAmount(Number(formatUnits(quoteBal, quoteDec)))} ${anchor}` : ""
+    : coinBal != null ? `Balance ${fmtAmount(Number(formatUnits(coinBal, 18)), 2)} ${coinSym}` : "";
+  const sellPreset = (pct: number) => { if (coinBal == null) return; setAmount(formatUnits((coinBal * BigInt(pct)) / 100n, 18)); };
 
   return (
     <div className="cx-coin">
       {/* main column */}
       <div style={{ minWidth: 0 }}>
+        {metaNote && <div className="cx-label" style={{ marginBottom: 18, color: "var(--census-text-secondary)" }}>{metaNote}</div>}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
-          <span className="cx-avatar" style={{ width: 80, height: 80, fontSize: 20 }}>{initials(coinName)}</span>
+          <CxAvatar name={coinName} image={meta?.image} size={80} />
           <div style={{ minWidth: 0 }}>
-            <div className="cx-label">{tier} · anchored to {anchor}</div>
+            <div className="cx-label">{cq.resolved ? `${tier} · anchored to ${anchor}` : "Loading"}</div>
             <h1 className="cx-h1" style={{ fontSize: 40, marginTop: 10 }}>{coinName}</h1>
+            {meta?.thesis && <p style={{ margin: "10px 0 0", fontSize: 15, color: "var(--census-text-secondary)" }}>{meta.thesis}</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
-              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>${coinSym}</span>
+              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>${coinSym || "—"}</span>
               <Sep />
-              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>Started by {creatorDisp} · {coin.age}</span>
+              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>Started by {cq.creator ? shortAddr(cq.creator) : "—"}</span>
               <Sep />
-              <button className="cx-link-control" onClick={() => navigator.clipboard?.writeText(coin.address)} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                <span className="cx-num">{coin.address.slice(0, 6)}…{coin.address.slice(-6, -4)}<span style={{ color: "var(--census-lime)" }}>{coin.address.slice(-4)}</span></span>
-                <Icon name="copy" size={14} />
+              <button className="cx-link-control" onClick={copy} aria-label="Copy coin address" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                <span className="cx-num">{coinAddr.slice(0, 6)}…{coinAddr.slice(-6, -4)}<span style={{ color: "var(--census-lime)" }}>{coinAddr.slice(-4)}</span></span>
+                {copied ? <span className="cx-label">Copied</span> : <Icon name="copy" size={14} />}
               </button>
             </div>
           </div>
@@ -237,98 +316,118 @@ export function Coin() {
 
         <div style={{ marginTop: 40 }}>
           <StatBand stats={[
-            { label: "Market cap", value: mcapDisp, note: "Live from the curve", key: true },
-            { label: "Price", value: priceDisp, note: "Live from the curve" },
+            { label: "Market cap", value: mcapDisp, note: liveNote, key: true },
+            { label: "Price", value: priceDisp, note: liveNote },
             { label: "24h", value: "—", note: "Pending indexer" },
             { label: "Holders", value: "—", note: "Pending indexer" },
           ]} />
         </div>
 
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "44px 0 16px" }}>
-          <div className="cx-section-title">Price</div>
-          <div style={{ display: "flex", gap: 20 }}>{["1m", "5m", "1h", "1d"].map((t) => <button key={t} className="cx-link-control" aria-pressed={tf === t} onClick={() => setTf(t)}>{t}</button>)}</div>
-        </div>
-        <PendingPanel line="Price history appears once the indexer is connected" note="Price and market cap above are live from the curve." />
+        {meta?.description && (
+          <>
+            <div className="cx-section-title" style={{ margin: "44px 0 14px" }}>About</div>
+            <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.6, color: "var(--census-text-secondary)", whiteSpace: "pre-wrap" }}>{meta.description}</p>
+          </>
+        )}
+
+        <div className="cx-section-title" style={{ margin: "44px 0 16px" }}>Price</div>
+        <PendingPanel line="Price history appears once the indexer is connected" note="Price and market cap above are live." />
 
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "44px 0 14px" }}>
           <div className="cx-section-title">Graduation</div>
-          <span className="cx-label">{graduated ? "Graduated · pool locked" : `${reserveEth.toFixed(2)} / ${GRADUATION_RESERVE_ETH.toFixed(2)} ${anchor} reserve`}</span>
+          <span className="cx-label">{graduated ? "Graduated · pool locked" : reserveCaption({ reserve, graduationTarget, anchor })}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <GraduationBar pct={gradPct} large />
           <span className="cx-num cx-num--key" style={{ fontSize: 24 }}>{gradPct}%</span>
         </div>
         <p style={{ margin: "16px 0 0", fontSize: 14, color: "var(--census-text-secondary)" }}>
-          {graduated ? "The curve closed. Liquidity is locked permanently in a Uniswap V3 pool." : `At ${GRADUATION_RESERVE_ETH} ${anchor} the curve closes and liquidity moves to a permanently locked Uniswap V3 pool.`}
+          {graduated
+            ? "The curve closed. Liquidity is locked permanently in a Uniswap V3 pool."
+            : graduationTarget != null
+              ? `At ${fmtAmount(graduationTarget, 2)} ${anchor} the curve closes and liquidity moves to a permanently locked Uniswap V3 pool.`
+              : "When the curve fills, liquidity moves to a permanently locked Uniswap V3 pool."}
         </p>
 
         <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Holders</div>
         <PendingPanel line="Distribution appears once the indexer is connected." />
 
-        <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Creator fees</div>
+        <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Creator rewards</div>
         <div className="cx-panel cx-panel--plain" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div>
             <div className="cx-stat__value"><Num>—</Num></div>
-            <div className="cx-stat__note">75% of the 2% trade fee accrues to the creator side.</div>
+            <div className="cx-stat__note">Rewards accrue from every trade. Collecting opens with the indexer.</div>
           </div>
-          <span className="cx-cta" aria-disabled="true" style={{ pointerEvents: "none" }}>Collect</span>
+          <button className="cx-cta" disabled title="Opens with the indexer">Collect</button>
         </div>
 
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 44, marginBottom: 16 }}>
-          <div className="cx-section-title">Thread</div><span className="cx-label">0 replies</span>
-        </div>
-        <label className="cx-field"><input placeholder="Add to the thread" aria-label="Add to the thread" /><span className="cx-link-control">POST</span></label>
-        <div className="cx-label" style={{ marginTop: 14 }}>No replies yet. The thread opens with the indexer.</div>
+        <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Thread</div>
+        <PendingPanel line="The thread opens once the indexer is connected" />
       </div>
 
       {/* trade panel */}
       <div>
         <div className="cx-panel" style={{ position: "sticky", top: 24 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, borderBottom: "1px solid var(--census-border)" }}>
-            {(["buy", "sell"] as const).map((side) => (
-              <button key={side} onClick={() => setBuy(side === "buy")} aria-current={buy === (side === "buy")}
-                style={{ background: "none", border: 0, cursor: "pointer", fontSize: 15, paddingBottom: 14, marginBottom: -1,
-                  fontWeight: buy === (side === "buy") ? 500 : 400,
-                  color: buy === (side === "buy") ? "var(--census-text)" : "var(--census-text-muted)",
-                  borderBottom: `1px solid ${buy === (side === "buy") ? "var(--census-lime)" : "transparent"}` }}>
-                {side === "buy" ? "Buy" : "Sell"}
-              </button>
-            ))}
+            {(["buy", "sell"] as const).map((side) => {
+              const on = buy === (side === "buy");
+              return (
+                <button key={side} onClick={() => { setBuy(side === "buy"); setAmount(side === "buy" ? "0.1" : ""); }} aria-pressed={on}
+                  style={{ background: "none", border: 0, cursor: "pointer", fontSize: 15, paddingBottom: 14, marginBottom: -1,
+                    fontWeight: on ? 500 : 400, color: on ? "var(--census-text)" : "var(--census-text-muted)",
+                    borderBottom: `1px solid ${on ? "var(--census-lime)" : "transparent"}` }}>
+                  {side === "buy" ? "Buy" : "Sell"}
+                </button>
+              );
+            })}
           </div>
 
           <div className="cx-field" style={{ marginTop: 26, paddingBottom: 14 }}>
-            <input value={amount} inputMode="decimal" aria-label="Amount" onChange={(e) => setAmount(e.target.value)}
+            <input value={amount} inputMode="decimal" aria-label="Amount" placeholder="0" onChange={(e) => setAmount(e.target.value)}
               style={{ fontFamily: "var(--census-font-mono)", fontSize: 30, fontVariantNumeric: "tabular-nums" }} />
             <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <CxAssetLogo ticker={anchor} size={20} />
-              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>{buy ? anchor : coinSym}</span>
+              {buy ? <CxAssetLogo ticker={anchor} size={20} /> : <CxAvatar name={coinName} image={meta?.image} size={20} />}
+              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>{buy ? anchor : coinSym || "coin"}</span>
             </span>
           </div>
 
-          <div style={{ display: "flex", gap: 22, marginTop: 16 }}>
-            {["0.01", "0.1", "0.5", "1"].map((a) => (
-              <button key={a} className="cx-link-control" aria-pressed={amount === a} onClick={() => setAmount(a)}>{a}</button>
-            ))}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 22 }}>
+              {buy
+                ? BUY_PRESETS.map((a) => <button key={a} className="cx-link-control" aria-pressed={amount === a} onClick={() => setAmount(a)}>{a}</button>)
+                : SELL_PRESETS.map((p) => <button key={p} className="cx-link-control" disabled={coinBal == null || coinBal === 0n} onClick={() => sellPreset(p)}>{p}%</button>)}
+            </div>
+            {balDisp && <span className="cx-label">{balDisp}</span>}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 28 }}>
-            <QuoteRow label="You receive ~" value={quoteOut ? `${Number(quoteOut).toLocaleString(undefined, { maximumSignificantDigits: 6 })} ${buy ? coinSym : anchor}` : "—"} bright />
-            <QuoteRow label="Fee (2%)" value={`${feeAmt.toFixed(3)} ${anchor}`} />
-            <QuoteRow label="Slippage" value="2%" />
-            <QuoteRow label="Route" value={graduated ? "Locked Uniswap pool" : via && via !== "census curve" ? via : onCurve ? "The Census curve" : `${anchor} pool`} />
+            <QuoteRow label="You receive ~" value={outHuman != null ? `${fmtAmount(outHuman, 6)} ${buy ? coinSym : anchor}` : "—"} bright />
+            <QuoteRow label={`Fee (${feePctLabel})`} value={feeDisp} />
+            <QuoteRow label="Slippage" value={`${SLIPPAGE_BPS / 100}%`} />
+            <QuoteRow label="Route" value={routeDisp} />
           </div>
 
-          <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={connecting} onClick={isConnected ? trade : connect}>{isConnected ? "Place trade" : connecting ? "Connecting…" : "Connect wallet"}</button>
-          <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>2% trade fee</div>
+          {isConnected ? (
+            <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={busy || !canTrade} onClick={trade}>
+              {busy ? "Working…" : !cq.resolved ? "Loading…" : "Place trade"}
+            </button>
+          ) : (
+            <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={connecting} onClick={connect}>
+              {connecting ? "Connecting…" : "Connect wallet"}
+            </button>
+          )}
+          <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>{onCurve ? `${TRADE_FEE_LABEL} trade fee` : graduated ? `${feePctLabel} pool fee` : "—"}</div>
+          {!isConnected && connectError && <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: "#e06c60" }}>{connectError}</div>}
+          {isConnected && tradeBlock && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{tradeBlock}</div>}
           {status && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{status}</div>}
         </div>
 
         <div className="cx-panel cx-panel--plain" style={{ marginTop: 16 }}>
           <div className="cx-label" style={{ marginBottom: 14 }}>The curve</div>
-          <CurveRow k="Supply" v="1,000,000,000" />
-          <CurveRow k="Anchored to" v={anchor} />
-          <CurveRow k="Graduation at" v={`${GRADUATION_RESERVE_ETH} ${anchor}`} />
-          <CurveRow k="Trade fee" v="2%" />
+          <CurveRow k="Supply" v={supply != null ? fmtAmount(supply, 0) : "—"} />
+          <CurveRow k="Anchored to" v={cq.resolved ? anchor : "—"} />
+          <CurveRow k="Graduation at" v={graduationTarget != null ? `${fmtAmount(graduationTarget, 2)} ${anchor}` : "—"} />
+          <CurveRow k="Trade fee" v={graduated ? `${feePctLabel} (pool)` : TRADE_FEE_LABEL} />
         </div>
       </div>
     </div>

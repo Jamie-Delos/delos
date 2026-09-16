@@ -2,9 +2,9 @@
 // the API key stays server-side (see api/zeroex.ts). Used for best-price coin trading, with the coin's
 // own Uniswap pool as the fallback when 0x has no route (e.g. a coin it hasn't indexed yet).
 import type { Address, Hex } from "viem";
+import { CHAIN } from "../config";
 
 const PROXY = (import.meta.env.VITE_ZEROX_PROXY as string | undefined) ?? "/api/zeroex";
-const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 4663);
 
 export type ZeroExQuote = {
   liquidityAvailable: boolean;
@@ -21,7 +21,7 @@ type Params = { sellToken: Address; buyToken: Address; sellAmount: bigint; taker
 async function call(endpoint: "price" | "quote", p: Params): Promise<ZeroExQuote> {
   const u = new URL(PROXY, window.location.origin);
   u.searchParams.set("endpoint", endpoint);
-  u.searchParams.set("chainId", String(CHAIN_ID));
+  u.searchParams.set("chainId", String(CHAIN.id));
   u.searchParams.set("sellToken", p.sellToken);
   u.searchParams.set("buyToken", p.buyToken);
   u.searchParams.set("sellAmount", p.sellAmount.toString());

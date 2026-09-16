@@ -68,7 +68,7 @@
 .cx-side-meta b { display: block; color: var(--census-text-secondary); margin-top: 14px; font-weight: 400; letter-spacing: 0.03em; }
 .cx-side-meta b i { color: var(--census-lime); font-style: normal; }
 
-/* Top bar: 58px, one hairline. Holds the tape (Home), back link (Coin), log-in. */
+/* Top bar: 58px, one hairline. Holds the tape (Home), back link (Coin), Connect wallet. */
 .cx-topbar {
   display: flex;
   align-items: center;
@@ -106,7 +106,7 @@
 .cx-cta[aria-disabled="true"] { border-color: var(--census-hairline); color: var(--census-text-muted); cursor: not-allowed; }
 .cx-cta:disabled::after { color: var(--census-text-muted); }
 
-/* Quiet pill: log in, share. */
+/* Quiet pill: Connect wallet / the connected address. */
 .cx-quiet {
   padding: 9px 18px;
   border-radius: var(--census-radius-pill);
@@ -217,7 +217,6 @@
 /* Grid templates — desktop */
 .cx-grid-home  { grid-template-columns: 58px minmax(0,2.2fr) minmax(0,1.5fr) 190px 132px 84px; }
 .cx-grid-board { grid-template-columns: minmax(0,2.5fr) 140px 140px 92px 230px 92px; }
-.cx-grid-profile { grid-template-columns: 58px minmax(0,2.2fr) 240px 150px 92px; }
 
 /* Coin / company avatar. Real image when present, else a FLAT tile — never metal. */
 .cx-avatar {
@@ -265,7 +264,6 @@
 .cx-bar--lg { height: 4px; }
 .cx-bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--census-lime-shade), var(--census-lime)); }
 .cx-bar--done > i { background: var(--census-lime); }
-.cx-bar--ghost > i { background: var(--census-track); }  /* pending distribution */
 
 /* ------------------------------------------------------------ live tape */
 
@@ -273,7 +271,7 @@
 .cx-tape__item { display: flex; align-items: center; gap: 10px; flex: none; padding-right: 22px; border-right: 1px solid var(--census-hairline); }
 .cx-tape__dot { width: 5px; height: 5px; border-radius: 50%; }
 .cx-tape__dot--buy { background: var(--census-lime); }
-.cx-tape__dot--sell { background: #e0573a; }   /* sell red — per 01-home.md, no token equivalent */
+.cx-tape__dot--sell { background: #e0573a; }   /* sell red — no token equivalent by design */
 .cx-tape__dot--create { background: #e0b73a; } /* create gold — same */
 .cx-tape__dot--off { background: var(--census-track); }
 .cx-tape__who,
@@ -315,15 +313,13 @@
 .cx-pending__line { font-size: 15.5px; font-weight: 300; color: var(--census-text-secondary); }
 .cx-pending__note { font-size: 13px; color: var(--census-text-muted); margin-top: 8px; }
 
-.cx-skeleton { background: var(--census-track); border-radius: 2px; display: block; }
-
 /* --------------------------------------------------------------- mobile */
 
 .cx-tabbar {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   align-items: end;
   padding: 12px 14px 18px;
   background: var(--census-bg-dock);
@@ -344,17 +340,6 @@
   color: var(--census-lime);
 }
 
-/* Coin page trade sheet on mobile */
-.cx-sheet {
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
-  padding: 14px 20px 20px;
-  background: rgba(8, 18, 12, 0.94);
-  backdrop-filter: blur(16px);
-  border-top: 1px solid var(--census-border);
-}
-.cx-sheet__grab { width: 42px; height: 3px; border-radius: var(--census-radius-pill); background: var(--census-track); margin: 0 auto; }
-
 @media (max-width: 900px) {
   .cx-app { grid-template-columns: minmax(0, 1fr); }
   .cx-side { display: none; }
@@ -371,6 +356,10 @@
   .cx-stat__value { font-size: 20px; margin-top: 9px; }
   .cx-row { grid-template-columns: 42px minmax(0, 1fr) auto !important; gap: 14px; padding: 16px 2px; }
   .cx-row--head { display: none; }
+  .cx-grid-home > :nth-child(3), .cx-grid-home > :nth-child(6),
+  .cx-grid-board > :nth-child(3), .cx-grid-board > :nth-child(4), .cx-grid-board > :nth-child(6) { display: none; }
+  .cx-grid-home > :nth-child(4), .cx-grid-board > :nth-child(5) { grid-column: 1 / -1; }
+  .cx-grid-board > :first-child { grid-column: 1 / 3; }
   .cx-avatar { width: 42px; height: 42px; }
   .cx-pending { min-height: 140px; padding: 0 22px; }
 }
@@ -378,6 +367,11 @@
 @media (prefers-reduced-motion: reduce) {
   .cx-pulse { animation: none !important; }
 }
+
+/* Home trending rail: horizontal scroller. Keeps a thin scrollbar so the overflow is discoverable. */
+.cx-rail { display: grid; grid-auto-flow: column; grid-auto-columns: 262px; gap: 14px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: thin; scrollbar-color: var(--census-border) transparent; }
+.cx-rail::-webkit-scrollbar { height: 4px; }
+.cx-rail::-webkit-scrollbar-thumb { background: var(--census-border); border-radius: 2px; }
 
 /* Focal motion only: the king-of-the-hill dot. Nothing else animates. */
 @keyframes cx-pulse {

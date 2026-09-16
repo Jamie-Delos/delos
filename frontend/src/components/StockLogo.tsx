@@ -9,7 +9,7 @@ function hue(t: string) {
 
 // A real asset image (token / stock / company logo) on a clean rounded tile, with a coloured
 // initials badge fallback when the image is missing or 404s. Used for anchors (ETH, HOOD) and the
-// tokenised-stock dividend basket so the anchors flow shows real logos, not letter tiles.
+// tokenised-stock rewards basket so the anchors flow shows real logos, not letter tiles.
 export function AssetLogo({
   src, label, size = 30, radius = "var(--census-radius-tile)",
 }: { src?: string; label: string; size?: number; radius?: number | string }) {

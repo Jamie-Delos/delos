@@ -1,25 +1,24 @@
 import { useMemo, useState } from "react";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
-import { BoardRow, PendingPanel, EmptyPanel, Icon, type DisplayCoin } from "../census";
+import { BoardRow, PendingPanel, EmptyPanel, NoMatchPanel, Icon, type DisplayCoin } from "../census";
 
-// The full sortable board. Market cap, price and graduation are live from the curve; 24h and replies
-// wait on the indexer, so their columns show "—" and are not sortable.
+// The Market: every company, sortable. Market cap, price and graduation are live from the curve; 24h and
+// replies wait on the indexer, so their columns show "—" and are not sortable.
 export function Advanced() {
-  const { coins, live, loading } = useLaunches();
-  const shown = live ? coins : []; // only real on-chain launches here (no mock catalogue)
-  const stats = useCurveStats(shown.map((c) => c.address));
+  const { coins, loading } = useLaunches();
+  const stats = useCurveStats(coins.map((c) => c.address));
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("marketCap");
 
-  const list: DisplayCoin[] = useMemo(() => shown.map((c) => {
+  const list: DisplayCoin[] = useMemo(() => coins.map((c) => {
     const s = stats[c.address.toLowerCase()];
     return {
-      address: c.address, name: c.name, symbol: c.symbol, image: c.image, anchor: s?.anchor ?? "ETH",
+      address: c.address, name: c.name, symbol: c.symbol, anchor: s?.anchor ?? "ETH",
       marketCap: s?.mcapUsd ?? null, price: s?.priceUsd ?? null,
-      graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve ?? 0,
+      graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve ?? 0, graduationTarget: s?.graduationTarget,
     };
-  }), [shown, stats]);
+  }), [coins, stats]);
 
   const rows = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -31,7 +30,7 @@ export function Advanced() {
   return (
     <>
       <div className="cx-pagehead">
-        <h1 className="cx-h1 cx-pagehead__title">Board</h1>
+        <h1 className="cx-h1 cx-pagehead__title">Market</h1>
         <p className="cx-sub cx-pagehead__sub">Every company, sortable. Market cap and graduation come straight from the curve.</p>
         <label className="cx-field cx-pagehead__aside">
           <Icon name="search" size={17} />
@@ -40,8 +39,10 @@ export function Advanced() {
       </div>
 
       <div style={{ marginTop: 44 }}>
-        {rows.length === 0 ? (
-          loading ? <PendingPanel line="Loading companies" /> : <EmptyPanel title="The board is empty" body="It fills as curves open." />
+        {loading ? (
+          <PendingPanel line="Loading companies" />
+        ) : rows.length === 0 ? (
+          q.trim() ? <NoMatchPanel query={q.trim()} /> : <EmptyPanel title="The market is empty" body="It fills as curves open." />
         ) : (
           <div className="cx-table">
             <div className="cx-row cx-row--head cx-grid-board">

@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { CensusConnect } from "../census";
 
 // "Companies" flips to "Memes" every 3s (6s cycle), reduced-motion safe — all in census.css.
@@ -13,19 +13,22 @@ function FlipWord({ front = "Companies", back = "Memes" }) {
   );
 }
 
-// Brand-first splash from the designer handoff (Fullweb2). Chrome wordmark asset, the Companies↔Memes
-// flip, one lime CTA into the app.
+// Same order and labels as the app's sidebar, so the two navs read as one.
+const NAV = [["Companies", "/home"], ["Market", "/board"], ["CensusPaper", "/paper"]] as const;
+
+// Brand-first splash from the designer handoff. Chrome wordmark asset, the Companies↔Memes flip, one
+// lime CTA into the app.
 export function Landing() {
   const nav = useNavigate();
   return (
     <div className="census-landing census-body census-body--landing">
       <nav className="census-landing__nav">
-        <button onClick={() => nav("/")} style={{ fontFamily: "var(--census-font-serif)", fontWeight: 600, fontSize: 20, color: "var(--census-silver)", background: "none", border: 0, cursor: "pointer", padding: 0 }}>census.fund</button>
+        <span style={{ fontFamily: "var(--census-font-serif)", fontWeight: 600, fontSize: 20, color: "var(--census-silver)" }}>census.fund</span>
         <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 15 }}>
-          {([["Market", "/board"], ["Companies", "/home"], ["Census Paper", "/paper"]] as const).map(([label, to], i, all) => (
+          {NAV.map(([label, to], i) => (
             <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 14 }}>
-              <a href={`#${to}`} style={{ color: "var(--census-text-secondary)" }}>{label}</a>
-              {i < all.length - 1 && <span style={{ color: "var(--census-text-muted)", fontSize: 11 }}>·</span>}
+              <Link to={to} style={{ color: "var(--census-text-secondary)" }}>{label}</Link>
+              {i < NAV.length - 1 && <span style={{ color: "var(--census-text-muted)", fontSize: 11 }}>·</span>}
             </span>
           ))}
         </div>

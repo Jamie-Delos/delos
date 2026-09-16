@@ -15,16 +15,9 @@
 .census-body--wizard  { background: var(--census-bg-wizard); min-height: 100svh; }
 
 .census-mono { font-family: var(--census-font-mono); font-variant-numeric: tabular-nums; }
-.census-eyebrow {
-  font-family: var(--census-font-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--census-lime);
-}
-a { color: var(--census-lime); text-decoration: none; }
-a:hover { color: var(--census-text); }
+/* Landing-only link colour — the app's links (.cx-*) carry their own. */
+.census-landing a { color: var(--census-lime); text-decoration: none; }
+.census-landing a:hover { color: var(--census-text); }
 
 /* ---------- Wordmarks ---------- */
 /* Primary: the chrome serif PNG/SVG asset. Use an <img>, not text. */
@@ -162,20 +155,6 @@ input[type="range"] { accent-color: var(--census-lime); height: 4px; }
   background: var(--census-lime-fill);
   border-color: var(--census-lime-border-strong);
   color: var(--census-lime);
-}
-
-/* Stock tile — per-stock colour is identity, set inline via --tile-color */
-.census-stock-tile {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  border-radius: var(--census-radius-tile);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 10px;
-  color: #0c130f;
-  background: var(--tile-color, var(--census-text-secondary));
 }
 
 /* Weight bar */

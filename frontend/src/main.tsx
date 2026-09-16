@@ -5,7 +5,7 @@ import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "./wagmi";
 import { App } from "./App";
-import "./styles.css";
+import "./styles/base.css";
 import "./styles/census-tokens.css";
 import "./styles/census.css";
 import "./styles/census-app.css";

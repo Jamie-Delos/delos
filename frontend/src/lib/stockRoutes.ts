@@ -15,10 +15,10 @@ const FEE_HEX = (tier: number) => tier.toString(16).padStart(6, "0"); // uint24 
 const FEE_HOOD_USDG = FEE_HEX(10000); // HOOD/USDG 1% pool
 const FEE_USDG_WETH = FEE_HEX(WETH_USDG_BRIDGE_FEE); // USDG<->WETH 0.01% bridge
 
-/// The V3 swap path the DividendVault uses to convert a coin's QUOTE fee asset into `ticker`.
-/// ETH-quoted coins use the stored WETH route as-is. HOOD-quoted coins receive fees in HOOD, so we
-/// re-root the route at HOOD: `usdg` stocks become HOOD->USDG->stock; `direct` (WETH-only) stocks become
-/// HOOD->USDG->WETH->stock. If the stock IS the quote asset, the vault credits it directly ("0x" path).
+// The V3 swap path the DividendVault uses to convert a coin's QUOTE fee asset into `ticker`.
+// ETH-quoted coins use the stored WETH route as-is. HOOD-quoted coins receive fees in HOOD, so we
+// re-root the route at HOOD: `usdg` stocks become HOOD->USDG->stock; `direct` (WETH-only) stocks become
+// HOOD->USDG->WETH->stock. If the stock IS the quote asset, the vault credits it directly ("0x" path).
 export function basketPath(quoteAddr: string, ticker: string): `0x${string}` {
   const r = STOCK_ROUTES[ticker];
   if (!r) return "0x";

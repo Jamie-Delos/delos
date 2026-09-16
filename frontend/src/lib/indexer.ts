@@ -35,5 +35,5 @@ export const fetchCoin = (address: string) => get<{ coin: IndexerCoin }>(`/coins
 export const fetchTrades = (address: string, limit = 50) => get<{ trades: IndexerTrade[] }>(`/coins/${address.toLowerCase()}/trades?limit=${limit}`);
 export const fetchChart = (address: string, limit = 500) => get<{ points: { t: string; priceQuote: number; priceUsd: number }[] }>(`/coins/${address.toLowerCase()}/chart?limit=${limit}`);
 
-/// WebSocket URL for live updates (new coins / trades / graduations), or null if the indexer isn't set.
+// WebSocket URL for live updates (new coins / trades / graduations), or null if the indexer isn't set.
 export const indexerWsUrl = () => (INDEXER_URL ? INDEXER_URL.replace(/^http/, "ws") + "/ws" : null);
