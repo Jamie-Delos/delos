@@ -116,7 +116,7 @@ async function planZeroEx(vault, quote, basket, weights, dec, bal) {
       notes.push(`${basket[i].slice(0, 8)} same-asset payout (no swap)`); continue;
     }
     try {
-      const q = await zeroEx("quote", { sellToken: quote, buyToken: basket[i], sellAmount: sell, taker: VAULT_ADDRESS, slippageBps: SLIPPAGE_BPS });
+      const q = await zeroEx("quote", { sellToken: quote, buyToken: basket[i], sellAmount: sell, taker: vault.target ?? VAULT_ADDRESS, slippageBps: SLIPPAGE_BPS });
       if (q.liquidityAvailable === false || !q.transaction?.data) throw new Error("no liquidity");
       if (q.transaction.to?.toLowerCase() !== target || q.issues?.allowance?.spender && q.issues.allowance.spender.toLowerCase() !== target) throw new Error("unexpected 0x target/spender");
       if (q.sellToken?.toLowerCase() !== quote.toLowerCase() || q.buyToken?.toLowerCase() !== basket[i].toLowerCase() || BigInt(q.sellAmount) !== sell) throw new Error("quote asset/amount mismatch");
@@ -232,5 +232,10 @@ async function main() {
   log(`done in block ${rc.blockNumber}. basket bought and credited to holders.`);
 }
 
+// Reused by the production keeper daemon (src/keeperd.js); the CLI below only runs when invoked directly.
+module.exports = { planZeroEx, planUniswap, zeroEx, VAULT_ABI, QUOTER_ABI, ERC20_ABI, applySlippage };
+
 const cmd = process.argv[2];
-(cmd === "probe" ? probe() : main()).catch((e) => { console.error("FATAL:", e.message || e); process.exit(1); });
+if (require.main === module) {
+  (cmd === "probe" ? probe() : main()).catch((e) => { console.error("FATAL:", e.message || e); process.exit(1); });
+}
