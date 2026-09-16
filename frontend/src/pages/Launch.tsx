@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { parseUnits, parseEventLogs, type Address } from "viem";
 import { CONTRACTS, STANDARD, CHAIN } from "../config";
 import { factoryAbi, factoryV2Abi } from "../abis";
@@ -57,6 +57,7 @@ export function Launch() {
   const { connect, connecting, error: connectError, ensureChain } = useWalletConnect();
   const publicClient = usePublicClient();
   const { writeContractAsync, isPending } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
 
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Draft>(loadDraft);
@@ -246,7 +247,9 @@ export function Launch() {
         // Persist a hosted logo URL only; a local-only data-URL preview would overflow the store's URL
         // field, so we skip it (the logo simply isn't saved until blob hosting is provisioned).
         const savedImage = isHostedUrl(draft.image.trim()) ? draft.image.trim() : "";
-        await putMetadata(token, { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: savedImage });
+        // The store only accepts creator-signed writes; skipping the signature just means the
+        // description isn't persisted — the launch itself already succeeded.
+        await putMetadata(token, CHAIN.id, { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: savedImage }, signMessageAsync);
         setLaunchPct(100);
         try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
         nav(`/coin/${token}`);

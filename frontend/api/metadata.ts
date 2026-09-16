@@ -1,20 +1,83 @@
-// Metadata store for launched coins — thesis / description / logo URL, keyed by token address.
+// Metadata store for launched coins — thesis / description / logo URL, keyed by chain + token address.
 // The chain holds name/ticker/economics; this holds the off-chain copy the wizard collects.
-// Backed by Vercel KV (Upstash Redis REST): enable "KV" storage on the Vercel project and it injects
-// KV_REST_API_URL + KV_REST_API_TOKEN. Until then this degrades gracefully (GET returns null,
-// POST returns 503) so the launch flow still works — the metadata just isn't persisted yet.
-//   GET  /api/metadata?address=0x…          -> { address, metadata: {…} | null }
-//   POST /api/metadata { address, metadata } -> { ok: true }   (first-write-wins, anti-grief)
+//
+// AUTHORIZATION (repairs B18): writes must be signed by the coin's ON-CHAIN CREATOR.
+//   - The client signs (EIP-191 personal_sign) a canonical message binding chain id, token address
+//     and the keccak256 of the cleaned content — so a signature authorizes exactly one payload on
+//     exactly one chain/token and cannot be replayed for other content.
+//   - The server recovers the signer and checks it equals `CensusCurve.curves(token).creator` via a
+//     read-only RPC call. Unregistered tokens (including merely-predicted CREATE2 addresses) are
+//     rejected, which ends description-squatting on future launches.
+//   - The creator may overwrite their own metadata (the authorized correction policy). Each write is
+//     a single atomic KV SET; there is no read-modify-write race.
+//   - Smart-contract wallets (ERC-1271) are not supported by this recovery path; those creators
+//     currently launch via EOAs. Fail-closed: verification errors never fall back to accepting.
+//
+// Backed by Vercel KV (Upstash Redis REST): KV_REST_API_URL + KV_REST_API_TOKEN. Verification needs
+// CENSUS_RPC_URL + CENSUS_CURVE_ADDRESS (+ CENSUS_CHAIN_ID). Until provisioned this degrades
+// gracefully (GET returns null, POST returns 503) so the launch flow still works.
+//   GET  /api/metadata?address=0x…                                 -> { address, metadata: {…} | null }
+//   POST /api/metadata { address, chainId, metadata, signature }   -> { ok: true }
 
-const KEY = (addr: string) => `census:meta:${addr.toLowerCase()}`;
+import { createPublicClient, http, keccak256, recoverMessageAddress, stringToBytes } from "viem";
+
 const isAddr = (s: any) => typeof s === "string" && /^0x[0-9a-fA-F]{40}$/.test(s);
+const isSig = (s: any) => typeof s === "string" && /^0x[0-9a-fA-F]{130}$/.test(s);
 
-async function kv(path: string, init?: any): Promise<any> {
+const CURVE_ABI = [{
+  type: "function", name: "curves", stateMutability: "view",
+  inputs: [{ name: "", type: "address" }],
+  outputs: [
+    { name: "quote", type: "address" }, { name: "creator", type: "address" },
+    { name: "vault", type: "address" }, { name: "holdersBps", type: "uint16" },
+    { name: "poolFee", type: "uint24" }, { name: "virtualQuote", type: "uint256" },
+    { name: "tokenReserve", type: "uint256" }, { name: "realQuote", type: "uint256" },
+    { name: "graduationQuote", type: "uint256" }, { name: "graduated", type: "bool" },
+    { name: "exists", type: "bool" },
+  ],
+}] as const;
+
+function chainId(): number { return Number(process.env.CENSUS_CHAIN_ID || 4663); }
+const KEY = (addr: string) => `census:meta:${chainId()}:${addr.toLowerCase()}`;
+
+// Canonical cleaned payload — key order matters: the client hashes the same shape before signing.
+function cleanMetadata(meta: any) {
+  const m = meta && typeof meta === "object" ? meta : {};
+  return {
+    name: String(m.name ?? "").slice(0, 64),
+    thesis: String(m.thesis ?? "").slice(0, 140),
+    description: String(m.description ?? "").slice(0, 2000),
+    image: String(m.image ?? "").slice(0, 400),
+  };
+}
+
+// The exact string the creator signs. Any change here is a breaking protocol change for the client.
+export function metadataMessage(chain: number, address: string, contentHash: string): string {
+  return `Census metadata v1\nchain: ${chain}\ntoken: ${address.toLowerCase()}\ncontent: ${contentHash}`;
+}
+
+async function kv(command: unknown[]): Promise<any> {
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
   if (!url || !token) return { unavailable: true };
-  const r = await fetch(`${url}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init?.headers || {}) } });
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(command),
+  });
   return r.json();
+}
+
+/// Read the coin's on-chain creator; null when the curve/RPC isn't configured or the coin is unknown.
+async function onchainCreator(address: `0x${string}`): Promise<`0x${string}` | null | "unconfigured"> {
+  const rpc = process.env.CENSUS_RPC_URL;
+  const curve = process.env.CENSUS_CURVE_ADDRESS;
+  if (!rpc || !isAddr(curve)) return "unconfigured";
+  const client = createPublicClient({ transport: http(rpc, { timeout: 5000, retryCount: 1 }) });
+  const c = await client.readContract({
+    address: curve as `0x${string}`, abi: CURVE_ABI, functionName: "curves", args: [address],
+  });
+  return c[10] ? (c[1] as `0x${string}`) : null; // exists ? creator : null
 }
 
 export default async function handler(req: any, res: any) {
@@ -22,7 +85,7 @@ export default async function handler(req: any, res: any) {
     if (req.method === "GET") {
       const address = String(req.query?.address ?? "");
       if (!isAddr(address)) return res.status(400).json({ message: "bad address" });
-      const out = await kv(`/get/${KEY(address)}`);
+      const out = await kv(["GET", KEY(address)]);
       if (out?.unavailable) return res.status(200).json({ address, metadata: null, store: "unavailable" });
       let metadata: any = null;
       try { metadata = out?.result ? JSON.parse(out.result) : null; } catch { metadata = null; }
@@ -33,17 +96,27 @@ export default async function handler(req: any, res: any) {
       const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
       const address = String(body.address ?? "");
       if (!isAddr(address)) return res.status(400).json({ message: "bad address" });
-      const meta = body.metadata && typeof body.metadata === "object" ? body.metadata : {};
-      const clean = {
-        name: String(meta.name ?? "").slice(0, 64),
-        thesis: String(meta.thesis ?? "").slice(0, 140),
-        description: String(meta.description ?? "").slice(0, 2000),
-        image: String(meta.image ?? "").slice(0, 400),
-      };
-      const existing = await kv(`/get/${KEY(address)}`);
+      if (Number(body.chainId) !== chainId()) return res.status(400).json({ message: "wrong chain" });
+      if (!isSig(body.signature)) return res.status(401).json({ message: "signature required" });
+
+      const clean = cleanMetadata(body.metadata);
+      const contentHash = keccak256(stringToBytes(JSON.stringify(clean)));
+      const message = metadataMessage(chainId(), address, contentHash);
+
+      let signer: `0x${string}`;
+      try {
+        signer = await recoverMessageAddress({ message, signature: body.signature as `0x${string}` });
+      } catch {
+        return res.status(401).json({ message: "bad signature" });
+      }
+
+      const creator = await onchainCreator(address as `0x${string}`);
+      if (creator === "unconfigured") return res.status(503).json({ message: "verification not configured" });
+      if (!creator) return res.status(403).json({ message: "unknown launch" });
+      if (creator.toLowerCase() !== signer.toLowerCase()) return res.status(403).json({ message: "not the creator" });
+
+      const existing = await kv(["SET", KEY(address), JSON.stringify(clean)]);
       if (existing?.unavailable) return res.status(503).json({ message: "metadata store not provisioned" });
-      if (existing?.result) return res.status(409).json({ message: "metadata already set" }); // immutable first write
-      await kv(`/set/${KEY(address)}`, { method: "POST", body: JSON.stringify(clean) });
       return res.status(200).json({ ok: true });
     }
     return res.status(405).json({ message: "method not allowed" });

@@ -44,8 +44,15 @@ contract CensusCurve is ReentrancyGuard {
     uint16 public constant PROTOCOL_BPS = 2500;  // 25% of the fee -> platform; 75% -> creator side
     uint16 public constant BPS = 10_000;
     uint16 public constant MIGRATION_MIN_BPS = 9_999; // retain at least 99.99% of each intended LP asset
+    /// @notice At most this share of ONE migration leg may be swapped through an adversarially
+    ///         pre-initialized pool to restore the migration price. Each unit swapped executes at a
+    ///         price better than the migration price (it moves the pool TOWARD it), so the recovery
+    ///         never gives value away — but a pool too deep to restore within this bound makes
+    ///         graduation revert (fail closed) rather than migrate at a manipulated price.
+    uint16 public constant RECOVERY_MAX_SPEND_BPS = 1_000; // 10%
     mapping(address => uint256) public migrationTokenDust;
     mapping(address => uint256) public migrationQuoteDust;
+    address private recoveryPool; // pool allowed to invoke the swap callback, only during graduate()
     int24 private constant MIN_TICK = -887272;
     int24 private constant MAX_TICK = 887272;
 
@@ -86,6 +93,7 @@ contract CensusCurve is ReentrancyGuard {
     event Registered(address indexed coin, address quote, address creator, address vault, uint16 holdersBps, uint256 virtualQuote, uint256 graduationQuote);
     event Traded(address indexed coin, address indexed trader, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 fee);
     event Graduated(address indexed coin, address pool, uint256 tokenId, uint256 tokensIn, uint256 quoteIn);
+    event MigrationPriceRestored(address indexed coin, address pool, uint160 poolSqrtPriceX96, uint160 targetSqrtPriceX96, int256 amount0Delta, int256 amount1Delta);
 
     error NotDeployer();
     error NotFactory();
@@ -304,7 +312,17 @@ contract CensusCurve is ReentrancyGuard {
         uint160 sqrtPriceX96 = uint160(Math.sqrt(Math.mulDiv(amount1, 1 << 192, amount0)));
         pool = npm.createAndInitializePoolIfNecessary(token0, token1, c.poolFee, sqrtPriceX96);
 
-        // Full-range two-sided position with everything the curve holds.
+        // If the pool pre-existed at a manipulated price, swap it back to the migration price before
+        // minting. The swap is bounded (RECOVERY_MAX_SPEND_BPS of the input leg) and exact-price-limited:
+        // every unit executes at better than the migration price (taken from whoever mispriced the pool),
+        // and if the bound cannot restore the price the whole graduation reverts — funds stay in the curve.
+        (amount0, amount1) = _restoreMigrationPrice(coin, pool, sqrtPriceX96, token0, token1, amount0, amount1);
+        (tokenAmt, quoteAmt) = tokenIsToken0 ? (amount0, amount1) : (amount1, amount0);
+
+        // Full-range two-sided position with everything the curve holds. Minimums are price-consistent:
+        // the leg left in surplus by a recovery swap is expected to be only partially consumed, and the
+        // surplus stays recorded below as migration dust instead of failing the mint.
+        (uint256 min0, uint256 min1) = _migrationMinima(sqrtPriceX96, amount0, amount1);
         (int24 tickLower, int24 tickUpper) = _fullRange(c.poolFee);
         IERC20(coin).forceApprove(address(npm), tokenAmt);
         IERC20(c.quote).forceApprove(address(npm), quoteAmt);
@@ -314,8 +332,8 @@ contract CensusCurve is ReentrancyGuard {
             INonfungiblePositionManager.MintParams({
                 token0: token0, token1: token1, fee: c.poolFee, tickLower: tickLower, tickUpper: tickUpper,
                 amount0Desired: amount0, amount1Desired: amount1,
-                amount0Min: Math.mulDiv(amount0, MIGRATION_MIN_BPS, BPS),
-                amount1Min: Math.mulDiv(amount1, MIGRATION_MIN_BPS, BPS),
+                amount0Min: Math.mulDiv(min0, MIGRATION_MIN_BPS, BPS),
+                amount1Min: Math.mulDiv(min1, MIGRATION_MIN_BPS, BPS),
                 recipient: locker, deadline: block.timestamp
             })
         );
@@ -335,6 +353,63 @@ contract CensusCurve is ReentrancyGuard {
         migrationQuoteDust[coin] = leftQuote;
 
         emit Graduated(coin, pool, tokenId, tokenAmt - leftToken, quoteAmt - leftQuote);
+    }
+
+    /// @dev If `pool` is not at `target` (someone pre-initialized it at another price), push it back
+    ///      with an exact-price-limited swap bounded by RECOVERY_MAX_SPEND_BPS of the input leg. The
+    ///      balance deltas (spent input, received output — value-positive at the migration price) are
+    ///      attributed to this coin's migration amounts. Reverts unless the pool ends exactly at `target`.
+    function _restoreMigrationPrice(
+        address coin, address pool, uint160 target, address token0, address token1,
+        uint256 amount0, uint256 amount1
+    ) internal returns (uint256, uint256) {
+        (uint160 current, , , , , , ) = IUniswapV3Pool(pool).slot0();
+        if (current == target) return (amount0, amount1);
+
+        uint160 adversePrice = current;
+        bool zeroForOne = current > target; // selling token0 moves the price down
+        uint256 maxSpend = Math.mulDiv(zeroForOne ? amount0 : amount1, RECOVERY_MAX_SPEND_BPS, BPS);
+        require(maxSpend > 0 && maxSpend <= uint256(type(int256).max), "recovery spend");
+
+        uint256 bal0Before = IERC20(token0).balanceOf(address(this));
+        uint256 bal1Before = IERC20(token1).balanceOf(address(this));
+        recoveryPool = pool;
+        (int256 d0, int256 d1) = IUniswapV3Pool(pool).swap(
+            address(this), zeroForOne, int256(maxSpend), target, abi.encode(token0, token1)
+        );
+        recoveryPool = address(0);
+        (current, , , , , , ) = IUniswapV3Pool(pool).slot0();
+        require(current == target, "recovery failed");
+
+        emit MigrationPriceRestored(coin, pool, adversePrice, target, d0, d1);
+        // The swap touches only these two assets, so the deltas belong entirely to this coin.
+        amount0 = amount0 + IERC20(token0).balanceOf(address(this)) - bal0Before;
+        amount1 = amount1 + IERC20(token1).balanceOf(address(this)) - bal1Before;
+        return (amount0, amount1);
+    }
+
+    /// @dev Expected consumption of each leg for a full-range mint at sqrtPriceX96: the limiting leg is
+    ///      consumed (nearly) fully and the other in the price-implied ratio; any surplus beyond that
+    ///      ratio is legitimate leftover (recovery-swap proceeds), not migration slippage.
+    function _migrationMinima(uint160 sqrtPriceX96, uint256 amount0, uint256 amount1)
+        internal pure returns (uint256 min0, uint256 min1)
+    {
+        // amount1/amount0 consumed at price P: want1 = amount0 * P where P = (sqrtPriceX96/2^96)^2.
+        uint256 want1 = Math.mulDiv(Math.mulDiv(amount0, sqrtPriceX96, 1 << 96), sqrtPriceX96, 1 << 96);
+        if (want1 <= amount1) {
+            (min0, min1) = (amount0, want1);
+        } else {
+            (min0, min1) = (Math.mulDiv(Math.mulDiv(amount1, 1 << 96, sqrtPriceX96), 1 << 96, sqrtPriceX96), amount1);
+        }
+    }
+
+    /// @notice Uniswap V3 swap callback — pays the input side of the migration-recovery swap. Only the
+    ///         pool being graduated, only while graduate() is executing.
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        require(msg.sender == recoveryPool && msg.sender != address(0), "callback");
+        (address token0, address token1) = abi.decode(data, (address, address));
+        if (amount0Delta > 0) IERC20(token0).safeTransfer(msg.sender, uint256(amount0Delta));
+        if (amount1Delta > 0) IERC20(token1).safeTransfer(msg.sender, uint256(amount1Delta));
     }
 
     function _fullRange(uint24 fee) internal pure returns (int24 lower, int24 upper) {

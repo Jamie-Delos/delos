@@ -77,6 +77,7 @@ contract DividendVault is ReentrancyGuard {
 
     event Distributed(uint256 quoteSpent);
     event Claimed(address indexed holder, address indexed stock, uint256 amount);
+    event LaunchFeesConverted(uint256 tokenIn, uint256 quoteOut);
 
     constructor(
         address quote_,
@@ -236,48 +237,58 @@ contract DividendVault is ReentrancyGuard {
         for (uint256 i; i < basket.length; i++) {
             uint256 portion = Math.mulDiv(amt, weights[i], 10_000);
             if (portion == 0) continue;
-            bytes memory route = paths[i];
             uint256 got;
             if (basket[i] == quote) {
                 // Anchor-paid dividend: fees are already in the payout asset (e.g. a HOOD-paired coin
                 // pays holders HOOD). No swap needed — credit the portion straight through.
                 got = portion;
+                require(got >= minOut[i], "minOut");
             } else {
                 require(minOut[i] > 0, "minOut");
-                uint256 beforeQuote = IERC20(quote).balanceOf(address(this));
-                uint256 beforeStock = IERC20(basket[i]).balanceOf(address(this));
-                IERC20(quote).forceApprove(address(router), portion);
-                if (route.length > 0) {
-                    router.exactInput(
-                        ISwapRouter02.ExactInputParams({
-                            path: route,
-                            recipient: address(this),
-                            amountIn: portion,
-                            amountOutMinimum: minOut[i]
-                        })
-                    );
-                } else {
-                    router.exactInputSingle(
-                        ISwapRouter02.ExactInputSingleParams({
-                            tokenIn: quote,
-                            tokenOut: basket[i],
-                            fee: swapFee,
-                            recipient: address(this),
-                            amountIn: portion,
-                            amountOutMinimum: minOut[i],
-                            sqrtPriceLimitX96: 0
-                        })
-                    );
-                }
-                IERC20(quote).forceApprove(address(router), 0);
-                require(beforeQuote - IERC20(quote).balanceOf(address(this)) == portion, "spent");
-                got = IERC20(basket[i]).balanceOf(address(this)) - beforeStock;
+                got = _sell(quote, basket[i], swapFee, paths[i], portion, minOut[i]);
             }
-            require(got >= minOut[i], "minOut");
             _credit(basket[i], got, elig);
             spent += portion;
         }
         emit Distributed(spent);
+    }
+
+    /// @dev Sell exactly `amountIn` of `tokenIn` through the router — the multi-hop `route` if given,
+    ///      else single-hop at `fee` — measuring actual balance deltas: reverts unless the full input
+    ///      was spent and at least `minOut` of `tokenOut` was received.
+    function _sell(address tokenIn, address tokenOut, uint24 fee, bytes memory route, uint256 amountIn, uint256 minOut)
+        internal
+        returns (uint256 got)
+    {
+        uint256 beforeIn = IERC20(tokenIn).balanceOf(address(this));
+        uint256 beforeOut = IERC20(tokenOut).balanceOf(address(this));
+        IERC20(tokenIn).forceApprove(address(router), amountIn);
+        if (route.length > 0) {
+            router.exactInput(
+                ISwapRouter02.ExactInputParams({
+                    path: route,
+                    recipient: address(this),
+                    amountIn: amountIn,
+                    amountOutMinimum: minOut
+                })
+            );
+        } else {
+            router.exactInputSingle(
+                ISwapRouter02.ExactInputSingleParams({
+                    tokenIn: tokenIn,
+                    tokenOut: tokenOut,
+                    fee: fee,
+                    recipient: address(this),
+                    amountIn: amountIn,
+                    amountOutMinimum: minOut,
+                    sqrtPriceLimitX96: 0
+                })
+            );
+        }
+        IERC20(tokenIn).forceApprove(address(router), 0);
+        require(beforeIn - IERC20(tokenIn).balanceOf(address(this)) == amountIn, "spent");
+        got = IERC20(tokenOut).balanceOf(address(this)) - beforeOut;
+        require(got >= minOut, "minOut");
     }
 
     /// @notice Convert accumulated quote fees into the stock basket via the 0x Swap API and credit
@@ -334,6 +345,28 @@ contract DividendVault is ReentrancyGuard {
         emit Distributed(spent);
     }
 
+    /// @notice Convert launch-token LP fees into the quote asset so they fund the next distribution.
+    ///         After graduation the LaunchLocker forwards the holders' share of BOTH pool fee assets
+    ///         here; the launch-token side cannot be paid out directly (this vault distributes `quote`),
+    ///         so the operator sells it into the canonical pool. Operator-gated with a mandatory
+    ///         positive minimum output — the same slippage model as distribute(). The proceeds are
+    ///         unreserved quote, so availableQuote() (and the next distribute) includes them.
+    /// @param amountIn   launch tokens to sell (≤ this vault's balance).
+    /// @param poolFee    fee tier of the canonical launch-token/quote pool.
+    /// @param minQuoteOut off-chain-computed minimum quote output; the swap reverts below it.
+    function convertLaunchFees(uint256 amountIn, uint24 poolFee, uint256 minQuoteOut)
+        external
+        nonReentrant
+        returns (uint256 quoteOut)
+    {
+        require(msg.sender == operator, "not operator");
+        require(token != address(0), "uninitialized");
+        require(amountIn > 0 && minQuoteOut > 0, "params");
+        require(amountIn <= IERC20(token).balanceOf(address(this)), "balance");
+        quoteOut = _sell(token, quote, poolFee, bytes(""), amountIn, minQuoteOut);
+        emit LaunchFeesConverted(amountIn, quoteOut);
+    }
+
     /// @notice Dividends of `stock` the holder can withdraw right now = (harvested + accrued-since-last-settle) − withdrawn.
     function withdrawableOf(address holder, address stock) public view returns (uint256) {
         if (excluded[holder]) return 0;
@@ -345,18 +378,29 @@ contract DividendVault is ReentrancyGuard {
 
     /// @notice Claim your whole basket in one call.
     function claim() external nonReentrant {
-        require(!excluded[msg.sender], "excluded");
+        _claim(msg.sender);
+    }
+
+    /// @notice Push a holder's earned basket to them. Callable by anyone (the keeper uses this to
+    ///         deliver rewards automatically): it can only move the holder's own entitlement to the
+    ///         holder's own address, so it grants the caller nothing.
+    function claimFor(address holder) external nonReentrant {
+        _claim(holder);
+    }
+
+    function _claim(address holder) internal {
+        require(!excluded[holder], "excluded");
         uint256 len = basket.length;
         for (uint256 i; i < len; i++) {
             address s = basket[i];
-            uint256 amt = withdrawableOf(msg.sender, s);
+            uint256 amt = withdrawableOf(holder, s);
             if (amt == 0) continue;
             // Never hide a reserve deficit by paying the first claimant preferentially.
             require(IERC20(s).balanceOf(address(this)) >= reserved[s], "insolvent");
             reserved[s] -= amt;
-            withdrawn[s][msg.sender] += amt;
-            IERC20(s).safeTransfer(msg.sender, amt);
-            emit Claimed(msg.sender, s, amt);
+            withdrawn[s][holder] += amt;
+            IERC20(s).safeTransfer(holder, amt);
+            emit Claimed(holder, s, amt);
         }
     }
 }

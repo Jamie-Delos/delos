@@ -80,7 +80,7 @@ describe('Audit regressions and remaining design risks', function () {
     expect(await quote.balanceOf(b.address)).to.equal(E('5'));
     expect(await vault.reserved(quote.target)).to.equal(0);
   });
-  it('rejects a poisoned graduation without refunding or losing curve reserves', async function () {
+  it('recovers a poisoned graduation without refunding the creator or losing curve reserves', async function () {
     const s = await stack();
     const coinFirst = BigInt(s.token.target) < BigInt(s.weth.target);
     const [t0, t1] = coinFirst ? [s.token.target, s.weth.target] : [s.weth.target, s.token.target];
@@ -88,12 +88,22 @@ describe('Audit regressions and remaining design risks', function () {
     // Initializing an empty Uniswap pool requires neither LP capital nor token ownership.
     await s.npm.connect(s.other).createAndInitializePoolIfNecessary(t0, t1, 10000, sqrt);
     const before = await s.weth.balanceOf(s.creator.address);
-    const raised = (await s.curve.curves(s.token.target)).realQuote;
-    await expect(s.curve.connect(s.other).graduate(s.token.target)).to.be.reverted;
-    const refund = await s.weth.balanceOf(s.creator.address) - before;
-    expect(refund).to.equal(0);
-    expect((await s.curve.curves(s.token.target)).realQuote).to.equal(raised);
-    expect((await s.curve.curves(s.token.target)).graduated).to.equal(false);
+    const c = await s.curve.curves(s.token.target);
+    const raised = c.realQuote;
+    const [a0, a1] = coinFirst ? [c.tokenReserve, c.realQuote] : [c.realQuote, c.tokenReserve];
+    const isqrt = n => { if (n < 2n) return n; let x = n, y = (x + 1n) / 2n; while (y < x) { x = y; y = (x + n / x) / 2n; } return x; };
+    const target = isqrt((a1 << 192n) / a0);
+    // The bounded recovery swap restores the migration price through the empty pool, so the
+    // poisoned initialization neither blocks graduation nor diverts any raised quote.
+    const rc = await (await s.curve.connect(s.other).graduate(s.token.target)).wait();
+    expect(await s.weth.balanceOf(s.creator.address) - before).to.equal(0);
+    const event = rc.logs.map(l => { try { return s.curve.interface.parseLog(l); } catch { return null; } }).find(e => e && e.name === 'Graduated');
+    const pool = new ethers.Contract(event.args.pool, ['function slot0() view returns (uint160,int24,uint16,uint16,uint16,uint8,bool)'], s.owner);
+    expect((await pool.slot0())[0]).to.equal(target);
+    expect((await s.curve.curves(s.token.target)).graduated).to.equal(true);
+    // Essentially all raised quote entered the permanently locked position; only bounded dust remains.
+    expect(event.args.quoteIn).to.be.gte((raised * 9999n) / 10000n);
+    expect(await s.npm.ownerOf(event.args.tokenId)).to.equal(s.locker.target);
   });
   it('drops the virtual reserve when setting the graduation price', async function () {
     const s = await stack();
