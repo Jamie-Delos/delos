@@ -41,8 +41,12 @@ async function startServer(dataDir, port, { fresh } = { fresh: true }) {
 }
 function killServerHard(dataDir) {
   const pid = Number(fs.readFileSync(path.join(dataDir, 'postmaster.pid'), 'utf8').split(/\r?\n/)[0]);
-  const r = spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { encoding: 'utf8' });
-  assert.equal(r.status, 0, `taskkill failed: ${r.stderr}`);
+  if (process.platform === 'win32') {
+    const r = spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { encoding: 'utf8' });
+    assert.equal(r.status, 0, `taskkill failed: ${r.stderr}`);
+  } else {
+    process.kill(pid, 'SIGKILL'); // postmaster dies without a checkpoint; backends follow
+  }
 }
 function dbUrl(port, name) {
   return `postgresql://postgres:${PASSWORD}@127.0.0.1:${port}/${name}?schema=public&connection_limit=10`;

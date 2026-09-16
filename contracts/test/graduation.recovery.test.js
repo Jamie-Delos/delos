@@ -138,6 +138,49 @@ describe('Graduation recovery from adversarial pool initialization', function ()
     await s.curve.connect(s.buyer).buyWithETH(s.token.target, 0, { value: E('0.1') });
   });
 
+  it('M3: the deployer can sweep a graduated coin recorded migration dust to the platform (once)', async () => {
+    const s = await setup();
+    await s.curve.connect(s.attacker).buyWithETH(s.token.target, 0, { value: E('1') });
+    const { target } = await migrationTarget(s);
+    await initPoolAt(s, target / 2n);
+    await attackerLP(s, await s.token.balanceOf(s.attacker.address), E('1'));
+    await expect(s.curve.sweepMigrationDust(s.token.target)).to.be.reverted; // not graduated yet
+    await s.curve.graduate(s.token.target);
+    const dustT = await s.curve.migrationTokenDust(s.token.target), dustQ = await s.curve.migrationQuoteDust(s.token.target);
+    expect(dustT + dustQ).to.be.gt(0);
+    await expect(s.curve.connect(s.attacker).sweepMigrationDust(s.token.target)).to.be.reverted; // deployer-only
+    const [pt, pq] = [await s.token.balanceOf(s.platform.address), await s.weth.balanceOf(s.platform.address)];
+    await s.curve.sweepMigrationDust(s.token.target);
+    expect(await s.token.balanceOf(s.platform.address) - pt).to.equal(dustT);
+    expect(await s.weth.balanceOf(s.platform.address) - pq).to.equal(dustQ);
+    expect(await s.curve.migrationTokenDust(s.token.target)).to.equal(0);
+    expect(await s.curve.migrationQuoteDust(s.token.target)).to.equal(0);
+    // Sweeping only ever moves recorded dust: the curve's active reserves for OTHER coins are untouched.
+    await s.curve.sweepMigrationDust(s.token.target);
+    expect(await s.token.balanceOf(s.platform.address) - pt).to.equal(dustT);
+  });
+
+  it('H5: a griefed graduation can be unblocked by the deployer widening that coin recovery bound', async () => {
+    const s = await setup();
+    // Parked liquidity deeper than the default 10% bound can absorb (needs ~25% of a leg to restore),
+    // parked below the target price. Sized so the outcome holds for either token0/token1 orientation.
+    await s.curve.connect(s.attacker).buyWithETH(s.token.target, 0, { value: E('40') });
+    const { target } = await migrationTarget(s);
+    await initPoolAt(s, (target * 5n) / 7n);
+    await attackerLP(s, await s.token.balanceOf(s.attacker.address), E('40'));
+    await expect(s.curve.graduate(s.token.target)).to.be.reverted; // fails closed at the default bound
+    await expect(s.curve.connect(s.attacker).setRecoveryMaxSpendBps(s.token.target, 5000)).to.be.reverted; // deployer-only
+    await expect(s.curve.setRecoveryMaxSpendBps(s.token.target, 5001)).to.be.reverted; // hard cap
+    await s.curve.setRecoveryMaxSpendBps(s.token.target, 5000);
+    expect(await s.curve.recoveryMaxSpendBps(s.token.target)).to.equal(5000);
+    const rc = await (await s.curve.graduate(s.token.target)).wait();
+    const restored = event(rc, s.curve, 'MigrationPriceRestored');
+    expect(restored).to.not.equal(undefined);
+    const slot0 = await (await ethers.getContractAt(['function slot0() view returns (uint160,int24,uint16,uint16,uint16,uint8,bool)'], restored.args.pool)).slot0();
+    expect(slot0[0]).to.equal(target); // still migrates at exactly the curve exit price
+    expect(event(rc, s.curve, 'Graduated')).to.not.equal(undefined);
+  });
+
   it('a pool pre-initialized exactly AT the migration price needs no recovery swap', async () => {
     const s = await setup();
     const { target } = await migrationTarget(s);

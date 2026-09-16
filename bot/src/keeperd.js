@@ -1,11 +1,10 @@
 // Production keeper daemon for Census v2 launches.
 //
-// One process, one signer (the vaults' operator), one transaction in flight at a time.
-// Every cycle it:
+// One process, one signer, one transaction in flight at a time. Every cycle it:
 //   1. DISCOVERS launches (factory LaunchedV2) and graduations (curve Graduated) from chain logs,
 //      resuming from a durable cursor;
 //   2. COLLECTS accrued LP fees from the locker for graduated positions (permissionless call);
-//   3. CONVERTS vault-held launch-token fees into the quote asset (operator-only, quoter-priced
+//   3. CONVERTS vault-held launch-token fees into the quote asset (operator/keeper-only, quoter-priced
 //      minimum output at SLIPPAGE_BPS);
 //   4. DISTRIBUTES each vault's unallocated quote into its stock basket (0x when the whole basket
 //      is quotable, else Uniswap with quoter minimums — same planners as src/keeper0x.js);
@@ -13,17 +12,28 @@
 //      rewards are delivered automatically), tracking holder balances from token Transfer logs,
 //      bounded per cycle and resumed round-robin.
 //
+// Authority: steps 3-4 need the signer to be the vault's `operator()` OR the platform keeper
+// registered on the curve (`CensusCurve.keeper()`, accepted by every vault). Vaults the signer is
+// not authorized for are skipped for those steps (logged once); collection and pushes are
+// permissionless and always run.
+//
 // Durability and safety:
 //   - All progress lives in a JSON state file written atomically (tmp+rename): discovery cursors,
-//     per-launch records, holder balances, the in-flight transaction, and run/alert counters.
+//     per-launch records, holder balances, the in-flight transaction, and run/alert counters. A
+//     corrupt state file is a hard error (never silently reset: that would reuse a live nonce). A
+//     lock file keeps two daemons off one state file.
 //   - A transaction is recorded (kind, nonce, to, data, fees) BEFORE broadcast. On restart the
-//     pending record is resolved first: mined -> done; superseded nonce -> cleared with a warning;
-//     stuck past REPLACE_AFTER_MS -> replaced with a fee bump at the SAME nonce (bounded by
-//     MAX_FEE_GWEI); still waiting -> nothing new is sent.
+//     pending record is resolved first: mined -> done; broadcast never happened (no hash, nonce
+//     unconsumed) -> cleared; superseded nonce -> cleared with a warning; stuck past
+//     REPLACE_AFTER_MS -> replaced with a fee bump at the SAME nonce (bounded by MAX_FEE_GWEI),
+//     keeping every replaced hash so a mined original is still recognised; still waiting -> nothing
+//     new is sent.
+//   - Log scans filter by topic and shrink the block range on RPC failures instead of stalling.
 //   - The signer refuses to go live when its gas balance is under MIN_SIGNER_WEI (alert instead);
-//     per-cycle actions are bounded by MAX_ACTIONS_PER_CYCLE.
-//   - DRY_RUN defaults to TRUE: full planning, no signatures.
-//   - Failures raise webhook alerts (ALERT_WEBHOOK_URL) and never advance a cursor past unread logs.
+//     per-cycle actions are bounded by MAX_ACTIONS_PER_CYCLE and shared fairly across launches.
+//   - DRY_RUN defaults to TRUE: full planning, no signatures (including no replacements).
+//   - Every failure raises a webhook alert (deduplicated per key for ALERT_REPEAT_MS) and never
+//     advances a cursor past unread logs.
 //
 // Run:  node src/keeperd.js            (dry run, single cycle: CYCLES=1)
 //       DRY_RUN=false CYCLES=0 node src/keeperd.js   (live daemon; 0 = run forever)
@@ -46,11 +56,15 @@ const CURVE_IFACE = new ethers.Interface([
 const TOKEN_IFACE = new ethers.Interface([
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 ]);
+const LAUNCH_TOPIC = FACTORY_IFACE.getEvent("LaunchedV2").topicHash;
+const GRAD_TOPIC = CURVE_IFACE.getEvent("Graduated").topicHash;
+const TRANSFER_TOPIC = TOKEN_IFACE.getEvent("Transfer").topicHash;
 const LOCKER_ABI = [
   "function collectFees(uint256 tokenId) returns (uint256 amount0, uint256 amount1)",
 ];
 const VAULT_EXTRA_ABI = [
   "function token() view returns (address)",
+  "function operator() view returns (address)",
   "function excluded(address) view returns (bool)",
   "function withdrawableOf(address holder, address stock) view returns (uint256)",
   "function convertLaunchFees(uint256 amountIn, uint24 poolFee, uint256 minQuoteOut) returns (uint256)",
@@ -58,6 +72,8 @@ const VAULT_EXTRA_ABI = [
 ];
 const CURVE_VIEW_ABI = [
   "function curves(address) view returns (address quote,address creator,address vault,uint16 holdersBps,uint24 poolFee,uint256 virtualQuote,uint256 tokenReserve,uint256 realQuote,uint256 graduationQuote,bool graduated,bool exists)",
+  "function keeper() view returns (address)",
+  "function locker() view returns (address)",
 ];
 const ERC20_VIEW_ABI = ["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)"];
 
@@ -94,27 +110,51 @@ function loadConfig(env = process.env) {
     replaceAfterMs: num("REPLACE_AFTER_MS", 180_000),
     txWaitMs: num("TX_WAIT_MS", 90_000),
     alertWebhook: env.ALERT_WEBHOOK_URL || null,
+    alertRepeatMs: num("ALERT_REPEAT_MS", 3_600_000), // identical alert keys are re-sent at most this often
   };
   if (!Number.isInteger(cfg.slippageBps) || cfg.slippageBps < 0 || cfg.slippageBps >= 10000) throw new Error("SLIPPAGE_BPS must be 0..9999");
+  if (cfg.logChunk <= 0n) throw new Error("KEEPER_LOG_CHUNK must be positive");
   return cfg;
 }
 
 // ---------------------------------------------------------------------------
-// durable state (atomic JSON file)
+// durable state (atomic JSON file) + single-instance lock
 // ---------------------------------------------------------------------------
+const freshState = () => ({ cursor: null, launches: {}, pending: null, pushOffset: {}, counters: { cycles: 0, sent: 0, alerts: 0 }, alertsSeen: {} });
 function loadState(file) {
+  if (!fs.existsSync(file)) return freshState();
+  // A corrupt state file must stop the daemon: silently starting fresh would drop the in-flight
+  // record (nonce reuse against a live transaction) and reset the discovery cursor.
+  const raw = fs.readFileSync(file, "utf8");
+  let parsed;
   try {
-    const raw = JSON.parse(fs.readFileSync(file, "utf8"), (_, v) => (typeof v === "string" && /^bigint:\d+$/.test(v) ? BigInt(v.slice(7)) : v));
-    return raw;
-  } catch {
-    return { cursor: null, launches: {}, pending: null, pushOffset: {}, counters: { cycles: 0, sent: 0, alerts: 0 } };
+    parsed = JSON.parse(raw, (_, v) => (typeof v === "string" && /^bigint:\d+$/.test(v) ? BigInt(v.slice(7)) : v));
+  } catch (e) {
+    throw new Error(`keeper state file ${file} is corrupt (${e.message}); restore it from backup before starting`);
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`keeper state file ${file} has an unexpected shape; refusing to start`);
+  return { ...freshState(), ...parsed, counters: { ...freshState().counters, ...(parsed.counters ?? {}) } };
 }
 function saveState(file, state) {
   const body = JSON.stringify(state, (_, v) => (typeof v === "bigint" ? `bigint:${v}` : v), 2);
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, body);
   fs.renameSync(tmp, file);
+}
+function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } }
+/// Exclusive lock next to the state file; a stale lock (dead pid) is reclaimed.
+function acquireLock(stateFile) {
+  const lock = `${stateFile}.lock`;
+  try {
+    fs.writeFileSync(lock, String(process.pid), { flag: "wx" });
+  } catch (e) {
+    if (e.code !== "EEXIST") throw e;
+    const other = Number(fs.readFileSync(lock, "utf8"));
+    if (Number.isInteger(other) && other !== process.pid && pidAlive(other)) throw new Error(`another keeperd (pid ${other}) holds ${lock}`);
+    fs.writeFileSync(lock, String(process.pid));
+  }
+  const release = () => { try { if (Number(fs.readFileSync(lock, "utf8")) === process.pid) fs.unlinkSync(lock); } catch { /* gone */ } };
+  return release;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,47 +163,92 @@ function saveState(file, state) {
 function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
   const state = loadState(cfg.stateFile);
   const persist = () => saveState(cfg.stateFile, state);
-  const raise = async (level, message, detail) => {
-    state.counters.alerts++;
-    log(`[alert:${level}] ${message}`, detail ?? "");
+  const cap = BigInt(cfg.maxFeeGwei) * 10n ** 9n;
+  const signer = chain.address ? chain.address.toLowerCase() : null;
+
+  // Alerts are deduplicated per key so a persistent condition does not storm the webhook.
+  const raise = async (level, message, detail, key = message) => {
+    const now = Date.now();
+    const last = state.alertsSeen[key] ?? 0;
+    const repeat = now - last < cfg.alertRepeatMs;
+    if (!repeat) { state.alertsSeen[key] = now; state.counters.alerts++; }
+    log(`[alert:${level}]${repeat ? " (repeat, suppressed)" : ""} ${message}`, detail ?? "");
     persist();
-    if (alert) { try { await alert({ level, message, detail }); } catch { log("[alert] webhook delivery failed"); } }
+    if (alert && !repeat) { try { await alert({ level, message, detail }); } catch { log("[alert] webhook delivery failed"); } }
   };
 
+  // Log scans shrink their range on RPC failure (result caps, timeouts) instead of retrying the
+  // same failing chunk forever; the range grows back after successes.
+  const minChunk = cfg.logChunk / 16n > 0n ? cfg.logChunk / 16n : 1n;
+  let chunk = cfg.logChunk;
+  async function scanLogs(filter, from, head, onLogs) {
+    while (from <= head) {
+      const to = from + chunk - 1n > head ? head : from + chunk - 1n;
+      let logs;
+      try {
+        logs = await chain.getLogs({ ...filter, fromBlock: from, toBlock: to });
+      } catch (e) {
+        if (chunk > minChunk && to > from) {
+          chunk = chunk / 2n < minChunk ? minChunk : chunk / 2n;
+          log(`[scan] getLogs ${from}-${to} failed (${e.message}); retrying with chunk ${chunk}`);
+          continue;
+        }
+        await raise("error", "log scan failed at the minimum chunk size", { from: from.toString(), to: to.toString(), message: e.message }, "scan-failed");
+        throw e;
+      }
+      await onLogs(logs, to);
+      if (chunk < cfg.logChunk) chunk = chunk * 2n > cfg.logChunk ? cfg.logChunk : chunk * 2n;
+      from = to + 1n;
+    }
+  }
+
   // ---- managed transactions: at most one in flight, recorded before broadcast ----
+  const bump = (v, floor) => { const b = (BigInt(v) * 125n) / 100n + 1n; const f = floor === undefined ? b : (b > BigInt(floor) ? b : BigInt(floor)); return f > cap ? cap : f; };
+
   async function resolvePending() {
     const p = state.pending;
     if (!p) return true;
-    const receipt = await chain.receipt(p.hash);
-    if (receipt) {
-      log(`[tx] ${p.kind} ${p.hash} mined in block ${receipt.blockNumber} status=${receipt.status}`);
-      if (receipt.status !== 1) await raise("error", `${p.kind} transaction reverted`, { hash: p.hash });
-      state.pending = null;
-      persist();
-      return true;
+    // Every hash this record ever had (original + replacements) resolves it when mined.
+    for (const h of [p.hash, ...(p.replaced ?? [])].filter(Boolean)) {
+      const receipt = await chain.receipt(h);
+      if (receipt) {
+        log(`[tx] ${p.kind} ${h} mined in block ${receipt.blockNumber} status=${receipt.status}${h !== p.hash ? " (a replaced hash)" : ""}`);
+        if (receipt.status !== 1) await raise("error", `${p.kind} transaction reverted`, { hash: h });
+        state.pending = null;
+        persist();
+        return true;
+      }
     }
     const accountNonce = await chain.nonce();
     if (accountNonce > p.nonce) {
       // Someone/something else consumed the nonce (manual intervention or an unindexed mine).
-      await raise("warn", `${p.kind} nonce ${p.nonce} superseded; clearing pending record`, { hash: p.hash });
+      await raise("warn", `${p.kind} nonce ${p.nonce} superseded; clearing pending record`, { hash: p.hash }, `superseded:${p.nonce}`);
+      state.pending = null;
+      persist();
+      return true;
+    }
+    if (!p.hash) {
+      // Intent was recorded but the broadcast threw (fee below base, RPC error, crash between the
+      // two persists): the nonce is unconsumed, so nothing is in flight. Clear and carry on.
+      await raise("warn", `${p.kind} was never broadcast at nonce ${p.nonce}; clearing pending record`, { to: p.to }, `unbroadcast:${p.nonce}`);
       state.pending = null;
       persist();
       return true;
     }
     if (Date.now() - p.sentAt >= cfg.replaceAfterMs) {
+      if (cfg.dryRun) { log(`[dry] ${p.kind} stuck at nonce ${p.nonce}; a live run would replace it`); return false; }
       const fees = await chain.feeData();
-      const cap = BigInt(cfg.maxFeeGwei) * 10n ** 9n;
-      const bumped = (BigInt(p.maxFeePerGas) * 125n) / 100n + 1n;
-      const maxFeePerGas = bumped > cap ? cap : bumped;
-      const base = fees.maxFeePerGas ?? maxFeePerGas;
-      const chosen = maxFeePerGas > base ? maxFeePerGas : base > cap ? cap : base;
-      if (chosen <= BigInt(p.maxFeePerGas)) {
-        await raise("error", `${p.kind} stuck at nonce ${p.nonce} and MAX_FEE_GWEI reached; manual action needed`, { hash: p.hash });
+      const base = fees.maxFeePerGas ?? 0n;
+      const maxFeePerGas = bump(p.maxFeePerGas, base);
+      // Replacement rules require BOTH fee fields to rise; re-supplying the tip avoids "underpriced".
+      const maxPriorityFeePerGas = bump(p.maxPriorityFeePerGas ?? 0n, fees.maxPriorityFeePerGas ?? 0n);
+      if (maxFeePerGas <= BigInt(p.maxFeePerGas)) {
+        await raise("error", `${p.kind} stuck at nonce ${p.nonce} and MAX_FEE_GWEI reached; manual action needed`, { hash: p.hash }, `stuck:${p.nonce}`);
         return false;
       }
-      const hash = await chain.send({ to: p.to, data: p.data, nonce: p.nonce, maxFeePerGas: chosen, gasLimit: BigInt(p.gasLimit) });
-      log(`[tx] ${p.kind} replaced at nonce ${p.nonce}: ${hash} (fee ${chosen})`);
-      state.pending = { ...p, hash, maxFeePerGas: chosen, sentAt: Date.now(), replacements: (p.replacements ?? 0) + 1 };
+      const hash = await chain.send({ to: p.to, data: p.data, nonce: p.nonce, maxFeePerGas, maxPriorityFeePerGas, gasLimit: BigInt(p.gasLimit) });
+      log(`[tx] ${p.kind} replaced at nonce ${p.nonce}: ${hash} (fee ${maxFeePerGas})`);
+      state.pending = { ...p, hash, replaced: [...(p.replaced ?? []), p.hash], maxFeePerGas: maxFeePerGas.toString(), maxPriorityFeePerGas: maxPriorityFeePerGas.toString(), sentAt: Date.now(), replacements: (p.replacements ?? 0) + 1 };
       persist();
       return false; // still in flight
     }
@@ -175,19 +260,27 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     if (!(await resolvePending())) { log(`[tx] ${kind} deferred: another transaction is in flight`); return { deferred: true }; }
     const balance = await chain.balance();
     if (balance < cfg.minSignerWei) {
-      await raise("error", "signer gas balance below MIN_SIGNER_WEI; refusing to send", { balance: balance.toString() });
+      await raise("error", "signer gas balance below MIN_SIGNER_WEI; refusing to send", { balance: balance.toString() }, "low-balance");
       return { blocked: true };
     }
     const fees = await chain.feeData();
-    const cap = BigInt(cfg.maxFeeGwei) * 10n ** 9n;
     const maxFeePerGas = (fees.maxFeePerGas ?? cap) > cap ? cap : (fees.maxFeePerGas ?? cap);
+    const maxPriorityFeePerGas = fees.maxPriorityFeePerGas ?? 0n;
     const nonce = await chain.nonce();
     const gasLimit = await chain.estimateGas({ to, data });
     // Record intent BEFORE broadcast: a crash between these lines is recovered by the nonce check.
-    state.pending = { kind, to, data, nonce, gasLimit: gasLimit.toString(), maxFeePerGas: maxFeePerGas.toString(), hash: null, sentAt: Date.now() };
+    state.pending = { kind, to, data, nonce, gasLimit: gasLimit.toString(), maxFeePerGas: maxFeePerGas.toString(), maxPriorityFeePerGas: maxPriorityFeePerGas.toString(), hash: null, replaced: [], sentAt: Date.now() };
     persist();
-    const hash = await chain.send({ to, data, nonce, maxFeePerGas, gasLimit });
+    let hash;
+    try {
+      hash = await chain.send({ to, data, nonce, maxFeePerGas, maxPriorityFeePerGas, gasLimit });
+    } catch (e) {
+      // Left as pending{hash:null}; the next resolvePending clears it once the nonce is confirmed unconsumed.
+      await raise("error", `${kind} broadcast failed`, { nonce, message: e.message }, `broadcast:${kind}`);
+      return { failed: true };
+    }
     state.pending.hash = hash;
+    state.counters.sent++;
     persist();
     log(`[tx] ${kind} sent: ${hash} (nonce ${nonce})`);
     const mined = await chain.waitMined(hash, cfg.txWaitMs);
@@ -205,28 +298,25 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
   // ---- discovery ----
   async function discover() {
     const head = await chain.blockNumber();
-    let from = state.cursor !== null ? BigInt(state.cursor) + 1n : cfg.startBlock;
-    while (from <= head) {
-      const to = from + cfg.logChunk - 1n > head ? head : from + cfg.logChunk - 1n;
-      const launchTopic = FACTORY_IFACE.getEvent("LaunchedV2").topicHash;
-      const gradTopic = CURVE_IFACE.getEvent("Graduated").topicHash;
-      const logs = await chain.getLogs({ address: [cfg.factory, cfg.curve], fromBlock: from, toBlock: to });
+    const from = state.cursor !== null ? BigInt(state.cursor) + 1n : cfg.startBlock;
+    await scanLogs({ address: [cfg.factory, cfg.curve], topics: [[LAUNCH_TOPIC, GRAD_TOPIC]] }, from, head, async (logs, to) => {
       for (const raw of logs) {
-        if (raw.topics[0] === launchTopic && raw.address.toLowerCase() === cfg.factory.toLowerCase()) {
+        if (raw.topics[0] === LAUNCH_TOPIC && raw.address.toLowerCase() === cfg.factory.toLowerCase()) {
           const ev = FACTORY_IFACE.parseLog(raw);
           const token = ev.args.token.toLowerCase();
           if (!state.launches[token]) {
             const c = await chain.read(cfg.curve, CURVE_VIEW_ABI, "curves", [token]);
             state.launches[token] = {
               vault: ev.args.vault.toLowerCase(), holdersBps: Number(ev.args.holdersBps),
-              quote: c.quote.toLowerCase(), poolFee: Number(c.poolFee),
+              quote: c.quote.toLowerCase(), poolFee: Number(c.poolFee), // pinned from the curve, never operator-chosen
               createdBlock: raw.blockNumber.toString(), graduated: false, lockerTokenId: null,
-              holderCursor: raw.blockNumber.toString(), holders: {},
+              // Holder scans start AT the launch block so same-block bundle buyers are tracked too.
+              holderCursor: (BigInt(raw.blockNumber) - 1n).toString(), holders: {},
             };
             log(`[discover] launch ${token} vault ${state.launches[token].vault}`);
           }
         }
-        if (raw.topics[0] === gradTopic && raw.address.toLowerCase() === cfg.curve.toLowerCase()) {
+        if (raw.topics[0] === GRAD_TOPIC && raw.address.toLowerCase() === cfg.curve.toLowerCase()) {
           const ev = CURVE_IFACE.parseLog(raw);
           const token = ev.args.coin.toLowerCase();
           const launch = state.launches[token];
@@ -240,20 +330,15 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
       }
       state.cursor = to.toString();
       persist();
-      from = to + 1n;
-    }
+    });
   }
 
   // ---- holder tracking from token Transfer logs (durable per-token cursor) ----
   async function refreshHolders(token, launch) {
     const head = await chain.blockNumber();
-    let from = BigInt(launch.holderCursor) + 1n;
-    while (from <= head) {
-      const to = from + cfg.logChunk - 1n > head ? head : from + cfg.logChunk - 1n;
-      const logs = await chain.getLogs({ address: [token], fromBlock: from, toBlock: to });
-      const transferTopic = TOKEN_IFACE.getEvent("Transfer").topicHash;
+    await scanLogs({ address: [token], topics: [[TRANSFER_TOPIC]] }, BigInt(launch.holderCursor) + 1n, head, async (logs, to) => {
       for (const raw of logs) {
-        if (raw.topics[0] !== transferTopic) continue;
+        if (raw.topics[0] !== TRANSFER_TOPIC) continue;
         const ev = TOKEN_IFACE.parseLog(raw);
         const [f, t, v] = [ev.args.from.toLowerCase(), ev.args.to.toLowerCase(), BigInt(ev.args.value)];
         if (f !== ethers.ZeroAddress) launch.holders[f] = ((launch.holders[f] ? BigInt(launch.holders[f]) : 0n) - v).toString();
@@ -262,8 +347,20 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
       }
       launch.holderCursor = to.toString();
       persist();
-      from = to + 1n;
+    });
+  }
+
+  // ---- authority: may this signer run the vault's conversions/distributions? ----
+  async function canOperate(token, launch, keeper) {
+    if (cfg.dryRun && !signer) return true; // planning only
+    const operator = String(await chain.read(launch.vault, VAULT_EXTRA_ABI, "operator", [])).toLowerCase();
+    const ok = signer === operator || (keeper && signer === keeper);
+    if (!ok && !launch.noticedUnauthorized) {
+      launch.noticedUnauthorized = true;
+      log(`[auth] ${token}: signer is neither the vault operator (${operator}) nor the curve keeper; convert/distribute skipped, collect/push still run`);
     }
+    if (ok) launch.noticedUnauthorized = false;
+    return ok;
   }
 
   // ---- per-launch pipeline steps ----
@@ -282,7 +379,7 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     if (!launch.graduated || launch.vault === ethers.ZeroAddress || budget.used >= budget.max) return;
     const bal = await chain.read(token, ERC20_VIEW_ABI, "balanceOf", [launch.vault]);
     if (BigInt(bal) < cfg.convertMinTokens) return;
-    if (!cfg.quoter) { await raise("warn", "convertLaunchFees skipped: QUOTER_ADDRESS unset (no slippage floor)", { token }); return; }
+    if (!cfg.quoter) { await raise("warn", "convertLaunchFees skipped: QUOTER_ADDRESS unset (no slippage floor)", { token }, "no-quoter"); return; }
     const out = await chain.quoteSingle(cfg.quoter, token, launch.quote, BigInt(bal), launch.poolFee);
     const minOut = applySlippage(BigInt(out));
     if (minOut <= 0n) return;
@@ -317,7 +414,7 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     } else {
       const quoter = cfg.quoter ? chain.contract(cfg.quoter, QUOTER_ABI) : null;
       if (!quoter && basket.some((s) => s.toLowerCase() !== quote.toLowerCase())) {
-        await raise("warn", "distribute skipped: no 0x coverage and QUOTER_ADDRESS unset", { token });
+        await raise("warn", "distribute skipped: no 0x coverage and QUOTER_ADDRESS unset", { token }, "no-quoter-distribute");
         return;
       }
       const uni = await planUniswap(quoter, quote, Number(swapFee), basket, weights, paths, dec, bal);
@@ -329,7 +426,7 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     await sendManaged(`${plan.fn}:${token}`, launch.vault, data);
   }
 
-  async function pushStep(token, launch, budget) {
+  async function pushStep(token, launch, budget, pushLimit) {
     if (launch.vault === ethers.ZeroAddress || launch.holdersBps === 0) return;
     await refreshHolders(token, launch);
     const vault = chain.contract(launch.vault, [...VAULT_ABI, ...VAULT_EXTRA_ABI]);
@@ -339,7 +436,7 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     if (holders.length === 0) return;
     const start = state.pushOffset[token] ?? 0;
     let pushed = 0;
-    for (let i = 0; i < holders.length && pushed < cfg.pushMaxPerCycle && budget.used < budget.max; i++) {
+    for (let i = 0; i < holders.length && pushed < pushLimit && budget.used < budget.max; i++) {
       const holder = holders[(start + i) % holders.length];
       state.pushOffset[token] = (start + i + 1) % holders.length;
       if (await vault.excluded(holder)) continue;
@@ -358,16 +455,38 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
   async function cycle() {
     state.counters.cycles++;
     const budget = { used: 0, max: cfg.maxActionsPerCycle };
-    await resolvePending();
-    await discover();
-    for (const [token, launch] of Object.entries(state.launches)) {
+    try {
+      await resolvePending();
+      await discover();
+    } catch (e) {
+      await raise("error", "discovery/recovery failed; pipeline skipped this cycle", { message: e.message }, "cycle-failed");
+      state.lastRun = { at: Date.now(), actions: 0, dryRun: cfg.dryRun, failed: true };
+      persist();
+      return;
+    }
+    let keeper = null;
+    try { keeper = String(await chain.read(cfg.curve, CURVE_VIEW_ABI, "keeper", [])).toLowerCase(); } catch { keeper = null; }
+    if (keeper === ethers.ZeroAddress) keeper = null;
+    const entries = Object.entries(state.launches);
+    for (let i = 0; i < entries.length; i++) {
+      const [token, launch] = entries[i];
+      // Fair share of the remaining action budget so one launch's holder list cannot starve the rest.
+      const remainingLaunches = entries.length - i;
+      const pushLimit = Math.min(cfg.pushMaxPerCycle, Math.max(1, Math.floor((budget.max - budget.used) / remainingLaunches)));
       try {
         await collectStep(token, launch, budget);
-        await convertStep(token, launch, budget);
-        await distributeStep(token, launch, budget);
-        await pushStep(token, launch, budget);
+        if (await canOperate(token, launch, keeper)) {
+          await convertStep(token, launch, budget);
+          await distributeStep(token, launch, budget);
+        }
       } catch (e) {
-        await raise("error", `pipeline failed for ${token}`, { message: e.message });
+        await raise("error", `pipeline failed for ${token}`, { message: e.message }, `pipeline:${token}`);
+      }
+      // Pushes are permissionless and independent of the steps above: their own failure domain.
+      try {
+        await pushStep(token, launch, budget, pushLimit);
+      } catch (e) {
+        await raise("error", `push failed for ${token}`, { message: e.message }, `push:${token}`);
       }
     }
     state.lastRun = { at: Date.now(), actions: budget.used, dryRun: cfg.dryRun };
@@ -388,6 +507,7 @@ function makeChain(cfg) {
   return {
     provider,
     signer: wallet,
+    address: wallet ? wallet.address : null,
     chainId: async () => Number((await provider.getNetwork()).chainId),
     blockNumber: async () => BigInt(await provider.getBlockNumber()),
     getLogs: (f) => provider.getLogs({ ...f, fromBlock: Number(f.fromBlock), toBlock: Number(f.toBlock) }),
@@ -411,19 +531,25 @@ async function main() {
   for (const k of ["factory", "curve", "locker"]) if (!cfg[k]) throw new Error(`Missing ${k.toUpperCase()}${k === "factory" ? "_V2" : ""}_ADDRESS`);
   const chain = makeChain(cfg);
   if ((await chain.chainId()) !== cfg.chainId) throw new Error("RPC chain does not match CHAIN_ID");
+  // The locker the curve registers positions with must be the one we collect from.
+  const curveLocker = String(await chain.read(cfg.curve, CURVE_VIEW_ABI, "locker", [])).toLowerCase();
+  if (curveLocker !== cfg.locker.toLowerCase()) throw new Error(`LOCKER_ADDRESS ${cfg.locker} does not match curve.locker() ${curveLocker}`);
+  const release = acquireLock(cfg.stateFile);
+  for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { release(); process.exit(0); });
+  process.on("exit", release);
   const alert = cfg.alertWebhook
     ? (payload) => fetch(cfg.alertWebhook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "census-keeperd", at: new Date().toISOString(), ...payload }), signal: AbortSignal.timeout(10000) })
     : null;
   const keeper = makeKeeper({ cfg, chain, alert });
-  console.log(`=== census keeperd === ${cfg.dryRun ? "[DRY RUN]" : "[LIVE]"} state=${cfg.stateFile} interval=${cfg.intervalMs}ms`);
+  console.log(`=== census keeperd === ${cfg.dryRun ? "[DRY RUN]" : "[LIVE]"} signer=${chain.address ?? "none"} state=${cfg.stateFile} interval=${cfg.intervalMs}ms`);
   let n = 0;
   for (;;) {
-    try { await keeper.cycle(); } catch (e) { console.error("[cycle] fatal:", e.message); }
+    try { await keeper.cycle(); } catch (e) { console.error("[cycle] fatal:", e.message); if (alert) { try { await alert({ level: "error", message: "keeper cycle crashed", detail: { message: e.message } }); } catch { /* logged */ } } }
     n++;
     if (cfg.cycles > 0 && n >= cfg.cycles) break;
     await new Promise((r) => setTimeout(r, cfg.intervalMs));
   }
 }
 
-module.exports = { loadConfig, loadState, saveState, makeKeeper, makeChain };
+module.exports = { loadConfig, loadState, saveState, acquireLock, makeKeeper, makeChain };
 if (require.main === module) main().catch((e) => { console.error("FATAL:", e.message || e); process.exit(1); });

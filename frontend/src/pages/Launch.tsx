@@ -8,7 +8,7 @@ import { STOCK_ROUTES, basketPath } from "../lib/stockRoutes";
 import { STOCK_CATEGORIES, type Stock } from "../lib/mock";
 import { grindC0de } from "../lib/c0de";
 import { ANCHORS, anchorByKey, curveLaunchParams } from "../lib/anchors";
-import { putMetadata } from "../lib/metadata";
+import { putMetadata, type CoinMetadata } from "../lib/metadata";
 import { prepareImage, uploadImage, isHostedUrl } from "../lib/upload";
 import { useWalletConnect } from "../census";
 import { AssetLogo, StockLogo } from "../components/StockLogo";
@@ -63,6 +63,9 @@ export function Launch() {
   const [draft, setDraft] = useState<Draft>(loadDraft);
   const [status, setStatus] = useState("");
   const [launchPct, setLaunchPct] = useState<number | null>(null); // 0..100 while launching; null when idle
+  // A launch whose signed metadata write failed: the coin exists, the details do not. Offer a retry
+  // (or continue and save later) instead of silently dropping the description.
+  const [pendingMeta, setPendingMeta] = useState<{ token: Address; meta: CoinMetadata } | null>(null);
   const [reserved, setReserved] = useState<{ salt: `0x${string}`; address: Address } | null>(null);
   const set = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
 
@@ -188,7 +191,10 @@ export function Launch() {
     let basket: Address[] = [], paths: `0x${string}`[] = [], weights: number[] = [];
     if (usesBasket) {
       basket = picks.map((t) => STOCK_ROUTES[t].address);
-      paths = picks.map((t) => basketPath(anchor.quote, t));
+      const routed = picks.map((t) => basketPath(anchor.quote, t));
+      // The vault rejects any route that does not start at its quote asset, so never guess a route.
+      if (routed.some((r) => r === null)) { setStatus(`${anchor.key} can't route the stock basket yet — anchor to ETH or HOOD`); return; }
+      paths = routed as `0x${string}`[];
       const raw = picks.map((t) => weightOf(t));
       const sum = raw.reduce((a, b) => a + b, 0) || 1;
       weights = raw.map((w) => Math.round((w / sum) * 10000));
@@ -247,11 +253,18 @@ export function Launch() {
         // Persist a hosted logo URL only; a local-only data-URL preview would overflow the store's URL
         // field, so we skip it (the logo simply isn't saved until blob hosting is provisioned).
         const savedImage = isHostedUrl(draft.image.trim()) ? draft.image.trim() : "";
-        // The store only accepts creator-signed writes; skipping the signature just means the
-        // description isn't persisted — the launch itself already succeeded.
-        await putMetadata(token, CHAIN.id, { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: savedImage }, signMessageAsync);
-        setLaunchPct(100);
+        // The store only accepts creator-signed writes. The launch itself already succeeded, so a
+        // failed/declined save is surfaced with a retry rather than silently dropped.
+        const meta: CoinMetadata = { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: savedImage };
+        const saved = await putMetadata(token, CHAIN.id, meta, signMessageAsync);
         try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+        if (!saved.ok) {
+          setStatus(`Launched! The details weren't saved (${saved.reason}).${saved.retryable ? " Retry, or continue and save them later." : ""}`);
+          setPendingMeta({ token, meta });
+          setLaunchPct(null);
+          return;
+        }
+        setLaunchPct(100);
         nav(`/coin/${token}`);
       } else {
         setLaunchPct(null);
@@ -322,9 +335,19 @@ export function Launch() {
           ) : (
             <div className={"census-dock__hint" + (!valid[step] ? " census-dock__hint--blocking" : "")}>{status || hint}</div>
           )}
-          <button className="census-btn" disabled={!valid[step] || isPending} onClick={onContinue}>
-            {isPending ? "launching…" : ctaLabel} <span aria-hidden="true">→</span>
-          </button>
+          {pendingMeta ? (
+            <>
+              <button className="census-btn" onClick={async () => {
+                const r = await putMetadata(pendingMeta.token, CHAIN.id, pendingMeta.meta, signMessageAsync);
+                if (r.ok) { setPendingMeta(null); nav(`/coin/${pendingMeta.token}`); } else setStatus(`Still not saved (${r.reason}).`);
+              }}>Retry saving details</button>
+              <button className="census-btn" onClick={() => nav(`/coin/${pendingMeta.token}`)}>Go to coin <span aria-hidden="true">→</span></button>
+            </>
+          ) : (
+            <button className="census-btn" disabled={!valid[step] || isPending} onClick={onContinue}>
+              {isPending ? "launching…" : ctaLabel} <span aria-hidden="true">→</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

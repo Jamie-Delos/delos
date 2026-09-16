@@ -1,3 +1,66 @@
+# Reconciliation with the independent review — 2026-09-16 (evening)
+
+Jamie's review (`INDEPENDENT-REVIEW.md`, branch `BACKEND-NEIL` @ `945dfe2`) confirmed every test claim
+below and found no fund-loss bug in the contracts; its findings were operational (keeper/indexer/metadata)
+and integration seams. This pass works through that list. **Release decision: still NO GO for mainnet
+funds** — what remains is the same set of decisions and external/ops validation, now with fewer code
+items; see "Remaining launch blockers" at the end of this section.
+
+## Findings → status
+
+| # | Finding | Status | Where / evidence |
+| --- | --- | --- | --- |
+| H1 | Auto-distribution only worked for creator-delegated vaults | **Fixed** | `CensusCurve.setKeeper` (deployer-only, `KEEPER_ADDRESS` at deploy); `DividendVault._checkOperator` accepts the operator OR `census.keeper()`; keeperd reads `vault.operator()`/`curve.keeper()`, skips convert/distribute it is not authorized for (no error storm), runs `claimFor` pushes in their own failure domain. `review.fixes.test.js` (H1), keeper harness check 7. |
+| H2 | keeperd stalls after a failed broadcast; DRY_RUN could sign a replacement | **Fixed** | `resolvePending` handles `hash:null` (nonce unconsumed → clear), replacement is gated on `!dryRun`, replaced hashes are kept so a mined original still resolves the record, cycle-level failures go through `raise()` (webhook) with dedupe. Harness checks 8, 10, 12. |
+| H3 | Discovery stalls on busy block ranges | **Fixed** | Topic-filtered `getLogs`, chunk halves on failure down to `logChunk/16` and grows back; alert at the floor. Harness check 9. |
+| H4 | Indexer livelock: RPC calls inside the 60 s serializable transaction | **Fixed** | `ingest.ts` split into `prefetchPage` (all RPC: checkpoint hash, logs, one `getBlock` per block for hash+timestamp, token metadata at `latest`) and `commitPage` (DB only). Adaptive `LOG_PAGE` halves the attempted range on failure. In-memory harness asserts no RPC call runs inside `$transaction`; real-PG harness unchanged and passing. |
+| H5 | Zero-cost graduation griefing (parked liquidity vs. fixed 10% bound) | **Lever added; design decision still open** | `CensusCurve.setRecoveryMaxSpendBps(coin, bps)` (deployer-only, hard cap 50%, event) widens ONE coin's bounded recovery swap; every unit still executes better than the migration price. `graduation.recovery.test.js` (H5). Not timelocked: the deployer is already production custody (B21). Continuous migration (the B15 redesign) remains the structural fix. |
+| M1 | Fresh deployment cannot launch HOOD-quoted coins | **Fixed** | `deploy.js` `ALLOWED_QUOTES` env → `setQuoteAllowed`; runbook §4 step; deployments JSON records `allowedQuotes`. |
+| M2 | Maxima meme with a stock basket reverts at launch | **Fixed (contracts + route builder); UI not exposed** | `memePair.test.js` (M2): WETH-rooted route reverts, coin → WETH → stock route launches. `basketPath` builds that route when given the company coin's pool tier and returns `null` for unknown quotes (wizard refuses instead of guessing). The wizard still offers only ETH/HOOD anchors — exposing company coins is frontend backlog. |
+| M3 | Migration dust stranded forever | **Fixed** | `CensusCurve.sweepMigrationDust(coin)` (deployer-only, graduated coins, once, → platform). `graduation.recovery.test.js` (M3). |
+| M4 | One frozen basket stock bricks a holder's whole claim | **Fixed** | `DividendVault._claim` pays each asset independently; a refused transfer emits `ClaimDeferred`, leaves that asset reserved and pays the rest. `review.fixes.test.js` (M4). |
+| M5 | A blocked fee recipient halts all trading of a coin | **Fixed** | `CensusCurve._payFee`: failed push → `deferredFee[quote][to]` + `FeeDeferred`; `withdrawDeferredFee` (permissionless) pushes later. Reserves stay whole. `review.fixes.test.js` (M5) + rewritten regression in `backend.readiness.test.js`. |
+| M6 | Indexer assumes 18-decimal quotes | **Fixed** | `Coin.quoteDecimals` (migration `20260916160000_quote_decimals`, validated on real PG); prices/volumes scale by the quote's decimals; company-coin quotes take theirs from the indexed coin. |
+| M7 | `/health` 503 for the whole initial backfill | **Fixed** | `ingestion.lastSuccessAt` advances per committed page. |
+| M8 | Rate limit keys on the socket address behind a proxy | **Fixed** | `TRUST_PROXY` = hop count or IP/CIDR list (bare `true` refused); documented in `.env.example`. |
+| M9 | Docker image bakes `.env` and host `node_modules` | **Fixed** | `indexer/.dockerignore`. |
+| M10 | Metadata `CENSUS_CHAIN_ID` silently defaulted to mainnet | **Fixed** | Required (503 when unset, GET reports `store: "unconfigured"`); the RPC's `eth_chainId` must match. Metadata harness checks 12, 14. |
+| M11 | Metadata signatures replayable (rollback) | **Fixed** | Message v2 carries `issued: <unix s>`; 10-minute expiry, future-skew guard, and a write is rejected (409) unless newer than the stored one. Harness checks 6, 10. |
+| M12 | 500 path leaks the RPC URL | **Fixed** | Generic message; details logged server-side. Harness check 13. |
+| M13 | Metadata write fire-and-forget, no recovery | **Fixed** | `putMetadata` returns `{ok, status, reason, retryable}` and keeps the payload in localStorage; the wizard shows the reason with "Retry saving details" / "Go to coin" instead of navigating away silently. |
+| M14 | Stripped revert strings hide every reason | **Fixed for the user-facing paths** | Custom errors in `CensusCurve` (QuoteNotSupported, BadPoolFee, ZeroAmount, CurveLimit, UnsupportedQuote, RecoveryFailed, …) and `DividendVault` (NotOperator, MinOut, Insolvent, Excluded, BadParams, …). `review.fixes.test.js` decodes them. Frontend ABI strings do not list them yet (wallets show the selector). |
+| M15 | keeperd state-file robustness | **Fixed** | Corrupt state = hard error; `<state>.lock` single-instance lock (stale locks reclaimed); replaced hashes retained. Harness check 11. |
+| LOW | `poolFee` unvalidated at register | **Fixed** | `register` accepts only 100/500/3000/10000 (`BadPoolFee`). |
+| LOW | keeperd: holder cursor missed same-block buyers; push starvation; alert storms; tip not bumped; locker not cross-checked | **Fixed** | Holder scan starts at the launch block; per-launch push share of the action budget; alert dedupe (`ALERT_REPEAT_MS`); replacement bumps `maxPriorityFeePerGas` too; `LOCKER_ADDRESS` must equal `curve.locker()` at startup. |
+| LOW | `readContract` at a historical block needs an archive node | **Fixed** | Token metadata read at `latest` (immutable). |
+| LOW | `test:pg` Windows-only kill; no CI | **Fixed** | Cross-platform hard kill; `.github/workflows/backend.yml` runs contracts, indexer (in-memory + real PG), keeper and metadata suites on every push. |
+| LOW | Not addressed this pass | **Open (non-blocking)** | `_credit` floor remainder unsweepable; `setZapPath` for graduated company coins is manual; indexer `onGraduated` keeps the curve price until the first pool swap; migration-recovery `Swap` shows as a `venue=pool` trade; no reorg rewind past finality; `/stats` uncached `COUNT(*)`; no per-IP WebSocket cap; USD blank for non-WETH quotes; smart-wallet creators cannot sign metadata; committed `npm audit` dumps. |
+
+Structural change enabling the contract fixes: `LaunchFactoryV2` no longer embeds the vault creation code —
+its constructor deploys a `DividendVaultDeployer` that creates and wires each vault. The factory runtime
+dropped from 24,413 to 11,259 bytes (EIP-170 limit 24,576), so vault changes no longer compete for ~160
+bytes of headroom. Constructor arguments and the launch ABI are unchanged; `vault.factory()` is now the
+deployer (which is what calls `init`/`setCensus`), and every vault excludes its own address.
+
+## Verification (this pass)
+
+- contracts: `npx hardhat test --network hardhat` — **65 passing, 3 pending, 0 failing**; `node scripts/exportTokenBytecode.js --check` passes; mainnet-fork lifecycle passes (`AUDIT_MAINNET_FORK=1`).
+- indexer: `npm run typecheck`, `npm test` (adds the no-RPC-in-transaction guard and adaptive paging), `npm run test:pg` — **ALL REAL-POSTGRES CHECKS PASSED** with the new migration (load: 11k events in ~51 s on this laptop).
+- bot: `npm test` — planner check + **13/13 keeperd checks**.
+- frontend: `npx tsc --noEmit` clean; metadata harness **21 checks passed**.
+
+## Remaining launch blockers (2026-09-16 evening)
+
+1. **B15 / H5 decision** — the pool still opens ~23% below the curve exit price. Accept-and-disclose, or the continuous-migration redesign (which also removes the arbitrage-free parking band behind H5). The recovery-bound lever is a stopgap, not the answer.
+2. **External validation** — real 0x routes per pair/direction, issuer behavior of the actual stock tokens, live price feeds (indexer USD still static ETH-only), dedicated RPC.
+3. **Ops rehearsal** — production pg_dump/pg_restore, managed-Postgres settings, real ingress load, **keeper live rehearsal on a fork/testnet with `curve.setKeeper` set and a funded capped signer**, `upload.ts` still unauthenticated.
+4. **Deployment & custody (B21)** — release manifest, treasury/keeper/deployer custody (the deployer now also holds the keeper, recovery-bound and dust-sweep levers), whether any existing deployment holds real funds (still unconfirmed), then re-run Jamie's review on the diff of this pass (contracts changed again: fee deferral, claim resilience, keeper authority, vault deployer).
+5. **Frontend follow-ups (non-blocking)** — custom-error strings in the ABI list, company coins in the anchor picker (gold highlight), rewards tab.
+
+Nothing on this branch is deployed; no deployed contract inherits these changes.
+
+---
+
 # Backend repair status — 2026-09-16 (supersedes 2026-09-15 below)
 
 Branch: `codex/backend-launch-readiness`. Second repair pass; all changes local, nothing pushed or deployed.

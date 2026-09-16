@@ -27,7 +27,7 @@ const serializeReward = (r: any) => ({
 });
 
 export async function runApi() {
-  const app = Fastify({ logger: false, requestTimeout: 15000, bodyLimit: 16384 });
+  const app = Fastify({ logger: false, requestTimeout: 15000, bodyLimit: 16384, trustProxy: (cfg.trustProxy ?? false) as any });
   await app.register(cors, { origin: cfg.corsOrigin });
   await app.register(websocket);
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });

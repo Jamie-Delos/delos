@@ -38,8 +38,13 @@ async function ingestChecks(){
     trade:{findUnique:async({where})=>s.trades.get(JSON.stringify(where))||null,upsert:async({where,create})=>{s.trades.set(JSON.stringify(where),create);}},
     pricePoint:{create:async({data})=>{if(failure==='point')throw Error('point failure');s.points.push(data);}},
   });
-  const prisma={$transaction:async(fn)=>{const tentative=structuredClone(state);const result=await fn(makeDb(tentative));state=tentative;return result;}};
-  const client={getBlock:async({blockNumber})=>({number:blockNumber,hash:reorg?'changed':'hash'+blockNumber,timestamp:1000n}),getLogs:async()=>{if(rpcFailure)throw Error('RPC outage');return page;}};
+  // No RPC call may run while the serializable transaction is open (review H4): the mock flags it.
+  let inTx=false,maxRange=0n,logCalls=0;const noRpcInTx=()=>{if(inTx)throw Error('RPC call inside the database transaction');};
+  const prisma={$transaction:async(fn)=>{const tentative=structuredClone(state);inTx=true;let result;try{result=await fn(makeDb(tentative));}finally{inTx=false;}state=tentative;return result;},
+    cursor:{findUnique:async()=>state.cursor},coin:{findMany:async()=>state.coin?[{...state.coin}]:[]}};
+  const client={getBlock:async({blockNumber})=>{noRpcInTx();return{number:blockNumber,hash:reorg?'changed':'hash'+blockNumber,timestamp:1000n};},
+    getLogs:async({fromBlock,toBlock})=>{noRpcInTx();logCalls++;if(rpcFailure)throw Error('RPC outage');if(maxRange&&toBlock-fromBlock+1n>maxRange)throw Error('query returned more than 10000 results');return page.filter(l=>l.blockNumber>=fromBlock&&l.blockNumber<=toBlock);},
+    readContract:async()=>{noRpcInTx();throw Error('no registrations in this harness');}};
   const context={exports:{},console:{log(){},error(){}},cfg:{chainId:1,curve:'0xcurve',weth:'0xquote',ethUsd:3000,logPage:5000n,startBlock:1n},defineChain:x=>x,http:()=>({}),createPublicClient:()=>client,parseAbiItem:x=>x,getAddress:x=>x,erc20Abi:[],prisma,publish:u=>published.push(u),ingestion:{}};
   vm.runInNewContext(code('ingest.ts','\nexport { scan, onTraded };'),context);
   const log=(i,block=1n)=>({eventName:'Traded',args:{coin:'0xcoin',trader:'0xholder',isBuy:true,amountIn:100n,amountOut:90n,fee:2n},blockNumber:block,blockHash:'hash'+block,transactionHash:'0xtx'+i,logIndex:0});
@@ -57,7 +62,10 @@ async function ingestChecks(){
   page=[{...log(3,3n),blockHash:'wrong'}];await assert.rejects(context.exports.scan(3n,3n),/not canonical/);
   const start=Date.now();page=Array.from({length:10000},(_,i)=>log(i+3,3n));page.push(...page.slice(0,1000));await context.exports.scan(3n,3n);
   assert.equal(state.coin.tradeCount,10002);assert.equal(state.points.length,10002);assert.equal(state.receipts.size,10002);
-  console.log(`PASS ingest: RPC/write rollback, post-commit notifications, replay, missing registration, reorg/hash rejection; 10000 unique + 1000 duplicate events applied once (${Date.now()-start}ms, in-memory adapters).`);
+  // Adaptive paging: an RPC that caps the log range makes the ingester shrink the page and still converge.
+  maxRange=2n;page=[log(20000,7n),log(20001,11n)];logCalls=0;await context.exports.scan(4n,11n);
+  assert.equal(state.cursor.lastBlock,11n);assert.equal(state.coin.tradeCount,10004);assert.ok(logCalls>4,'range shrank into several pages');maxRange=0n;
+  console.log(`PASS ingest: RPC/write rollback, post-commit notifications, replay, missing registration, reorg/hash rejection, no RPC inside transactions, adaptive log paging; 10000 unique + 1000 duplicate events applied once (${Date.now()-start}ms, in-memory adapters).`);
 }
 module.exports={apiChecks,ingestChecks};
 if(require.main===module)(async()=>{await apiChecks();await ingestChecks();})().catch(e=>{console.error(e);process.exitCode=1;});

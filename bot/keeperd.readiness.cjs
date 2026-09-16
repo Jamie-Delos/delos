@@ -18,6 +18,8 @@ const QUOTE = '0x' + 'ee'.repeat(20);
 const HOLDER1 = '0x' + '01'.repeat(20);
 const HOLDER2 = '0x' + '02'.repeat(20);
 const EXCLUDED = '0x' + '03'.repeat(20);
+const SIGNER = '0x' + '55'.repeat(20);
+const OTHER = '0x' + '66'.repeat(20);
 
 const FACTORY_IFACE = new ethers.Interface(['event LaunchedV2(address indexed token, address indexed creator, address curve, address vault, uint16 holdersBps)']);
 const CURVE_IFACE = new ethers.Interface(['event Graduated(address indexed coin, address pool, uint256 tokenId, uint256 tokensIn, uint256 quoteIn)']);
@@ -48,16 +50,25 @@ function makeFakeChain() {
     collectable: [E('0.01'), E('0.02')],
     withdrawable: { [HOLDER1]: E('0.002'), [HOLDER2]: 1n, [EXCLUDED]: E('0.003') },
     mineImmediately: true,
+    vaultOperator: SIGNER, // the vault delegated to our signer (test 7 flips this)
+    curveKeeper: ethers.ZeroAddress,
+    maxLogRange: 0n, // >0 => getLogs throws for wider ranges (busy-range simulation)
+    sendFailures: 0, // >0 => the next N broadcasts throw after the intent is persisted
 
+    address: SIGNER,
     chainId: async () => 4663,
     blockNumber: async () => chain.head,
-    getLogs: async ({ address, fromBlock, toBlock }) => {
+    getLogs: async ({ address, fromBlock, toBlock, topics }) => {
+      if (chain.maxLogRange > 0n && toBlock - fromBlock + 1n > chain.maxLogRange) throw new Error('query returned more than 10000 results');
       const set = (Array.isArray(address) ? address : [address]).map((a) => a.toLowerCase());
-      return chain.logs.filter((l) => set.includes(l.address.toLowerCase()) && BigInt(l.blockNumber) >= fromBlock && BigInt(l.blockNumber) <= toBlock);
+      const wanted = topics?.[0] ? (Array.isArray(topics[0]) ? topics[0] : [topics[0]]) : null;
+      return chain.logs.filter((l) => set.includes(l.address.toLowerCase()) && BigInt(l.blockNumber) >= fromBlock && BigInt(l.blockNumber) <= toBlock && (!wanted || wanted.includes(l.topics[0])));
     },
     read: async (addr, _abi, fn, args) => {
       if (fn === 'curves') return { quote: QUOTE, creator: HOLDER1, vault: VAULT, holdersBps: 10000, poolFee: 10000, virtualQuote: 0n, tokenReserve: 0n, realQuote: 0n, graduationQuote: 0n, graduated: true, exists: true };
       if (fn === 'balanceOf') return chain.vaultTokenFees;
+      if (fn === 'operator') return chain.vaultOperator;
+      if (fn === 'keeper') return chain.curveKeeper;
       throw new Error(`unexpected read ${fn}`);
     },
     simulate: async (addr, _abi, fn) => {
@@ -94,6 +105,7 @@ function makeFakeChain() {
     feeData: async () => ({ maxFeePerGas: chain.fee }),
     estimateGas: async () => 200000n,
     send: async (tx) => {
+      if (chain.sendFailures > 0) { chain.sendFailures--; throw new Error('replacement fee too low'); }
       const hash = '0x' + String(chain.sent.length + 1).padStart(64, '0');
       chain.sent.push({ ...tx, hash });
       if (chain.mineImmediately) {
@@ -226,6 +238,107 @@ const silent = () => {};
     assert.equal(back.nested.v, 456n);
     assert.ok(!fs.existsSync(f + '.tmp'));
     console.log('PASS state file: atomic write, BigInt round-trip');
+  }
+
+  // ---- 7. H1: an undelegated vault skips convert/distribute but collect + push still run ----
+  {
+    const chain = makeFakeChain();
+    chain.vaultOperator = OTHER; // creator never ran setOperator(keeper) and no curve keeper is registered
+    const cfg = freshCfg(dir, { KEEPER_STATE_FILE: path.join(dir, 'undelegated.json') });
+    const alerts = [];
+    const keeper = makeKeeper({ cfg, chain, log: silent, alert: async (a) => alerts.push(a) });
+    await keeper.cycle();
+    assert.equal(chain.sent.length, 2, `collect + push only, got ${chain.sent.length}`);
+    assert.equal(chain.sent[0].to.toLowerCase(), LOCKER.toLowerCase());
+    assert.ok(chain.sent[1].data.startsWith(new ethers.Interface(['function claimFor(address)']).getFunction('claimFor').selector), 'push still delivered');
+    assert.equal(alerts.filter((a) => a.level === 'error').length, 0, 'no error storm for an undelegated vault');
+    // Registering our signer as the curve keeper authorizes every vault without per-coin delegation.
+    chain.curveKeeper = SIGNER;
+    chain.vaultAvailable = ethers.parseEther('0.5'); chain.vaultTokenFees = ethers.parseEther('25'); chain.collectable = [0n, 0n]; chain.withdrawable = {};
+    await keeper.cycle();
+    assert.equal(chain.sent.length, 4, 'convert + distribute ran once the curve keeper is the signer');
+    console.log('PASS authority: undelegated vault skips convert/distribute without errors, push still runs; curve keeper authorizes all vaults');
+  }
+
+  // ---- 8. H2: a failed broadcast never stalls the daemon; the intent is cleared once the nonce is confirmed unconsumed ----
+  {
+    const chain = makeFakeChain();
+    chain.sendFailures = 1;
+    const cfg = freshCfg(dir, { KEEPER_STATE_FILE: path.join(dir, 'broadcast.json') });
+    const alerts = [];
+    const keeper = makeKeeper({ cfg, chain, log: silent, alert: async (a) => alerts.push(a) });
+    await keeper.cycle();
+    assert.ok(alerts.some((a) => a.message.includes('broadcast failed')), 'failed broadcast alerted');
+    // The next managed send sees hash=null + nonce unconsumed -> clears the intent and proceeds.
+    assert.ok(alerts.some((a) => a.message.includes('never broadcast')), 'stale intent recognised');
+    assert.equal(keeper.state.pending, null, 'stale intent cleared');
+    assert.ok(chain.sent.length >= 1, 'work resumed after the failed broadcast');
+    assert.equal(chain.sent[0].nonce, 5, 'the unconsumed nonce was reused, not skipped');
+    console.log('PASS broadcast failure: pending{hash:null} is recovered on the next cycle instead of stalling forever');
+  }
+
+  // ---- 9. H3: a busy block range halves the log chunk instead of stalling discovery ----
+  {
+    const chain = makeFakeChain();
+    chain.maxLogRange = 16n; // the RPC refuses anything wider
+    const cfg = freshCfg(dir, { KEEPER_STATE_FILE: path.join(dir, 'busy.json'), KEEPER_LOG_CHUNK: '64', DRY_RUN: 'true' });
+    const keeper = makeKeeper({ cfg, chain, log: silent });
+    await keeper.cycle();
+    assert.equal(keeper.state.cursor, '100', 'discovery reached the head through narrower chunks');
+    assert.ok(keeper.state.launches[TOKEN.toLowerCase()], 'launch still discovered');
+    assert.equal(BigInt(keeper.state.launches[TOKEN.toLowerCase()].holders[HOLDER2.toLowerCase()]), ethers.parseEther('40'), 'holders still tracked');
+    console.log('PASS busy range: getLogs failures shrink the chunk and discovery completes');
+  }
+
+  // ---- 10. DRY_RUN is sign-free even with a stale pending record; replaced hashes are kept ----
+  {
+    const chain = makeFakeChain();
+    const cfg = freshCfg(dir, { KEEPER_STATE_FILE: path.join(dir, 'drypending.json'), DRY_RUN: 'true' });
+    const keeper = makeKeeper({ cfg, chain, log: silent });
+    keeper.state.pending = { kind: 'x', to: VAULT, data: '0xdead', nonce: 5, gasLimit: '200000', maxFeePerGas: '2000000000', hash: '0xstuck', sentAt: Date.now() - 10_000 };
+    assert.equal(await keeper.resolvePending(), false);
+    assert.equal(chain.sent.length, 0, 'dry run must not broadcast a replacement');
+    // Live: replacement keeps the original hash; a mined original still resolves the record.
+    const live = makeKeeper({ cfg: freshCfg(dir, { KEEPER_STATE_FILE: path.join(dir, 'replaced.json') }), chain, log: silent });
+    live.state.pending = { kind: 'x', to: VAULT, data: '0xdead', nonce: 5, gasLimit: '200000', maxFeePerGas: '2000000000', hash: '0xorig', sentAt: Date.now() - 10_000 };
+    chain.mineImmediately = false;
+    assert.equal(await live.resolvePending(), false);
+    assert.deepEqual(live.state.pending.replaced, ['0xorig']);
+    chain.receipts.set('0xorig', { status: 1, blockNumber: 95 });
+    assert.equal(await live.resolvePending(), true, 'mined original recognised after replacement');
+    assert.equal(live.state.pending, null);
+    console.log('PASS replacement: dry run signs nothing; replaced hashes are retained and a mined original resolves the record');
+  }
+
+  // ---- 11. M15: corrupt state refuses to start; lock file keeps a second daemon off the same state ----
+  {
+    const { acquireLock } = require('./src/keeperd.js');
+    const f = path.join(dir, 'corrupt.json');
+    fs.writeFileSync(f, '{"launches":{"x":');
+    assert.throws(() => loadState(f), /corrupt/);
+    fs.writeFileSync(f + '.lock', String(process.ppid)); // held by a live process (our parent shell)
+    assert.throws(() => acquireLock(f), /another keeperd/);
+    fs.writeFileSync(f + '.lock', '999999999'); // stale lock from a dead pid is reclaimed
+    const release = acquireLock(f);
+    assert.equal(fs.readFileSync(f + '.lock', 'utf8'), String(process.pid));
+    release();
+    assert.ok(!fs.existsSync(f + '.lock'), 'lock released on exit');
+    console.log('PASS state safety: corrupt state file is a hard error; lock file rejects a second instance');
+  }
+
+  // ---- 12. cycle-level failure raises an alert instead of crashing silently ----
+  {
+    const chain = makeFakeChain();
+    chain.blockNumber = async () => { throw new Error('RPC down'); };
+    const cfg = freshCfg(dir, { KEEPER_STATE_FILE: path.join(dir, 'rpcdown.json') });
+    const alerts = [];
+    const keeper = makeKeeper({ cfg, chain, log: silent, alert: async (a) => alerts.push(a) });
+    await keeper.cycle();
+    assert.ok(alerts.some((a) => a.message.includes('discovery/recovery failed')));
+    assert.equal(chain.sent.length, 0);
+    await keeper.cycle();
+    assert.equal(alerts.length, 1, 'identical alert deduplicated within ALERT_REPEAT_MS');
+    console.log('PASS cycle failure: alerted via webhook (deduplicated), nothing sent, no crash');
   }
 
   fs.rmSync(dir, { recursive: true, force: true });

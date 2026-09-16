@@ -114,11 +114,13 @@ describe('Backend regressions and remaining external risks', function () {
     await register(); // approved collateral registers
     expect(await c.allowedQuote(weth.target)).to.equal(true); // WETH enabled at deployment
   });
-  it('blocked fee recipient halts trading despite a valid curve and funded buyer', async () => {
+  it('blocked fee recipient no longer halts trading: the share is deferred and pushable later', async () => {
     const [owner,platform,buyer]=await ethers.getSigners(); const q=await deploy('AuditQuote'); const r=await deploy('MockSwapRouter'); const t=await deploy('MockERC20','A','A');
     const c=await deploy('CensusCurve',owner.address,platform.address,owner.address,q.target,r.target); await c.setFactory(owner.address,true); await t.mint(c.target,E('1000000'));
     await c.register(t.target,q.target,owner.address,ethers.ZeroAddress,0,10000,E('1.5'),E('1000000'),E('4')); await q.mint(buyer.address,E('1')); await q.connect(buyer).approve(c.target,E('1')); await q.setBlocked(platform.address);
-    await expect(c.connect(buyer).buy(t.target,E('1'),0)).to.be.reverted;
+    await c.connect(buyer).buy(t.target,E('1'),0);
+    const protocol=E('1')*200n/10000n*2500n/10000n; expect(await c.deferredFee(q.target,platform.address)).to.equal(protocol);
+    expect(await q.balanceOf(c.target)).to.equal((await c.curves(t.target)).realQuote+protocol);
   });
   it('rejects zero-output 0x execution without spending payout funds', async () => {
     const [operator,holder]=await ethers.getSigners(); const q=await deploy('MockERC20','Q','Q'),stock=await deploy('MockERC20','S','S'),zx=await deploy('MockZeroEx'),router=await deploy('MockSwapRouter');

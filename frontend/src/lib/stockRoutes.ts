@@ -19,7 +19,15 @@ const FEE_USDG_WETH = FEE_HEX(WETH_USDG_BRIDGE_FEE); // USDG<->WETH 0.01% bridge
 /// ETH-quoted coins use the stored WETH route as-is. HOOD-quoted coins receive fees in HOOD, so we
 /// re-root the route at HOOD: `usdg` stocks become HOOD->USDG->stock; `direct` (WETH-only) stocks become
 /// HOOD->USDG->WETH->stock. If the stock IS the quote asset, the vault credits it directly ("0x" path).
-export function basketPath(quoteAddr: string, ticker: string): `0x${string}` {
+/// A meme pair quoted in a GRADUATED Census company coin (its quote is WETH) routes through that
+/// coin's canonical WETH pool first: coin -> WETH (at the coin's pool fee tier) -> [stored WETH route].
+/// Pass `companyCoin` for such quotes; any other unknown quote returns null (the vault would reject
+/// a route that does not start at its quote, so the wizard must refuse rather than guess).
+export function basketPath(
+  quoteAddr: string,
+  ticker: string,
+  companyCoin?: { poolFee: number },
+): `0x${string}` | null {
   const r = STOCK_ROUTES[ticker];
   if (!r) return "0x";
   const q = quoteAddr.toLowerCase().replace(/^0x/, "");
@@ -34,7 +42,11 @@ export function basketPath(quoteAddr: string, ticker: string): `0x${string}` {
     // direct: WETH + feeStock + stock -> HOOD + FEE_HOOD_USDG + USDG + FEE_USDG_WETH + [WETH + feeStock + stock]
     return ("0x" + HOOD_HEX + FEE_HOOD_USDG + USDG_HEX + FEE_USDG_WETH + body) as `0x${string}`;
   }
-  return r.path; // other anchors (future): fall back to the stored route
+  if (companyCoin) {
+    // company coin + its pool tier + [WETH + ... stored WETH route]
+    return ("0x" + q + FEE_HEX(companyCoin.poolFee) + r.path.slice(2)) as `0x${string}`;
+  }
+  return null; // unknown quote: no safe route
 }
 
 export const STOCK_ROUTES: Record<string, StockRoute> = {

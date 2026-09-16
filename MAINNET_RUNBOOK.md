@@ -46,7 +46,32 @@ node ../.../scratchpad/verifyMainnetUni.mjs                    # re-verify Unisw
 cd contracts
 npx hardhat run scripts/deploy.js --network robinhood
 ```
-Writes `contracts/deployments.robinhood.json` and prints the VITE_ block. Record the addresses.
+Writes `contracts/deployments.robinhood.json` and prints the VITE_ block. Record the addresses
+(including `DividendVaultDeployer`, created by `LaunchFactoryV2`'s constructor).
+
+**Enable every anchor the frontend offers (required).** Only WETH is allowed as quote collateral at
+construction. The wizard offers HOOD, so a fresh deployment MUST allow it or every HOOD-anchored launch
+reverts with `QuoteNotSupported`:
+```
+ALLOWED_QUOTES=0x32ac8c1d7672667d5ebdea22935f7b06fc8d496f npx hardhat run scripts/deploy.js --network robinhood
+# or post-deploy, as the deployer: curve.setQuoteAllowed(HOOD, true)
+```
+Review a token's transfer/rebase/freeze behaviour before allowing it; the allowlist gates NEW launches only.
+
+**Register the platform keeper (required for automatic rewards).** Every Maxima vault accepts the
+address in `curve.keeper()` as a distribution operator in addition to the coin's creator, which is what
+lets `bot/src/keeperd.js` convert LP fees and distribute/push rewards for every launch:
+```
+KEEPER_ADDRESS=<keeperd signer address> npx hardhat run scripts/deploy.js --network robinhood
+# or later / to rotate, as the deployer: curve.setKeeper(<address>)
+```
+Without it the keeper only collects LP fees and pushes already-distributed rewards.
+
+**Post-launch levers (deployer-only, all emit events):** `curve.sweepMigrationDust(coin)` moves a
+graduated coin's recorded migration leftovers to the platform; `curve.setRecoveryMaxSpendBps(coin, bps)`
+(≤ 5000) widens ONE coin's bounded recovery swap if parked liquidity keeps its graduation reverting;
+`curve.withdrawDeferredFee(quote, recipient)` (permissionless) pushes fee shares that were deferred
+because the recipient was blocked at trade time.
 
 **Enable the HOOD one-tap ETH zap (optional, mainnet-only).** So buyers can one-tap ETH into a HOOD-quoted
 coin (curve wraps ETH→WETH, swaps WETH→HOOD, buys; sell reverses it). HOOD has **no direct WETH pool** — its
@@ -71,6 +96,7 @@ npx hardhat verify --network robinhood <LaunchLocker>   <NPM> <FeeVault> 2500
 npx hardhat verify --network robinhood <CensusCurve>    <NPM> <FeeVault> <LaunchLocker> <SwapRouter02>
 npx hardhat verify --network robinhood <LaunchFactory>  <WETH> <CensusCurve>
 npx hardhat verify --network robinhood <LaunchFactoryV2> <WETH> <CensusCurve> <SwapRouter02> 3000 0x0000000000001fF3684f28c67538d4D072C22734
+npx hardhat verify --network robinhood <DividendVaultDeployer>
 ```
 
 ## 6. Cut the site over to mainnet

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {LaunchToken} from "./LaunchToken.sol";
-import {DividendVault} from "./DividendVault.sol";
+import {DividendVaultDeployer} from "./DividendVaultDeployer.sol";
 
 interface ICensusCurve {
     function register(
@@ -26,6 +26,9 @@ contract LaunchFactoryV2 {
     address public immutable router;         // Uniswap SwapRouter02, for the vault's quote->stock swaps
     uint24 public immutable stockSwapFee;    // fallback tier for the vault's quote->stock swaps
     address public immutable allowanceHolder; // 0x AllowanceHolder, handed to each vault for its 0x path
+    /// @notice Creates + wires each launch's DividendVault. Keeping the vault creation code out of this
+    ///         contract's runtime keeps the factory far below the EIP-170 limit.
+    DividendVaultDeployer public immutable vaultDeployer;
 
     uint256 private constant ANTISNIPE_WINDOW = 100;
     uint16 private constant ANTISNIPE_MAX_WALLET_BPS = 200; // 2%
@@ -50,6 +53,7 @@ contract LaunchFactoryV2 {
         router = router_;
         stockSwapFee = stockSwapFee_;
         allowanceHolder = allowanceHolder_;
+        vaultDeployer = new DividendVaultDeployer();
     }
 
     /// @dev Default entrypoint: ETH-quoted, 100% of the creator side to holders, no launch-bundle.
@@ -71,11 +75,7 @@ contract LaunchFactoryV2 {
     ) public returns (address token, address vault) {
         address q = quote == address(0) ? weth : quote;
 
-        // 1. Per-token dividend vault (fee asset = the quote).
-        DividendVault dv = new DividendVault(q, router, stockSwapFee, basket, weights, paths, allowanceHolder);
-        vault = address(dv);
-
-        // 2. Token: whole supply mints to this factory.
+        // 1. Token: whole supply mints to this factory.
         LaunchToken t;
         if (salt == bytes32(0)) {
             t = new LaunchToken(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
@@ -84,6 +84,16 @@ contract LaunchFactoryV2 {
             require((uint160(address(t)) & 0xFFFF) == 0xC0DE, "not a census address");
         }
         token = address(t);
+
+        // 2. Per-token dividend vault (fee asset = the quote), created and wired by the deployer:
+        //    the curve/factory/dead addresses (and the vault itself) never earn; the creator is the default distribution
+        //    operator (the Census keeper registered on the curve may also run distributions); the curve
+        //    may exclude the graduated pool later.
+        address[] memory ex = new address[](3);
+        ex[0] = curve;
+        ex[1] = address(this);
+        ex[2] = DEAD;
+        vault = _createVault(q, basket, weights, paths, token, ex, msg.sender);
 
         // 3. Seed the whole supply into the curve (before the dividend hook is wired + before anti-snipe).
         IERC20(token).transfer(curve, p.totalSupply);
@@ -95,20 +105,19 @@ contract LaunchFactoryV2 {
         for (uint256 i; i < exemptBuyers.length; i++) exempt[i + 2] = exemptBuyers[i];
         t.initAntiSnipe(curve, ANTISNIPE_WINDOW, ANTISNIPE_MAX_WALLET_BPS, ANTISNIPE_MAX_BUY_BPS, address(0), exempt);
 
-        // 5. Wire the vault: exclude the curve/factory/vault/dead from dividends; grant the curve the
-        //    right to also exclude the graduated pool later; wire the token's transfer hook.
-        address[] memory ex = new address[](4);
-        ex[0] = curve;
-        ex[1] = address(this);
-        ex[2] = vault;
-        ex[3] = DEAD;
-        dv.init(token, ex, msg.sender); // creator is the default distribution operator
-        dv.setCensus(curve);
+        // 5. Wire the token's transfer hook to the vault.
         t.setDividendVault(vault);
 
         // 6. Register the curve with the vault + split.
         ICensusCurve(curve).register(token, q, msg.sender, vault, holdersBps, p.poolFee, p.virtualQuote, p.totalSupply, p.graduationQuote);
 
         emit LaunchedV2(token, msg.sender, curve, vault, holdersBps);
+    }
+
+    function _createVault(
+        address q, address[] calldata basket, uint16[] calldata weights, bytes[] calldata paths,
+        address token, address[] memory ex, address creator
+    ) internal returns (address) {
+        return vaultDeployer.create(q, router, stockSwapFee, basket, weights, paths, allowanceHolder, token, ex, creator, curve);
     }
 }

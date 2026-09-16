@@ -20,6 +20,7 @@ model Coin {
   creator         String   @default("")
   quote           String   @default("") // quote asset address (WETH / HOOD / a graduated company coin)
   quoteSymbol     String   @default("ETH")
+  quoteDecimals   Int      @default(18) // the quote asset's own decimals (company-coin quotes may differ)
   quoteIsCoin     Boolean  @default(false) // meme pair: quoted in a Census company coin (UI highlights these)
   vault           String? // DividendVault (Maxima); null => Prima
   holdersBps      Int      @default(0)

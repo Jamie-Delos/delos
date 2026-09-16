@@ -22,12 +22,14 @@ async function stack() {
   await locker.initFactory(curve.target);
   const factory = await deploy('LaunchFactory', weth.target, curve.target);
   await curve.setFactory(factory.target, true);
+  const factoryV2 = await deploy('LaunchFactoryV2', weth.target, curve.target, router.target, 3000, ethers.ZeroAddress);
+  await curve.setFactory(factoryV2.target, true);
   // Company coin, WETH-quoted, bought to its graduation reserve.
   const rc = await (await factory.connect(creator)['createLaunch((string,string,uint256,uint8,uint24,uint256,uint256),bytes32)'](P(), ethers.ZeroHash)).wait();
   const company = await ethers.getContractAt('LaunchToken', event(rc, factory, 'Launched').args.token);
   await network.provider.send('hardhat_mine', ['0x65']);
   await curve.connect(buyer).buyWithETH(company.target, 0, { value: E('5') });
-  return { owner, platform, creator, memer, buyer, weth, uf, npm, router, locker, curve, factory, company };
+  return { owner, platform, creator, memer, buyer, weth, uf, npm, router, locker, curve, factory, factoryV2, company };
 }
 
 const launchMeme = (s, quoteAddr, grad = '4') =>
@@ -83,6 +85,27 @@ describe('Meme pairing against graduated company coins', function () {
     await s.router.connect(s.buyer).exactInputSingle([s.company.target, meme.target, 10000, s.buyer.address, E('10000'), 0, 0]);
     const amounts = await s.locker.collectFees.staticCall(grad.args.tokenId);
     expect(amounts[0] + amounts[1]).to.be.gt(0);
+  });
+
+  it('M2: a Maxima meme quoted in a company coin needs basket routes rooted at that coin', async () => {
+    const s = await stack();
+    await s.curve.graduate(s.company.target);
+    const stock = await deploy('MockERC20', 'NVDA', 'NVDA');
+    const p = ['Meme', 'MEME', E('1000000000'), 18, 10000, E('1.5'), E('0.5')];
+    const launch = (paths) => s.factoryV2.connect(s.memer)['createLaunch((string,string,uint256,uint8,uint24,uint256,uint256),address[],uint16[],bytes[],bytes32,address,uint16,address[])'](
+      p, [stock.target], [10000], paths, ethers.ZeroHash, s.company.target, 10000, []);
+    // The stored WETH-rooted stock route (what the wizard used for every non-HOOD anchor) reverts at
+    // launch: the vault requires the route to start at ITS quote (the company coin).
+    const wethRoute = ethers.solidityPacked(['address', 'uint24', 'address'], [s.weth.target, 3000, stock.target]);
+    await expect(launch([wethRoute])).to.be.reverted;
+    // Re-rooted at the company coin through its canonical pool tier: XYZ -> WETH -> stock.
+    const coinRoute = ethers.solidityPacked(['address', 'uint24', 'address', 'uint24', 'address'], [s.company.target, 10000, s.weth.target, 3000, stock.target]);
+    const rc = await (await launch([coinRoute])).wait();
+    const ev = event(rc, s.factoryV2, 'LaunchedV2');
+    const vault = await ethers.getContractAt('DividendVault', ev.args.vault);
+    expect(await vault.quote()).to.equal(s.company.target);
+    expect(await vault.paths(0)).to.equal(coinRoute);
+    expect((await s.curve.curves(ev.args.token)).quote).to.equal(s.company.target);
   });
 
   it('meme-on-meme chains are not pairable', async () => {

@@ -2,6 +2,11 @@
 
 For: Jamie (JJ-ME55). From: Neil's backend repair pass.
 
+> **Updated 2026-09-16 (evening) after Jamie's independent review** (`INDEPENDENT-REVIEW.md`). Every HIGH
+> and MEDIUM finding is fixed on this branch except the ones that need a team decision; the per-finding
+> status lives in `REPAIR-STATUS.md` ("Reconciliation with the independent review"). Three statements in
+> the original handoff were wrong and are corrected inline below (marked **[corrected]**).
+
 This branch contains two repair passes on top of main `c000052`: the 2026-09-15 audit-driven fixes and the 2026-09-16 pass (this one). **Nothing here is deployed and no deployed contract inherits these fixes.** Current release decision: **NO GO for unrestricted mainnet funds** until the checklist below is worked through — what remains is mostly decisions, external validation and ops rehearsal, not known unfixed fund-safety defects.
 
 Read in this order:
@@ -19,9 +24,9 @@ Read in this order:
 | Indexer | Transactional exactly-once ingestion (serializable + advisory lock), finalized-only reads, canonical-hash checks; **post-graduation coverage**: pool swaps (venue=pool trades, spot price from the pool) and a RewardEvent ledger (`/coins/:address/rewards`); meme pairs flagged (`quoteIsCoin`); committed migrations validated on real PostgreSQL. |
 | API | Input validation, real health/liveness split, rate limiting, bounded WebSocket buffers, venue-tagged trades, rewards route. |
 | Frontend backend handlers | `api/metadata.ts` writes now require an EIP-191 signature from the coin's on-chain creator (RPC-verified), chain-scoped keys, atomic writes. Wizard signs with the connected wallet. |
-| Team decisions implemented | Auto-distributed rewards (claimFor + keeperd). Fee model unchanged and final: 2% curve fee, 25% platform, 75% creator side split by `holdersBps`. No MarketGuard / permissioned-token redesign. |
+| Team decisions implemented | Auto-distributed rewards (claimFor + keeperd). **[corrected]** Originally this only worked for vaults whose creator had run `setOperator(keeper)`; now every Maxima vault also accepts the platform keeper registered on the curve (`CensusCurve.setKeeper`, set at deploy via `KEEPER_ADDRESS`), so conversion/distribution/push run for every launch without per-coin delegation. Fee model unchanged and final: 2% curve fee, 25% platform, 75% creator side split by `holdersBps`. No MarketGuard / permissioned-token redesign. |
 
-Test evidence: contracts **56 passing / 3 pending** (`npx hardhat test`); mainnet-fork lifecycle passing (read-only fork, block 64,510,174); real-PostgreSQL harness passing incl. two concurrent workers, hard-kill WAL recovery and restore (`indexer: npm run test:pg`); keeper harness (`bot: npm test`); metadata auth harness (`frontend/api.metadata.test.cjs`).
+Test evidence (after the review fixes): contracts **65 passing / 3 pending** (`npx hardhat test`, incl. `review.fixes.test.js`); bytecode parity + EIP-170 check passing (LaunchFactoryV2 is now 11,259 bytes: vault creation moved into `DividendVaultDeployer`); mainnet-fork lifecycle passing (read-only fork); real-PostgreSQL harness passing incl. the new `quoteDecimals` migration, two concurrent workers, hard-kill WAL recovery and restore (`indexer: npm run test:pg`); indexer in-memory harness incl. "no RPC inside the transaction" and adaptive log paging (`npm test`); keeper harness **13 checks** incl. undelegated-vault, failed-broadcast, busy-range, corrupt-state/lock and dry-run-replacement cases (`bot: npm test`); metadata auth harness **21 checks** (`frontend/api.metadata.test.cjs`). `.github/workflows/backend.yml` runs all of these on every push.
 
 ## What you (Jamie) need to do
 
@@ -29,7 +34,7 @@ Test evidence: contracts **56 passing / 3 pending** (`npx hardhat test`); mainne
 
 - **Graduation price discontinuity (B15).** The pool still opens ~23% below the curve exit price with tested settings (virtual reserve drops out at migration). Options: (a) accept + disclose it as designed behavior, or (b) redesign to a continuous migration (migrate at the curve exit price and burn/retain the virtual-side tokens — a tokenomics change). Pick one explicitly; it is currently the biggest open economics item.
 - **Launch fee.** Your note suggested "take launch + curve fees too". There is currently no launch-creation fee. Decide if you want one (flat, in quote asset); it's a small factory change once decided.
-- **Meme-pair policy.** Pairing is enabled for graduated company coins automatically. Confirm you want it automatic vs. per-coin opt-in, and confirm meme launches should be allowed as Prima only or also Maxima (currently both work; a Maxima meme's vault is quoted in the company coin).
+- **Meme-pair policy.** Pairing is enabled for graduated company coins automatically. Confirm you want it automatic vs. per-coin opt-in, and confirm meme launches should be allowed as Prima only or also Maxima. **[corrected]** Only Prima was tested originally; a Maxima meme with a stock basket needs routes rooted at the company coin (coin → WETH → stock). The contracts accept such routes (tested in `memePair.test.js`) and `frontend/src/lib/stockRoutes.basketPath` can build them given the coin's pool tier; the wizard does not yet offer company coins as anchors (it refuses unknown quotes instead of guessing a route).
 - Prima/Maxima renaming — open, non-blocking.
 
 ### 2. Review (independent eyes on the new code)
@@ -56,14 +61,14 @@ Focus the contract review on what changed this pass:
 - Real network load: the harness load is in-process; run HTTP/WebSocket load through the actual ingress.
 - **Keeper live rehearsal on testnet/fork**: funded capped signer, real 0x/quoter, alerts wired (`ALERT_WEBHOOK_URL`), then observe replacement/recovery behavior. All keeperd knobs are documented in `bot/.env.example`.
 - `frontend/api/upload.ts` is still **unauthenticated** — add quota/auth before public exposure (metadata.ts is done and is the pattern to follow).
-- Metadata env for the serverless functions: `CENSUS_RPC_URL`, `CENSUS_CURVE_ADDRESS`, `CENSUS_CHAIN_ID` (fails closed when unset), plus the existing KV vars.
+- Metadata env for the serverless functions: `CENSUS_RPC_URL`, `CENSUS_CURVE_ADDRESS`, `CENSUS_CHAIN_ID`, plus the existing KV vars. **[corrected]** `CENSUS_CHAIN_ID` originally defaulted to mainnet `4663` silently; it is now REQUIRED (POST returns 503 when unset) and the RPC's reported chain id must match it. Signatures now carry an issue timestamp (10-minute expiry, no rollback to an older signed payload).
 
 ### 5. Deployment & custody (B21)
 
 - Build a verified release manifest: chain id, code hashes, constructor args, fee configuration, treasury/operator addresses, ABI hashes; fail closed on mismatch.
 - Decide treasury/operator custody (multisig/hardware, rotation, incident plan). The curve deployer address controls factory and quote allowlists — treat it as production custody.
 - **Confirm whether any existing deployment holds real funds** — still unverified. Do this before any migration or announcement.
-- New deployments must include the new operational steps: `setQuoteAllowed` for each approved collateral (WETH is auto-enabled), `setZapPath` for non-ETH quotes (including graduated company coins you want ETH-zap buys for).
+- New deployments must include the new operational steps: `setQuoteAllowed` for each approved collateral (WETH is auto-enabled; `deploy.js` now takes `ALLOWED_QUOTES` — HOOD-anchored launches revert on a fresh deploy without it), `setKeeper` (`KEEPER_ADDRESS`) for automatic rewards, `setZapPath` for non-ETH quotes (including graduated company coins you want ETH-zap buys for). See `MAINNET_RUNBOOK.md` §4.
 
 ### 6. Go/no-go
 

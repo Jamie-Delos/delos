@@ -16,7 +16,18 @@ export const cfg = {
   port: Number(process.env.PORT ?? 8080),
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   ethUsd: Number(process.env.ETH_USD ?? 3000),
+  // Behind a load balancer the client IP arrives in X-Forwarded-For. Set TRUST_PROXY to the number
+  // of trusted hops (e.g. 1) or a comma-separated list of proxy IPs/CIDRs; never a bare "true"
+  // (anyone could then spoof the header and share or escape the rate-limit bucket). Unset = direct.
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 };
+
+function parseTrustProxy(v: string | undefined): number | string[] | false {
+  if (v === undefined || v.trim() === "" || v.trim() === "false") return false;
+  if (v.trim() === "true") throw new Error("TRUST_PROXY must be a hop count or a proxy IP/CIDR list, not 'true'");
+  if (/^\d+$/.test(v.trim())) return Number(v.trim());
+  return v.split(",").map((s) => s.trim()).filter(Boolean);
+}
 
 if (!Number.isSafeInteger(cfg.chainId) || cfg.chainId <= 0 || !Number.isFinite(cfg.pollMs) || cfg.pollMs < 500 || cfg.logPage <= 0n || cfg.logPage > 5000n || cfg.startBlock < 0n) {
   throw new Error("Invalid CHAIN_ID, POLL_MS, LOG_PAGE or START_BLOCK");

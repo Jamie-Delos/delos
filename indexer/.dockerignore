@@ -1,0 +1,10 @@
+# Never bake secrets or host build output into the image (the Dockerfile runs `npm ci` itself).
+.env
+.env.*
+!.env.example
+node_modules
+dist
+.test-build
+*.log
+*.tsbuildinfo
+audit-dependencies.json

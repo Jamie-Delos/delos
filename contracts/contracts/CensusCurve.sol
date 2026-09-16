@@ -50,8 +50,22 @@ contract CensusCurve is ReentrancyGuard {
     ///         never gives value away — but a pool too deep to restore within this bound makes
     ///         graduation revert (fail closed) rather than migrate at a manipulated price.
     uint16 public constant RECOVERY_MAX_SPEND_BPS = 1_000; // 10%
+    /// @notice Hard ceiling for a per-coin recovery-bound override (see setRecoveryMaxSpendBps).
+    uint16 public constant RECOVERY_MAX_SPEND_CAP_BPS = 5_000; // 50%
+    /// @notice Deployer-raised recovery bound for one coin whose graduation is being griefed by
+    ///         parked liquidity (0 = use RECOVERY_MAX_SPEND_BPS). Every unit swapped still executes
+    ///         at better than the migration price, so a wider bound never gives value away; it only
+    ///         lets the curve absorb more of the attacker's liquidity before minting.
+    mapping(address => uint16) public recoveryMaxSpendBps;
     mapping(address => uint256) public migrationTokenDust;
     mapping(address => uint256) public migrationQuoteDust;
+    /// @notice Fees a recipient could not receive (issuer pause/blacklist on the quote asset). Trading
+    ///         never halts on a blocked fee recipient: the amount is held here and can be pushed to
+    ///         the recipient later by anyone via withdrawDeferredFee().
+    mapping(address => mapping(address => uint256)) public deferredFee; // quote => recipient => amount
+    /// @notice Platform keeper: also authorized to run every DividendVault's conversions/distributions
+    ///         (see DividendVault._checkOperator), so rewards are auto-distributed without per-coin delegation.
+    address public keeper;
     address private recoveryPool; // pool allowed to invoke the swap callback, only during graduate()
     int24 private constant MIN_TICK = -887272;
     int24 private constant MAX_TICK = 887272;
@@ -100,6 +114,11 @@ contract CensusCurve is ReentrancyGuard {
     event Traded(address indexed coin, address indexed trader, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 fee);
     event Graduated(address indexed coin, address pool, uint256 tokenId, uint256 tokensIn, uint256 quoteIn);
     event MigrationPriceRestored(address indexed coin, address pool, uint160 poolSqrtPriceX96, uint160 targetSqrtPriceX96, int256 amount0Delta, int256 amount1Delta);
+    event KeeperSet(address indexed keeper);
+    event RecoveryBoundSet(address indexed coin, uint16 bps);
+    event FeeDeferred(address indexed quote, address indexed recipient, uint256 amount);
+    event DeferredFeeWithdrawn(address indexed quote, address indexed recipient, uint256 amount);
+    event MigrationDustSwept(address indexed coin, uint256 tokenAmount, uint256 quoteAmount);
 
     error NotDeployer();
     error NotFactory();
@@ -109,6 +128,16 @@ contract CensusCurve is ReentrancyGuard {
     error NotReady();
     error Slippage();
     error NotZappable();
+    error QuoteNotSupported();
+    error BadParams();
+    error BadPoolFee();
+    error SupplyNotFunded();
+    error ZeroAmount();
+    error CurveLimit();
+    error UnsupportedQuote();
+    error RecoveryFailed();
+    error EthTransferFailed();
+    error NotGraduated();
 
     constructor(address npm_, address platform_, address locker_, address weth_, address swapRouter_) {
         require(npm_ != address(0) && platform_ != address(0) && locker_ != address(0) && weth_ != address(0) && swapRouter_ != address(0), "zero");
@@ -138,6 +167,48 @@ contract CensusCurve is ReentrancyGuard {
         if (msg.sender != deployer) revert NotDeployer();
         allowedQuote[quote] = ok;
         emit QuoteAllowed(quote, ok);
+    }
+
+    /// @notice Register the platform keeper (an address every Maxima vault also accepts as operator).
+    function setKeeper(address keeper_) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        keeper = keeper_;
+        emit KeeperSet(keeper_);
+    }
+
+    /// @notice Escape hatch for a griefed graduation: widen ONE coin's bounded recovery swap (up to
+    ///         RECOVERY_MAX_SPEND_CAP_BPS). 0 restores the default. Deployer-only (production custody).
+    function setRecoveryMaxSpendBps(address coin, uint16 bps) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        if (bps > RECOVERY_MAX_SPEND_CAP_BPS) revert BadParams();
+        recoveryMaxSpendBps[coin] = bps;
+        emit RecoveryBoundSet(coin, bps);
+    }
+
+    /// @notice Move a graduated coin's recorded migration leftovers (mint rounding + recovery-swap
+    ///         surplus taken from a mispriced pool) to the platform. Deployer-only; never touches
+    ///         active reserves, and a coin's dust can only be swept once.
+    function sweepMigrationDust(address coin) external nonReentrant {
+        if (msg.sender != deployer) revert NotDeployer();
+        Curve storage c = curves[coin];
+        if (!c.graduated) revert NotGraduated();
+        uint256 t = migrationTokenDust[coin];
+        uint256 q = migrationQuoteDust[coin];
+        migrationTokenDust[coin] = 0;
+        migrationQuoteDust[coin] = 0;
+        if (t > 0) IERC20(coin).safeTransfer(platform, t);
+        if (q > 0) IERC20(c.quote).safeTransfer(platform, q);
+        emit MigrationDustSwept(coin, t, q);
+    }
+
+    /// @notice Push fees that were deferred because `recipient` could not receive them at trade time.
+    ///         Permissionless; reverts (leaving the amount deferred) if the recipient is still blocked.
+    function withdrawDeferredFee(address quote, address recipient) external nonReentrant {
+        uint256 amt = deferredFee[quote][recipient];
+        if (amt == 0) revert ZeroAmount();
+        deferredFee[quote][recipient] = 0;
+        IERC20(quote).safeTransfer(recipient, amt);
+        emit DeferredFeeWithdrawn(quote, recipient, amt);
     }
 
     /// @notice Meme pairing: a COMPANY coin launched on this curve becomes an eligible quote for new
@@ -172,11 +243,11 @@ contract CensusCurve is ReentrancyGuard {
     ) external {
         if (!factory[msg.sender]) revert NotFactory();
         if (curves[coin].exists) revert AlreadyRegistered();
-        require(allowedQuote[quote] || isPairableCompanyCoin(quote), "quote not supported");
-        require(holdersBps <= BPS, "bps");
-        require(vault != address(0) || holdersBps == 0, "vault required for holders");
-        require(virtualQuote > 0 && tokenSupply > 0 && graduationQuote > 0, "params");
-        require(IERC20(coin).balanceOf(address(this)) >= tokenSupply, "supply not funded");
+        if (!(allowedQuote[quote] || isPairableCompanyCoin(quote))) revert QuoteNotSupported();
+        if (holdersBps > BPS || (vault == address(0) && holdersBps != 0)) revert BadParams();
+        if (poolFee != 100 && poolFee != 500 && poolFee != 3000 && poolFee != 10000) revert BadPoolFee();
+        if (virtualQuote == 0 || tokenSupply == 0 || graduationQuote == 0) revert BadParams();
+        if (IERC20(coin).balanceOf(address(this)) < tokenSupply) revert SupplyNotFunded();
         curves[coin] = Curve({
             quote: quote, creator: creator, vault: vault, holdersBps: holdersBps, poolFee: poolFee,
             virtualQuote: virtualQuote, tokenReserve: tokenSupply, realQuote: 0,
@@ -191,9 +262,18 @@ contract CensusCurve is ReentrancyGuard {
         uint256 creatorSide = fee - protocol;
         uint256 toHolders = c.holdersBps == 0 ? 0 : (creatorSide * c.holdersBps) / BPS;
         uint256 toCreator = creatorSide - toHolders;
-        if (protocol > 0) IERC20(c.quote).safeTransfer(platform, protocol);
-        if (toHolders > 0) IERC20(c.quote).safeTransfer(c.vault, toHolders);
-        if (toCreator > 0) IERC20(c.quote).safeTransfer(c.creator, toCreator);
+        if (protocol > 0) _payFee(c.quote, platform, protocol);
+        if (toHolders > 0) _payFee(c.quote, c.vault, toHolders);
+        if (toCreator > 0) _payFee(c.quote, c.creator, toCreator);
+    }
+
+    /// @dev Push a fee share; if the recipient cannot receive the quote asset right now (issuer
+    ///      blacklist/pause), hold it as a deferred fee instead of halting every trade of the coin.
+    function _payFee(address quote, address to, uint256 amount) internal {
+        (bool ok, bytes memory ret) = quote.call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        if (ok && (ret.length == 0 || abi.decode(ret, (bool)))) return;
+        deferredFee[quote][to] += amount;
+        emit FeeDeferred(quote, to, amount);
     }
 
     // ----------------------------- trading -----------------------------
@@ -204,10 +284,10 @@ contract CensusCurve is ReentrancyGuard {
         Curve storage c = curves[coin];
         if (!c.exists) revert UnknownCoin();
         if (c.graduated) revert AlreadyGraduated();
-        require(quoteIn > 0, "amount");
+        if (quoteIn == 0) revert ZeroAmount();
         uint256 beforeQuote = IERC20(c.quote).balanceOf(address(this));
         IERC20(c.quote).safeTransferFrom(msg.sender, address(this), quoteIn);
-        require(IERC20(c.quote).balanceOf(address(this)) - beforeQuote == quoteIn, "unsupported quote");
+        if (IERC20(c.quote).balanceOf(address(this)) - beforeQuote != quoteIn) revert UnsupportedQuote();
         return _buy(c, coin, quoteIn, minTokensOut);
     }
 
@@ -221,7 +301,7 @@ contract CensusCurve is ReentrancyGuard {
         Curve storage c = curves[coin];
         if (!c.exists) revert UnknownCoin();
         if (c.graduated) revert AlreadyGraduated();
-        require(msg.value > 0, "amount");
+        if (msg.value == 0) revert ZeroAmount();
         IWETH(weth).deposit{value: msg.value}(); // this contract now holds msg.value WETH
         uint256 quoteIn = c.quote == weth ? msg.value : _swap(weth, zapPathIn[c.quote], msg.value);
         return _buy(c, coin, quoteIn, minTokensOut);
@@ -245,7 +325,7 @@ contract CensusCurve is ReentrancyGuard {
 
         // constant product: tokensOut = tokenReserve * netIn / (V + netIn)
         tokensOut = Math.mulDiv(c.tokenReserve, netIn, c.virtualQuote + netIn);
-        require(tokensOut > 0 && tokensOut < c.tokenReserve, "curve"); // never drain the curve dry
+        if (tokensOut == 0 || tokensOut >= c.tokenReserve) revert CurveLimit(); // never drain the curve dry
         if (tokensOut < minTokensOut) revert Slippage();
 
         // effects
@@ -266,7 +346,7 @@ contract CensusCurve is ReentrancyGuard {
         Curve storage c = curves[coin];
         if (!c.exists) revert UnknownCoin();
         if (c.graduated) revert AlreadyGraduated();
-        require(tokensIn > 0, "amount");
+        if (tokensIn == 0) revert ZeroAmount();
         IERC20(coin).safeTransferFrom(msg.sender, address(this), tokensIn);
         quoteOut = _sell(c, coin, tokensIn, minQuoteOut);
         IERC20(c.quote).safeTransfer(msg.sender, quoteOut);
@@ -281,7 +361,7 @@ contract CensusCurve is ReentrancyGuard {
         Curve storage c = curves[coin];
         if (!c.exists) revert UnknownCoin();
         if (c.graduated) revert AlreadyGraduated();
-        require(tokensIn > 0, "amount");
+        if (tokensIn == 0) revert ZeroAmount();
         IERC20(coin).safeTransferFrom(msg.sender, address(this), tokensIn);
         // Slippage is checked on the FINAL ETH below (0 here), so it spans the curve + the swap.
         uint256 quoteOut = _sell(c, coin, tokensIn, 0);
@@ -289,7 +369,7 @@ contract CensusCurve is ReentrancyGuard {
         if (wethOut < minEthOut) revert Slippage();
         IWETH(weth).withdraw(wethOut);
         (bool ok, ) = payable(msg.sender).call{value: wethOut}("");
-        require(ok, "eth transfer failed");
+        if (!ok) revert EthTransferFailed();
         ethOut = wethOut;
     }
 
@@ -298,7 +378,7 @@ contract CensusCurve is ReentrancyGuard {
     function _sell(Curve storage c, address coin, uint256 tokensIn, uint256 minQuoteOut) internal returns (uint256 quoteOut) {
         // constant product: quoteGross = V * tokensIn / (tokenReserve + tokensIn)
         uint256 quoteGross = Math.mulDiv(c.virtualQuote, tokensIn, c.tokenReserve + tokensIn);
-        require(quoteGross > 0 && quoteGross <= c.realQuote, "curve");
+        if (quoteGross == 0 || quoteGross > c.realQuote) revert CurveLimit();
 
         c.tokenReserve += tokensIn;
         c.virtualQuote -= quoteGross;
@@ -396,8 +476,10 @@ contract CensusCurve is ReentrancyGuard {
 
         uint160 adversePrice = current;
         bool zeroForOne = current > target; // selling token0 moves the price down
-        uint256 maxSpend = Math.mulDiv(zeroForOne ? amount0 : amount1, RECOVERY_MAX_SPEND_BPS, BPS);
-        require(maxSpend > 0 && maxSpend <= uint256(type(int256).max), "recovery spend");
+        uint16 boundBps = recoveryMaxSpendBps[coin];
+        if (boundBps == 0) boundBps = RECOVERY_MAX_SPEND_BPS;
+        uint256 maxSpend = Math.mulDiv(zeroForOne ? amount0 : amount1, boundBps, BPS);
+        if (maxSpend == 0 || maxSpend > uint256(type(int256).max)) revert RecoveryFailed();
 
         uint256 bal0Before = IERC20(token0).balanceOf(address(this));
         uint256 bal1Before = IERC20(token1).balanceOf(address(this));
@@ -407,7 +489,7 @@ contract CensusCurve is ReentrancyGuard {
         );
         recoveryPool = address(0);
         (current, , , , , , ) = IUniswapV3Pool(pool).slot0();
-        require(current == target, "recovery failed");
+        if (current != target) revert RecoveryFailed();
 
         emit MigrationPriceRestored(coin, pool, adversePrice, target, d0, d1);
         // The swap touches only these two assets, so the deltas belong entirely to this coin.

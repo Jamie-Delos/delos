@@ -27,6 +27,10 @@ interface ISwapRouter02 {
     function exactInput(ExactInputParams calldata params) external payable returns (uint256 amountOut);
 }
 
+interface ICensusKeeper {
+    function keeper() external view returns (address);
+}
+
 /// @title DividendVault (v2) — production dividend accounting
 /// @notice One per launched v2 token. It receives that token's protocol fee share (in the quote asset,
 ///         e.g. WETH), swaps it across a 1–4 tokenized-stock basket, and pays it out to holders pro-rata.
@@ -73,11 +77,28 @@ contract DividendVault is ReentrancyGuard {
     mapping(address => mapping(address => uint256)) private earnedFraction;
 
     bool private inited;
-    address public operator; // only address allowed to run distribute() (supplies off-chain slippage bounds)
+    /// @notice Distribution operator (defaults to the creator; may delegate). The Census keeper
+    ///         registered on the curve (`CensusCurve.keeper()`) is ALSO authorized, so rewards are
+    ///         converted and distributed automatically without every creator delegating first.
+    address public operator;
 
     event Distributed(uint256 quoteSpent);
     event Claimed(address indexed holder, address indexed stock, uint256 amount);
+    /// @notice A basket asset refused the transfer (issuer pause/blacklist). The entitlement stays
+    ///         reserved for the holder; the other assets in the same claim were still paid.
+    event ClaimDeferred(address indexed holder, address indexed stock, uint256 amount);
     event LaunchFeesConverted(uint256 tokenIn, uint256 quoteOut);
+
+    // Custom errors survive the global revertStrings=strip build, so wallets/UIs can decode reasons.
+    error NotOperator();
+    error MinOut();
+    error Insolvent();
+    error Excluded();
+    error BadParams();
+    error NotEnoughFees();
+    error Unspent();
+    error SwapFailed();
+    error Allocation();
 
     constructor(
         address quote_,
@@ -126,6 +147,8 @@ contract DividendVault is ReentrancyGuard {
         inited = true;
         token = token_;
         operator = operator_;
+        excluded[address(this)] = true; // the vault's own launch-token balance (LP fees) never earns
+        excludedList.push(address(this));
         for (uint256 i; i < excluded_.length; i++) {
             if (!excluded[excluded_[i]]) {
                 excluded[excluded_[i]] = true;
@@ -137,9 +160,17 @@ contract DividendVault is ReentrancyGuard {
     /// @notice Hand distribution rights to a keeper (defaults to the creator). The operator supplies
     ///         off-chain-computed minimum outputs so the basket swaps can't be sandwiched.
     function setOperator(address newOperator) external {
-        require(msg.sender == operator, "not operator");
+        if (msg.sender != operator) revert NotOperator();
         require(newOperator != address(0), "zero");
         operator = newOperator;
+    }
+
+    /// @dev The per-coin operator OR the platform keeper registered on the curve may run conversions
+    ///      and distributions (both supply off-chain minimum outputs and are trusted for price bounds).
+    function _checkOperator() internal view {
+        if (msg.sender == operator) return;
+        if (census != address(0) && msg.sender == ICensusKeeper(census).keeper()) return;
+        revert NotOperator();
     }
 
     address public census; // the CensusCurve, allowed to exclude the graduated pool once it exists
@@ -228,8 +259,8 @@ contract DividendVault is ReentrancyGuard {
     /// @param minOut per-stock minimum output (computed off-chain from a fair price) — the swap reverts
     ///        if the pool would give less. A minimum output bounds loss; it does not eliminate MEV.
     function distribute(uint256[] calldata minOut) external nonReentrant returns (uint256 spent) {
-        require(msg.sender == operator, "not operator");
-        require(minOut.length == basket.length, "minOut");
+        _checkOperator();
+        if (minOut.length != basket.length) revert BadParams();
         uint256 amt = availableQuote();
         uint256 elig = eligibleSupply();
         if (amt == 0 || elig == 0) return 0;
@@ -242,9 +273,9 @@ contract DividendVault is ReentrancyGuard {
                 // Anchor-paid dividend: fees are already in the payout asset (e.g. a HOOD-paired coin
                 // pays holders HOOD). No swap needed — credit the portion straight through.
                 got = portion;
-                require(got >= minOut[i], "minOut");
+                if (got < minOut[i]) revert MinOut();
             } else {
-                require(minOut[i] > 0, "minOut");
+                if (minOut[i] == 0) revert MinOut();
                 got = _sell(quote, basket[i], swapFee, paths[i], portion, minOut[i]);
             }
             _credit(basket[i], got, elig);
@@ -286,9 +317,9 @@ contract DividendVault is ReentrancyGuard {
             );
         }
         IERC20(tokenIn).forceApprove(address(router), 0);
-        require(beforeIn - IERC20(tokenIn).balanceOf(address(this)) == amountIn, "spent");
+        if (beforeIn - IERC20(tokenIn).balanceOf(address(this)) != amountIn) revert Unspent();
         got = IERC20(tokenOut).balanceOf(address(this)) - beforeOut;
-        require(got >= minOut, "minOut");
+        if (got < minOut) revert MinOut();
     }
 
     /// @notice Convert accumulated quote fees into the stock basket via the 0x Swap API and credit
@@ -307,10 +338,10 @@ contract DividendVault is ReentrancyGuard {
         nonReentrant
         returns (uint256 spent)
     {
-        require(msg.sender == operator, "not operator");
+        _checkOperator();
         require(allowanceHolder != address(0), "no 0x");
         uint256 len = basket.length;
-        require(sellAmounts.length == len && swapData.length == len && minOut.length == len, "len");
+        if (sellAmounts.length != len || swapData.length != len || minOut.length != len) revert BadParams();
         uint256 elig = eligibleSupply();
         if (elig == 0) return 0;
 
@@ -318,27 +349,27 @@ contract DividendVault is ReentrancyGuard {
 
         for (uint256 i; i < len; i++) {
             uint256 sell = sellAmounts[i];
-            require(sell == Math.mulDiv(available, weights[i], 10_000), "allocation");
+            if (sell != Math.mulDiv(available, weights[i], 10_000)) revert Allocation();
             if (sell == 0) continue;
             address s = basket[i];
             if (s == quote) {
-                require(swapData[i].length == 0 && sell >= minOut[i], "passthrough");
+                if (swapData[i].length != 0 || sell < minOut[i]) revert MinOut();
                 _credit(s, sell, elig);
                 spent += sell;
                 continue;
             }
-            require(swapData[i].length > 0 && minOut[i] > 0, "swap");
+            if (swapData[i].length == 0 || minOut[i] == 0) revert MinOut();
             uint256 pre = IERC20(s).balanceOf(address(this));
             uint256 preQuote = IERC20(quote).balanceOf(address(this));
 
             IERC20(quote).forceApprove(allowanceHolder, sell);
             (bool ok, ) = allowanceHolder.call(swapData[i]);
-            require(ok, "0x swap failed");
+            if (!ok) revert SwapFailed();
             IERC20(quote).forceApprove(allowanceHolder, 0); // never leave a standing allowance
-            require(preQuote - IERC20(quote).balanceOf(address(this)) == sell, "spent");
+            if (preQuote - IERC20(quote).balanceOf(address(this)) != sell) revert Unspent();
 
             uint256 got = IERC20(s).balanceOf(address(this)) - pre;
-            require(got >= minOut[i], "minOut");
+            if (got < minOut[i]) revert MinOut();
             _credit(s, got, elig);
             spent += sell;
         }
@@ -359,10 +390,10 @@ contract DividendVault is ReentrancyGuard {
         nonReentrant
         returns (uint256 quoteOut)
     {
-        require(msg.sender == operator, "not operator");
+        _checkOperator();
         require(token != address(0), "uninitialized");
-        require(amountIn > 0 && minQuoteOut > 0, "params");
-        require(amountIn <= IERC20(token).balanceOf(address(this)), "balance");
+        if (amountIn == 0 || minQuoteOut == 0) revert BadParams();
+        if (amountIn > IERC20(token).balanceOf(address(this))) revert NotEnoughFees();
         quoteOut = _sell(token, quote, poolFee, bytes(""), amountIn, minQuoteOut);
         emit LaunchFeesConverted(amountIn, quoteOut);
     }
@@ -388,19 +419,31 @@ contract DividendVault is ReentrancyGuard {
         _claim(holder);
     }
 
+    /// @dev Each basket asset is paid independently: if one issuer refuses the transfer (pause or
+    ///      blacklist), that asset stays reserved for the holder and the remaining assets are still
+    ///      paid, so a single frozen stock cannot brick a holder's whole basket or the keeper's push.
     function _claim(address holder) internal {
-        require(!excluded[holder], "excluded");
+        if (excluded[holder]) revert Excluded();
         uint256 len = basket.length;
         for (uint256 i; i < len; i++) {
             address s = basket[i];
             uint256 amt = withdrawableOf(holder, s);
             if (amt == 0) continue;
             // Never hide a reserve deficit by paying the first claimant preferentially.
-            require(IERC20(s).balanceOf(address(this)) >= reserved[s], "insolvent");
+            if (IERC20(s).balanceOf(address(this)) < reserved[s]) revert Insolvent();
+            if (!_tryTransfer(s, holder, amt)) {
+                emit ClaimDeferred(holder, s, amt);
+                continue;
+            }
             reserved[s] -= amt;
             withdrawn[s][holder] += amt;
-            IERC20(s).safeTransfer(holder, amt);
             emit Claimed(holder, s, amt);
         }
+    }
+
+    /// @dev ERC20 transfer that reports failure instead of reverting (tolerates missing return data).
+    function _tryTransfer(address asset, address to, uint256 amount) internal returns (bool) {
+        (bool ok, bytes memory ret) = asset.call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        return ok && (ret.length == 0 || abi.decode(ret, (bool)));
     }
 }
