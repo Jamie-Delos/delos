@@ -1,8 +1,40 @@
-# Backend repair status — 2026-09-15
+# Backend repair status — 2026-09-16 (supersedes 2026-09-15 below)
+
+Branch: `codex/backend-launch-readiness`. Second repair pass; all changes local, nothing pushed or deployed.
+
+**Current release decision: still NO GO for unrestricted mainnet funds** — but the blocker list has shrunk materially. What remains is dominated by decisions, external validation and deployment/ops rehearsal, not by known unfixed fund-safety defects.
+
+## Fixed and tested today (2026-09-16)
+
+| Area | What changed | Evidence |
+| --- | --- | --- |
+| B01 graduation blocking (was OPEN) | An adversarially pre-initialized pool no longer blocks graduation: a bounded (≤10% of one leg), exact-price-limited recovery swap restores the migration price — every unit executes better than the migration price, so mispricing funds the curve. Hostile liquidity too deep for the bound fails closed with all reserves intact and the curve still trading. Mint minimums are price-consistent; recovery surpluses are recorded as migration dust. | `graduation.recovery.test.js`: empty-pool poisoning above/below price recovered exactly; real-liquidity attacker paid the arbitrage; deep-liquidity attack fails closed; at-price pool needs no swap. Poisoned-graduation audit repro updated to assert recovery. |
+| Launch-token LP fees (gate 2 part) | `DividendVault.convertLaunchFees` (operator-gated, mandatory minimum output) sells locker-forwarded launch-token fees into the quote asset; proceeds fund the next distribution instead of stranding. | Lifecycle test: fees accrued in both pool assets, converted, distributed, claimed by holders. |
+| Auto-distribution (team decision) | `DividendVault.claimFor(holder)`: anyone can push a holder their own earned basket; keeper delivers rewards automatically. | Push/idempotency/exclusion tests; keeper daemon integration. |
+| Supported collateral (gate 3 part) | Deployer-managed quote allowlist enforced at registration (WETH enabled at deployment; e.g. HOOD after review). Arbitrary/malicious collateral can no longer enter shared custody via a new launch. | Allowlist refusal/enable/authorization tests. |
+| Meme pairing (new product feature) | Launches may be quoted in a GRADUATED Census company coin (`isPairableCompanyCoin`); meme-on-meme chains are not eligible. Indexer flags pairs (`quoteIsCoin`) and resolves the pair's quote symbol. | `memePair.test.js` full $MEME/$XYZ lifecycle incl. XYZ-denominated fee split and locked MEME/XYZ pool; suite 56 passing, 3 pending. |
+| Production keeper (gate 5, was OPEN) | New `bot/src/keeperd.js` daemon: log-based discovery of all launches/graduations, per-cycle pipeline (collect → convert → distribute → push), durable atomically-written state, ONE managed in-flight transaction with intent recorded before broadcast, nonce/superseded/stuck-replacement recovery under a fee cap, signer balance floor, webhook alerts, DRY_RUN default. | `keeperd.readiness.cjs` against a fake chain: dry-run signs nothing; pipeline order + sequential nonces; restart resume; mined/superseded/stuck recovery; underfunded-signer refusal; atomic state. |
+| Real PostgreSQL (gate 4, was OPEN) | `indexer/postgres.readiness.cjs` runs the ACTUAL ingest/API against embedded real PostgreSQL 18 (no Docker): clean `migrate deploy` onto 5 fresh DBs; exactly-once ingestion through real serializable transactions + advisory lock; digest-stable replay; RPC-outage resume; TWO concurrent workers exactly-once; postgres hard-killed mid-ingest → WAL recovery → resume to identical digest; logical export/restore; API under concurrency 50 on real data; 11,000-event load (~300 events/s local single node). | `npm run test:pg`. |
+| Post-graduation indexing (gate 6 part, was OPEN) | Ingester also covers each coin's graduated pool (Swap → venue=pool trades, spot price from sqrtPriceX96) and vault reward events (Distributed/Claimed/LaunchFeesConverted → RewardEvent ledger, `/coins/:address/rewards`). Same receipts/finality/transactional guarantees. Additive migrations validated on real Postgres. | Real-PG harness asserts exactly-once pool-swap/reward ingestion and API serving. |
+| Metadata authorization (gate 6 part, was OPEN B18) | Writes require an EIP-191 signature by the coin's ON-CHAIN creator (verified against `CensusCurve.curves().creator` over RPC); chain-scoped keys; atomic single-command KV writes; creator-only corrections; fail-closed when unconfigured. Unregistered/predicted addresses can no longer be squatted. Launch wizard signs with the connected wallet. | `frontend/api.metadata.test.cjs`: 9 checks against mock RPC/KV with real signatures. |
+
+Team decisions received 2026-09-16: rewards are distributed automatically (implemented via claimFor + keeperd); no extra holder-incentive mechanics; fee setup final (2% / 25% Census / 75% creator-side by holdersBps — matches implementation); standard 1B supply (frontend default; not contract-enforced); no MarketGuard/permissioned-token redesign (matches this branch); renaming Prima/Maxima is open but non-blocking.
+
+## Remaining mainnet gates (2026-09-16)
+
+1. **Graduation price discontinuity (B15)** — unchanged by design: the pool still opens ~23% below the curve exit price with tested settings. Recovery/blocking is fixed; the discontinuity itself needs an explicit team decision (accept + disclose, or a continuous-migration redesign that burns/retains the virtual-side tokens — an economics change).
+2. **External validation**: real 0x routes for every supported pair/direction, issuer behavior of actual stock tokens (pause/blacklist/corporate actions), fresh price/deviation feeds (indexer still uses a configured static ETH/USD; other quotes report zero USD), dedicated RPC providers.
+3. **Deployment/ops rehearsal**: pg_dump/pg_restore on the production toolchain (embedded binaries ship without pg_dump; the harness's restore is SQL-level), managed-Postgres settings, real network/WebSocket ingress load (harness load is in-process), keeper live rehearsal on a fork/testnet with a funded capped signer, upload quota/authentication (`upload.ts` still unauthenticated), deployment manifest + treasury/operator custody review (B21).
+4. **Independent review** of the modified contracts (CensusCurve recovery swap + callback, DividendVault conversions/push, allowlist/pairing) and an explicit joint go/no-go. Passing tests here are first-party evidence, not certification.
+5. **Existing deployments**: whether any deployed contracts hold real funds is still unconfirmed — establish before any migration/announcement.
+
+---
+
+# Backend repair status — 2026-09-15 (historical)
 
 Branch: `codex/backend-launch-readiness`, based on main `c000052712ea739fde3e8b050769344b9def697b`. GitHub main was checked before editing and remained at that revision. Production deployments have not been changed. This status supersedes the original audit's claim that production source is unchanged; that claim described the September 13 audit pass.
 
-**Current release decision: NO GO for unrestricted mainnet funds.** This is a reviewed local repair candidate, not a completed security certification. Code changes are intended for new deployments; existing immutable contracts do not inherit them.
+**Release decision at that date: NO GO for unrestricted mainnet funds.** This is a reviewed local repair candidate, not a completed security certification. Code changes are intended for new deployments; existing immutable contracts do not inherit them.
 
 ## What has changed
 
