@@ -140,6 +140,16 @@ contract CensusCurve is ReentrancyGuard {
         emit QuoteAllowed(quote, ok);
     }
 
+    /// @notice Meme pairing: a COMPANY coin launched on this curve becomes an eligible quote for new
+    ///         launches once it has graduated (its permanently-locked canonical pool then exists, so
+    ///         it has real price discovery and an ETH-zap route that pays LP fees into the locked
+    ///         position). Only company coins qualify: the candidate's own quote must be a
+    ///         deployer-approved collateral, so meme-quoted memes cannot chain further.
+    function isPairableCompanyCoin(address q) public view returns (bool) {
+        Curve storage qc = curves[q];
+        return qc.exists && qc.graduated && allowedQuote[qc.quote];
+    }
+
     /// @notice Enable the ETH zap for a non-ETH quote token by setting its Uniswap V3 multi-hop paths:
     ///         `pathIn` = WETH->...->quote (buy), `pathOut` = quote->...->WETH (sell). Pass empty paths to
     ///         disable. Deployer-only; the quote asset a coin is registered with is unaffected — this only
@@ -162,7 +172,7 @@ contract CensusCurve is ReentrancyGuard {
     ) external {
         if (!factory[msg.sender]) revert NotFactory();
         if (curves[coin].exists) revert AlreadyRegistered();
-        require(allowedQuote[quote], "quote not supported");
+        require(allowedQuote[quote] || isPairableCompanyCoin(quote), "quote not supported");
         require(holdersBps <= BPS, "bps");
         require(vault != address(0) || holdersBps == 0, "vault required for holders");
         require(virtualQuote > 0 && tokenSupply > 0 && graduationQuote > 0, "params");

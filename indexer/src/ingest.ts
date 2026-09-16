@@ -86,11 +86,13 @@ async function onRegistered(log: any, db: Db, notify: Notify) {
   ]);
   const name = n as string, symbol = s as string, decimals = Number(tokenDecimals), totalSupply = (ts as bigint).toString();
 
-  const quoteSymbol = quote === cfg.weth ? "ETH" : quote;
+  // Meme pairs are quoted in another Census coin: show its symbol and flag it for the UI.
+  const quoteCoin = await db.coin.findUnique({ where: { address: quote } });
+  const quoteSymbol = quote === cfg.weth ? "ETH" : quoteCoin?.symbol ?? quote;
   const base = {
     name, symbol, decimals, totalSupply,
     creator: lc(log.args.creator as string),
-    quote, quoteSymbol,
+    quote, quoteSymbol, quoteIsCoin: !!quoteCoin,
     vault: isV2 ? vault : null,
     holdersBps: Number(log.args.holdersBps),
     isV2,
@@ -355,7 +357,7 @@ export async function runIngest() {
 export function serializeCoin(c: any) {
   return {
     address: c.address, name: c.name, symbol: c.symbol, decimals: c.decimals,
-    totalSupply: c.totalSupply, creator: c.creator, quote: c.quote, quoteSymbol: c.quoteSymbol,
+    totalSupply: c.totalSupply, creator: c.creator, quote: c.quote, quoteSymbol: c.quoteSymbol, quoteIsCoin: c.quoteIsCoin ?? false,
     vault: c.vault, holdersBps: c.holdersBps, isV2: c.isV2,
     virtualQuote: c.virtualQuote, tokenReserve: c.tokenReserve, realQuote: c.realQuote,
     graduationQuote: c.graduationQuote, graduated: c.graduated, pool: c.pool, progressBps: c.progressBps,
