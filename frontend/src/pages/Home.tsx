@@ -22,7 +22,7 @@ export function Home() {
       address: c.address, name: c.name, symbol: c.symbol,
       creator: c.creator, age: c.age, anchor: s?.anchor ?? "ETH",
       marketCap: s?.mcapUsd ?? null, price: s?.priceUsd ?? null,
-      graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, graduationTarget: s?.graduationTarget,
+      graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, graduationTarget: s?.graduationTarget, quoteAddress: s?.quoteAddress, anchorIsCoin: s?.anchorIsCoin,
     };
   }), [coins, stats]);
 

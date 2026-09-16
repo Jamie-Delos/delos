@@ -3,13 +3,16 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { useAccount, usePublicClient, useSendTransaction, useWriteContract } from "wagmi";
 import { parseUnits, formatUnits, isAddress, zeroAddress, type Address } from "viem";
 import { CONTRACTS, DEFAULT_FEE, CHAIN, TRADE_FEE_BPS, TRADE_FEE_LABEL } from "../config";
-import { wethAbi, erc20Abi, swapRouterAbi, censusCurveAbi } from "../abis";
+import { wethAbi, erc20Abi, swapRouterAbi, censusCurveAbi, vaultAbi } from "../abis";
 import { zeroExPrice, zeroExQuote, allowanceSpender, routeSummary } from "../lib/zeroex";
-import { anchorByQuote, cachedQuoteUsd } from "../lib/anchors";
+import { cachedQuoteUsd, quoteInfo, type QuoteInfo } from "../lib/anchors";
 import { poolSpotOut } from "../lib/pool";
 import { useCoinQuote } from "../lib/useCoinQuote";
+import { useLaunches } from "../lib/useLaunches";
+import { useCurveStats } from "../lib/useCurveStats";
 import { getMetadata, type CoinMetadata } from "../lib/metadata";
-import { CxAvatar, CxAssetLogo, Num, StatBand, PendingPanel, GraduationBar, Icon, fmtUsd, fmtPrice, fmtAmount, shortAddr, reserveCaption, useWalletConnect } from "../census";
+import { readRewards, type Rewards } from "../lib/rewards";
+import { CxAvatar, AnchorMark, HomeRow, Num, StatBand, PendingPanel, GraduationBar, Icon, fmtUsd, fmtPrice, fmtAmount, shortAddr, reserveCaption, useWalletConnect, type DisplayCoin } from "../census";
 
 const SLIPPAGE_BPS = 200; // 2% — the minimum-out on every trade path
 const BUY_PRESETS = ["0.01", "0.1", "0.5", "1"];
@@ -44,14 +47,17 @@ export function Coin() {
   const [coinBal, setCoinBal] = useState<bigint | null>(null);
   const [quoteBal, setQuoteBal] = useState<bigint | null>(null);
   const [quoteUsd, setQuoteUsd] = useState<number | null>(null);
+  const [qi, setQi] = useState<QuoteInfo | null>(null); // the anchor's symbol/decimals (menu asset or company coin)
   const [poolPrice, setPoolPrice] = useState<number | null>(null); // quote per coin, graduated coins only
-  const [tick, setTick] = useState(0); // bumps after a trade to refresh balances + quote
+  const [rewards, setRewards] = useState<Rewards | null>(null); // Maxima: the holder's claimable basket
+  const [claiming, setClaiming] = useState(false);
+  const [tick, setTick] = useState(0); // bumps after a trade/claim to refresh balances, quote and rewards
 
-  // What this coin is anchored to (WETH default, or HOOD, …) and where it trades right now.
+  // What this coin is anchored to (WETH default, HOOD, or another Census coin) and where it trades now.
   const quote = cq.quote;
-  const anchorMeta = anchorByQuote(quote);
-  const anchor = anchorMeta?.key ?? "ETH";
-  const quoteDec = anchorMeta?.quoteDecimals ?? 18;
+  const anchor = qi?.symbol ?? "ETH";
+  const quoteDec = qi?.decimals ?? 18;
+  const anchorIsCoin = !!qi?.isCoin;
   const isWethQuote = quote.toLowerCase() === CONTRACTS.weth.toLowerCase();
   const hasCurve = CONTRACTS.curve !== zeroAddress;
   const registered = !!cq.routed;
@@ -61,8 +67,20 @@ export function Coin() {
   const coinName = cq.name ?? (cq.resolved ? "Unknown token" : "…");
   const coinSym = cq.symbol ?? "";
   const tier = cq.isV2 ? "Maxima" : "Prima";
+  const hasVault = !!cq.vault && cq.vault !== zeroAddress;
   const tradeBlock = !hasCurve ? "Trading isn't configured on this deployment." : cq.resolved && !registered ? "This address isn't a Census coin." : "";
-  const canTrade = hasCurve && cq.resolved && registered;
+  const canTrade = hasCurve && cq.resolved && registered && !!qi;
+
+  // Coins anchored to THIS coin (only possible once it has graduated — its pool is what they trade through).
+  const { coins: allCoins, loading: ecoLoading } = useLaunches(graduated);
+  const ecoStats = useCurveStats(graduated ? allCoins.map((c) => c.address) : []);
+  const paired: DisplayCoin[] = graduated && coinAddr
+    ? allCoins.filter((c) => ecoStats[c.address.toLowerCase()]?.quoteAddress?.toLowerCase() === coinAddr.toLowerCase()).map((c) => {
+        const s = ecoStats[c.address.toLowerCase()];
+        return { address: c.address, name: c.name, symbol: c.symbol, creator: c.creator, age: c.age, anchor: s?.anchor, anchorIsCoin: s?.anchorIsCoin, marketCap: s?.mcapUsd ?? null, graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, graduationTarget: s?.graduationTarget };
+      })
+    : [];
+  const ecoReady = !ecoLoading && (allCoins.length === 0 || Object.keys(ecoStats).length > 0);
 
   // Price + market cap. On the curve: spot = virtualQuote / tokenReserve. Graduated: the pool's spot.
   // USD via the anchor's live price (null => shown in anchor units, never a made-up dollar figure).
@@ -79,10 +97,11 @@ export function Coin() {
   const graduationTarget = cq.graduationQuote != null && cq.graduationQuote > 0n ? Number(cq.graduationQuote) / 10 ** quoteDec : null;
   const gradPct = graduated ? 100 : gradBps != null ? Math.min(100, Math.round(gradBps / 100)) : 0;
 
-  // The anchor's USD price (cached per minute across pages).
+  // The anchor's identity and USD price (both cached across pages).
   useEffect(() => {
     let cancelled = false;
     if (!publicClient || !cq.resolved) return;
+    quoteInfo(publicClient, quote).then((i) => { if (!cancelled) setQi(i); });
     cachedQuoteUsd(publicClient, quote).then((p) => { if (!cancelled) setQuoteUsd(p); });
     return () => { cancelled = true; };
   }, [publicClient, quote, cq.resolved]);
@@ -91,13 +110,13 @@ export function Coin() {
   useEffect(() => {
     let cancelled = false;
     setPoolPrice(null);
-    if (!publicClient || !coinAddr || !graduated) return;
+    if (!publicClient || !coinAddr || !graduated || !qi) return;
     poolSpotOut(publicClient, quote, coinAddr, parseUnits("1", quoteDec), poolFee).then((out) => {
       if (cancelled || out == null || out <= 0n) return;
       setPoolPrice(1 / (Number(out) / 1e18));
     });
     return () => { cancelled = true; };
-  }, [publicClient, coinAddr, graduated, quote, quoteDec, poolFee, tick]);
+  }, [publicClient, coinAddr, graduated, quote, quoteDec, poolFee, qi, tick]);
 
   // Off-chain details from the launch wizard (thesis, description, logo) — null until the store is live.
   useEffect(() => {
@@ -124,6 +143,15 @@ export function Coin() {
     })();
     return () => { cancelled = true; };
   }, [publicClient, coinAddr, me, quote, isWethQuote, cq.resolved, tick]);
+
+  // Maxima: what the connected wallet can claim from the rewards vault, and what's waiting to be distributed.
+  useEffect(() => {
+    let cancelled = false;
+    setRewards(null);
+    if (!publicClient || !cq.resolved || !hasVault || !cq.vault) return;
+    readRewards(publicClient, cq.vault, quote, me).then((r) => { if (!cancelled) setRewards(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [publicClient, cq.resolved, hasVault, cq.vault, quote, me, tick]);
 
   // Live graduation progress (bps 0..10000) straight off the curve.
   useEffect(() => {
@@ -265,6 +293,25 @@ export function Coin() {
     }
   }
 
+  // Maxima: pull the whole claimable basket in one call.
+  async function claim() {
+    if (!publicClient || !cq.vault || claiming) return;
+    setStatus("");
+    setClaiming(true);
+    try {
+      if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then claim.`); return; }
+      setStatus("Confirm the claim in your wallet…");
+      const h = await writeContractAsync({ chainId: CHAIN.id, address: cq.vault, abi: vaultAbi, functionName: "claim" });
+      await publicClient.waitForTransactionReceipt({ hash: h });
+      setStatus("Claimed ✓");
+    } catch (e: any) {
+      setStatus(friendly(e));
+    } finally {
+      setClaiming(false);
+      setTick((t) => t + 1);
+    }
+  }
+
   if (!coinAddr) {
     return (
       <div className="cx-panel cx-empty">
@@ -289,6 +336,10 @@ export function Coin() {
     ? quoteBal != null ? `Balance ${fmtAmount(Number(formatUnits(quoteBal, quoteDec)))} ${anchor}` : ""
     : coinBal != null ? `Balance ${fmtAmount(Number(formatUnits(coinBal, 18)), 2)} ${coinSym}` : "";
   const sellPreset = (pct: number) => { if (coinBal == null) return; setAmount(formatUnits((coinBal * BigInt(pct)) / 100n, 18)); };
+  const claimable = rewards?.stocks.some((s) => s.amount > 0n) ?? false;
+  const anchorNode = anchorIsCoin
+    ? <Link to={`/coin/${quote}`} className="cx-link-control" style={{ padding: 0, fontSize: "inherit", letterSpacing: "inherit", textTransform: "inherit" }}>${anchor}</Link>
+    : <>{anchor}</>;
 
   return (
     <div className="cx-coin">
@@ -298,7 +349,7 @@ export function Coin() {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
           <CxAvatar name={coinName} image={meta?.image} size={80} />
           <div style={{ minWidth: 0 }}>
-            <div className="cx-label">{cq.resolved ? `${tier} · anchored to ${anchor}` : "Loading"}</div>
+            <div className="cx-label">{cq.resolved ? <>{tier} · anchored to {anchorNode}{graduated ? " · Company coin" : ""}</> : "Loading"}</div>
             <h1 className="cx-h1" style={{ fontSize: 40, marginTop: 10 }}>{coinName}</h1>
             {meta?.thesis && <p style={{ margin: "10px 0 0", fontSize: 15, color: "var(--census-text-secondary)" }}>{meta.thesis}</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
@@ -349,17 +400,67 @@ export function Coin() {
               : "When the curve fills, liquidity moves to a permanently locked Uniswap V3 pool."}
         </p>
 
+        {graduated && (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, margin: "44px 0 16px", flexWrap: "wrap" }}>
+              <div className="cx-section-title">Ecosystem</div>
+              <Link className="cx-link-control" to={`/create/anchors?anchor=${coinAddr}&symbol=${encodeURIComponent(coinSym)}`}>Launch a coin anchored to ${coinSym} →</Link>
+            </div>
+            {!ecoReady
+              ? <PendingPanel line={`Looking for launches anchored to $${coinSym}`} />
+              : paired.length
+                ? <div className="cx-table">{paired.map((c) => <HomeRow key={c.address} c={c} />)}</div>
+                : <PendingPanel line={`No launches anchored to $${coinSym} yet`} note="Any new coin can pick this company as its anchor at launch." />}
+          </>
+        )}
+
         <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Holders</div>
         <PendingPanel line="Distribution appears once the indexer is connected." />
 
-        <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Creator rewards</div>
-        <div className="cx-panel cx-panel--plain" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div>
-            <div className="cx-stat__value"><Num>—</Num></div>
-            <div className="cx-stat__note">Rewards accrue from every trade. Collecting opens with the indexer.</div>
-          </div>
-          <button className="cx-cta" disabled title="Opens with the indexer">Collect</button>
-        </div>
+        {hasVault ? (
+          <>
+            <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Your rewards</div>
+            <div className="cx-panel cx-panel--plain">
+              {!isConnected ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                  <div className="cx-stat__note" style={{ marginTop: 0 }}>Holders of ${coinSym || "this coin"} earn a share of every trade, paid in {rewards?.stocks.map((s) => s.ticker).join(", ") || "the stock basket"}. Connect to see yours.</div>
+                  <button className="cx-cta" onClick={connect} disabled={connecting}>{connecting ? "Connecting…" : "Connect wallet"}</button>
+                </div>
+              ) : rewards == null ? (
+                <div className="cx-stat__note" style={{ marginTop: 0 }}>Reading the vault…</div>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {rewards.stocks.map((s) => (
+                      <div key={s.stock} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 14 }}><AnchorMark anchor={s.ticker} size={18} /> {s.ticker}</span>
+                        <Num kind={s.amount > 0n ? "key" : "value"}>{s.amount > 0n ? fmtAmount(Number(formatUnits(s.amount, s.decimals)), 6) : "—"}</Num>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
+                    <div className="cx-stat__note" style={{ marginTop: 0 }}>
+                      {rewards.undistributed > 0n
+                        ? `${fmtAmount(Number(formatUnits(rewards.undistributed, quoteDec)), 5)} ${anchor} of fees are waiting to be swapped into the basket.`
+                        : "Fees are swapped into the basket as they arrive."}
+                    </div>
+                    <button className="cx-cta" onClick={claim} disabled={!claimable || claiming} title={claimable ? undefined : "Nothing to claim yet"}>{claiming ? "Claiming…" : "Claim"}</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Creator rewards</div>
+            <div className="cx-panel cx-panel--plain" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+              <div>
+                <div className="cx-stat__value"><Num>—</Num></div>
+                <div className="cx-stat__note">Paid to the creator on every trade. The running total appears with the indexer.</div>
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Thread</div>
         <PendingPanel line="The thread opens once the indexer is connected" />
@@ -386,7 +487,7 @@ export function Coin() {
             <input value={amount} inputMode="decimal" aria-label="Amount" placeholder="0" onChange={(e) => setAmount(e.target.value)}
               style={{ fontFamily: "var(--census-font-mono)", fontSize: 30, fontVariantNumeric: "tabular-nums" }} />
             <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              {buy ? <CxAssetLogo ticker={anchor} size={20} /> : <CxAvatar name={coinName} image={meta?.image} size={20} />}
+              {buy ? <AnchorMark anchor={anchor} isCoin={anchorIsCoin} size={20} /> : <CxAvatar name={coinName} image={meta?.image} size={20} />}
               <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>{buy ? anchor : coinSym || "coin"}</span>
             </span>
           </div>
@@ -409,7 +510,7 @@ export function Coin() {
 
           {isConnected ? (
             <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={busy || !canTrade} onClick={trade}>
-              {busy ? "Working…" : !cq.resolved ? "Loading…" : "Place trade"}
+              {busy ? "Working…" : !cq.resolved || (!qi && !tradeBlock) ? "Loading…" : "Place trade"}
             </button>
           ) : (
             <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={connecting} onClick={connect}>
@@ -417,6 +518,7 @@ export function Coin() {
             </button>
           )}
           <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>{onCurve ? `${TRADE_FEE_LABEL} trade fee` : graduated ? `${feePctLabel} pool fee` : "—"}</div>
+          {anchorIsCoin && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>Trades settle in ${anchor} — hold some to buy.</div>}
           {!isConnected && connectError && <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: "#e06c60" }}>{connectError}</div>}
           {isConnected && tradeBlock && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{tradeBlock}</div>}
           {status && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{status}</div>}
@@ -428,6 +530,7 @@ export function Coin() {
           <CurveRow k="Anchored to" v={cq.resolved ? anchor : "—"} />
           <CurveRow k="Graduation at" v={graduationTarget != null ? `${fmtAmount(graduationTarget, 2)} ${anchor}` : "—"} />
           <CurveRow k="Trade fee" v={graduated ? `${feePctLabel} (pool)` : TRADE_FEE_LABEL} />
+          {hasVault && cq.holdersBps != null && <CurveRow k="Holders' share" v={`${Math.round(cq.holdersBps / 100)}% of creator rewards`} />}
         </div>
       </div>
     </div>

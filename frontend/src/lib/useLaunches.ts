@@ -38,15 +38,16 @@ function indexerToCoin(c: IndexerCoin): LaunchedCoin {
 let cache: { at: number; coins: LaunchedCoin[] } | null = null;
 const CACHE_MS = 30_000;
 
-export function useLaunches(): { coins: LaunchedCoin[]; live: boolean; loading: boolean } {
+export function useLaunches(enabled = true): { coins: LaunchedCoin[]; live: boolean; loading: boolean } {
   const publicClient = usePublicClient();
   const fresh = cache && Date.now() - cache.at < CACHE_MS ? cache.coins : null;
   const [coins, setCoins] = useState<LaunchedCoin[]>(fresh ?? []);
   const [live, setLive] = useState(fresh != null);
-  const [loading, setLoading] = useState(fresh == null);
+  const [loading, setLoading] = useState(enabled && fresh == null);
 
   useEffect(() => {
     let cancelled = false;
+    if (!enabled) { setLoading(false); return; }
     if (fresh) return;
     const done = (list: LaunchedCoin[]) => {
       cache = { at: Date.now(), coins: list };
@@ -103,7 +104,7 @@ export function useLaunches(): { coins: LaunchedCoin[]; live: boolean; loading: 
       }
     })();
     return () => { cancelled = true; };
-  }, [publicClient]);
+  }, [publicClient, enabled]);
 
   return { coins, live, loading };
 }

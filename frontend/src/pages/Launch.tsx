@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
-import { parseUnits, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
+import { isAddress, parseUnits, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { CONTRACTS, STANDARD, CHAIN, DEFAULT_FEE, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS } from "../config";
 import { factoryAbi, factoryV2Abi } from "../abis";
-import { STOCK_ROUTES, basketPath } from "../lib/stockRoutes";
+import { STOCK_ROUTES } from "../lib/stockRoutes";
+import { basketPathFor } from "../lib/basket";
+import { useLaunches } from "../lib/useLaunches";
+import { useCurveStats } from "../lib/useCurveStats";
 import { STOCK_CATEGORIES } from "../lib/stocks";
 import { grindC0de } from "../lib/c0de";
-import { ANCHORS, anchorByKey, anchorAvailable, curveLaunchParams, ethUsdPrice, graduationFdvEth, ETH_USD_FALLBACK, type Anchor } from "../lib/anchors";
+import { ANCHORS, anchorByKey, anchorAvailable, isCoinKey, curveLaunchParams, ethUsdPrice, graduationFdvEth, ETH_USD_FALLBACK, type Anchor } from "../lib/anchors";
 import { putMetadata } from "../lib/metadata";
 import { prepareImage, uploadImage, isHostedUrl } from "../lib/upload";
-import { useWalletConnect } from "../census";
+import { useWalletConnect, CxAvatar, fmtUsd } from "../census";
 import { AssetLogo, StockLogo } from "../components/StockLogo";
 
 // Designer's 5-step launch wizard (Company → Anchors → Economics → Identity → Review), with an explicit
@@ -42,11 +45,12 @@ type Draft = {
   tier: Tier; name: string; thesis: string; description: string;
   quoteKey: string; picks: string[]; weights: Record<string, number>;
   graduationEth: number; holdersBps: number; image: string; ticker: string; publicConsent: boolean;
+  quoteSymbol: string; // cached symbol when quoteKey is a company coin's address
 };
 type Setter = (p: Partial<Draft>) => void;
 // holdersBps: how the creator side of the trade fee is split — 0 = you only, 10000 = holders only,
 // in-between = both. Maxima defaults to all-holders; Prima is always creator-only on-chain.
-const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 4, holdersBps: 10000, image: "", ticker: "", publicConsent: false };
+const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 4, holdersBps: 10000, image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
 
 function loadDraft(): Draft {
   try {
@@ -54,7 +58,7 @@ function loadDraft(): Draft {
     if (raw) {
       const { ipfsConsent, ...saved } = JSON.parse(raw); // older drafts stored the consent flag under this name
       const d: Draft = { ...EMPTY, ...saved, publicConsent: !!(saved.publicConsent ?? ipfsConsent) };
-      if (!anchorAvailable(anchorByKey(d.quoteKey))) d.quoteKey = "ETH";
+      if (!anchorAvailable(anchorByKey(d.quoteKey))) { d.quoteKey = "ETH"; d.quoteSymbol = ""; }
       return d;
     }
   } catch { /* ignore a corrupt draft */ }
@@ -78,12 +82,18 @@ export function Launch() {
 
   // Persist the draft (this is what "Save & exit" resumes from).
   useEffect(() => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* ignore */ } }, [draft]);
+  // A company-coin page can open the wizard with its coin preselected as the anchor (?anchor=0x…&symbol=X).
+  useEffect(() => {
+    const p = new URLSearchParams(loc.search);
+    const a = p.get("anchor");
+    if (a && isAddress(a)) set({ quoteKey: a, quoteSymbol: p.get("symbol") ?? "" });
+  }, [loc.search]); // eslint-disable-line react-hooks/exhaustive-deps
   // Live ETH price for the market-cap estimates (falls back to the calibration constant on testnet).
   useEffect(() => { if (publicClient) ethUsdPrice(publicClient).then(setEthUsd).catch(() => {}); }, [publicClient]);
 
   const tier = draft.tier;
   const isV2 = tier === "v2";
-  const anchor = anchorByKey(draft.quoteKey);
+  const anchor = anchorByKey(draft.quoteKey, draft.quoteSymbol);
   // Maxima always pays holders a stock basket; the anchor (ETH or HOOD) is just the asset the fee arrives
   // in — the vault swaps it into the basket either way (HOOD routes via USDG). See lib/stockRoutes.basketPath.
   const usesBasket = isV2;
@@ -168,8 +178,8 @@ export function Launch() {
 
   const hint = [
     valid[0] ? "Anchors next." : !nameOk ? "Add a company name to continue." : "Add a one-line thesis to continue.",
-    usesBasket ? (picks.length ? `${picks.join(" · ")} — economics next.` : "Anchor at least one stock to continue.") : `Anchored to ${draft.quoteKey} — economics next.`,
-    `Fee ${TRADE_FEE_LABEL} · graduates at ${gradLabel(draft.graduationEth, draft.quoteKey)}`,
+    usesBasket ? (picks.length ? `${picks.join(" · ")} — economics next.` : "Anchor at least one stock to continue.") : `Anchored to ${anchor.key} — economics next.`,
+    `Fee ${TRADE_FEE_LABEL} · graduates at ${gradLabel(draft.graduationEth, anchor.key)}`,
     draft.publicConsent ? "Review next." : "Accept the moderation terms to continue.",
     "Everything looks right? Launch it.",
   ][step];
@@ -212,7 +222,8 @@ export function Launch() {
     let basket: Address[] = [], paths: Hex[] = [], weights: number[] = [];
     if (usesBasket) {
       basket = picks.map((t) => STOCK_ROUTES[t].address);
-      paths = picks.map((t) => basketPath(anchor.quote, t));
+      try { paths = await Promise.all(picks.map((t) => basketPathFor(publicClient, anchor.quote, t))); }
+      catch (e: any) { setStatus(e?.message ?? "This anchor can't be routed into a stock basket."); return; }
       const raw = picks.map((t) => weightOf(t));
       const sum = raw.reduce((a, b) => a + b, 0) || 1;
       weights = raw.map((w) => Math.round((w / sum) * 10000));
@@ -324,10 +335,10 @@ export function Launch() {
       <div className="census-wizard__body">
         <main>
           {step === 0 && <CompanyStep draft={draft} set={set} ticker={ticker} />}
-          {step === 1 && <AnchorsStep draft={draft} set={set} usesBasket={usesBasket} picks={picks} pctOf={pctOf} setPct={setPct} toggleStock={toggleStock} />}
-          {step === 2 && <EconomicsStep draft={draft} set={set} isV2={isV2} usesBasket={usesBasket} ethUsd={ethUsd} />}
+          {step === 1 && <AnchorsStep draft={draft} set={set} anchor={anchor} usesBasket={usesBasket} picks={picks} pctOf={pctOf} setPct={setPct} toggleStock={toggleStock} />}
+          {step === 2 && <EconomicsStep draft={draft} set={set} isV2={isV2} usesBasket={usesBasket} ethUsd={ethUsd} anchorKey={anchor.key} />}
           {step === 3 && <IdentityStep draft={draft} set={set} ticker={ticker} reserved={reserved} hasFactory={hasFactory} />}
-          {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} usesBasket={usesBasket} picks={picks} pctOf={pctOf} reserved={reserved} onEdit={goTo} status={status} />}
+          {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} usesBasket={usesBasket} picks={picks} pctOf={pctOf} reserved={reserved} onEdit={goTo} status={status} anchorKey={anchor.key} />}
         </main>
         <aside className="census-wizard__aside">
           <Preview draft={draft} ticker={ticker} isV2={isV2} usesBasket={usesBasket} picks={picks} pctOf={pctOf} reserved={reserved} anchor={anchor} />
@@ -397,6 +408,8 @@ function CompanyStep({ draft, set, ticker }: { draft: Draft; set: Setter; ticker
 }
 
 function QuotePicker({ draft, set }: { draft: Draft; set: Setter }) {
+  const coinPicked = isCoinKey(draft.quoteKey);
+  const [showCoins, setShowCoins] = useState(coinPicked);
   const unavailable = ANCHORS.filter((a) => !anchorAvailable(a));
   return (
     <>
@@ -405,17 +418,62 @@ function QuotePicker({ draft, set }: { draft: Draft; set: Setter }) {
           const ok = anchorAvailable(a);
           return (
             <button key={a.key} className="census-chip" aria-pressed={draft.quoteKey === a.key} disabled={!ok} title={ok ? undefined : `${a.key} anchoring is live on mainnet`}
-              onClick={() => ok && set({ quoteKey: a.key })} style={{ display: "inline-flex", alignItems: "center", gap: 8, opacity: ok ? 1 : 0.45, cursor: ok ? "pointer" : "not-allowed" }}>
+              onClick={() => { if (!ok) return; set({ quoteKey: a.key, quoteSymbol: "" }); setShowCoins(false); }} style={{ display: "inline-flex", alignItems: "center", gap: 8, opacity: ok ? 1 : 0.45, cursor: ok ? "pointer" : "not-allowed" }}>
               <AssetLogo src={a.logo} label={a.key} size={18} radius={5} />
               {a.label} ({a.key})
             </button>
           );
         })}
+        <button className="census-chip" aria-pressed={coinPicked} onClick={() => setShowCoins(true)} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {coinPicked ? <><CxAvatar name={draft.quoteSymbol} size={18} /> {draft.quoteSymbol || "Company coin"}</> : "A company coin"}
+        </button>
       </div>
       {unavailable.length > 0 && (
         <div style={{ marginTop: 10, fontSize: 12, color: "var(--census-text-muted)" }}>{unavailable.map((a) => a.key).join(", ")} anchoring is live on mainnet.</div>
       )}
+      {showCoins && <CompanyPicker draft={draft} set={set} />}
     </>
+  );
+}
+
+// Graduated Census coins ("company coins") a new launch can anchor to. Its locked pool is where the new
+// coin's anchor trades and, for Maxima, the first hop on the fee's way into the stock basket.
+function CompanyPicker({ draft, set }: { draft: Draft; set: Setter }) {
+  const { coins, loading } = useLaunches();
+  const stats = useCurveStats(coins.map((c) => c.address));
+  const ready = !loading && (coins.length === 0 || Object.keys(stats).length > 0);
+  const graduated = coins.filter((c) => stats[c.address.toLowerCase()]?.graduated);
+  if (!ready) return <div style={{ marginTop: 14, fontSize: 13, color: "var(--census-text-muted)" }}>Looking for graduated companies…</div>;
+  if (!graduated.length) {
+    return (
+      <div style={{ marginTop: 14, border: "1px dashed rgba(242,245,241,0.18)", borderRadius: "var(--census-radius-input)", padding: "22px 20px", textAlign: "center" }}>
+        <div style={{ fontSize: 15, color: "var(--census-text-secondary)" }}>No company has graduated yet</div>
+        <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 6 }}>The first graduation unlocks pairing. Until then, anchor to ETH or HOOD.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="census-card" style={{ padding: 0, overflow: "hidden", marginTop: 14 }}>
+      {graduated.map((c, i) => {
+        const s = stats[c.address.toLowerCase()];
+        const on = draft.quoteKey.toLowerCase() === c.address.toLowerCase();
+        return (
+          <button key={c.address} onClick={() => set({ quoteKey: c.address, quoteSymbol: c.symbol })} aria-pressed={on}
+            style={{ display: "grid", gridTemplateColumns: "34px minmax(0,1fr) auto", gap: 14, alignItems: "center", width: "100%", padding: "12px 16px", textAlign: "left",
+              background: on ? "var(--census-lime-fill)" : "none", border: 0, borderTop: i ? "1px solid var(--census-hairline)" : 0, cursor: "pointer", color: "var(--census-text)" }}>
+            <CxAvatar name={c.name} size={34} />
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", fontWeight: 600, fontSize: 14 }}>{c.name} <span className="census-mono" style={{ color: "var(--census-lime)", fontWeight: 500 }}>${c.symbol}</span></span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--census-text-secondary)" }}>Graduated · anchored to {s?.anchor ?? "ETH"} · market cap {fmtUsd(s?.mcapUsd)}</span>
+            </span>
+            <span className="census-mono" style={{ fontSize: 12, color: on ? "var(--census-lime)" : "var(--census-text-muted)" }}>{on ? "✓" : "+"}</span>
+          </button>
+        );
+      })}
+      <div style={{ padding: "12px 16px", borderTop: "1px solid var(--census-hairline)", fontSize: 12, color: "var(--census-text-muted)" }}>
+        Buyers pay in the company coin, so they need to hold it. Your coin's fees arrive in it and route through its pool.
+      </div>
+    </div>
   );
 }
 
@@ -441,8 +499,8 @@ function WeightInput({ value, onCommit }: { value: number; onCommit: (n: number)
   );
 }
 
-type AnchorsProps = { draft: Draft; set: Setter; usesBasket: boolean; picks: string[]; pctOf: (t: string) => number; setPct: (t: string, p: number) => void; toggleStock: (t: string) => void };
-function AnchorsStep({ draft, set, usesBasket, picks, pctOf, setPct, toggleStock }: AnchorsProps) {
+type AnchorsProps = { draft: Draft; set: Setter; anchor: Anchor; usesBasket: boolean; picks: string[]; pctOf: (t: string) => number; setPct: (t: string, p: number) => void; toggleStock: (t: string) => void };
+function AnchorsStep({ draft, set, anchor, usesBasket, picks, pctOf, setPct, toggleStock }: AnchorsProps) {
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("All");
   const full = picks.length >= MAX_BASKET;
@@ -457,9 +515,9 @@ function AnchorsStep({ draft, set, usesBasket, picks, pctOf, setPct, toggleStock
 
       <div className="census-field-label">Anchored to</div>
       <QuotePicker draft={draft} set={set} />
-      {usesBasket && draft.quoteKey !== "ETH" && (
+      {usesBasket && anchor.key !== "ETH" && (
         <div style={{ marginTop: 12, fontSize: 13, color: "var(--census-text-muted)" }}>
-          Priced against {draft.quoteKey}. Holders still earn the stock basket below — the {draft.quoteKey} fee is swapped into it automatically.
+          Priced against {anchor.key}. Holders still earn the stock basket below — the {anchor.key} fee is swapped into it automatically.
         </div>
       )}
 
@@ -536,13 +594,12 @@ function AnchorsStep({ draft, set, usesBasket, picks, pctOf, setPct, toggleStock
   );
 }
 
-type EconomicsProps = { draft: Draft; set: Setter; isV2: boolean; usesBasket: boolean; ethUsd: number };
-function EconomicsStep({ draft, set, isV2, usesBasket, ethUsd }: EconomicsProps) {
+type EconomicsProps = { draft: Draft; set: Setter; isV2: boolean; usesBasket: boolean; ethUsd: number; anchorKey: string };
+function EconomicsStep({ draft, set, isV2, usesBasket, ethUsd, anchorKey }: EconomicsProps) {
   const fee = 1000 * (TRADE_FEE_BPS / 10000); // the fee on $1,000 traded
   const holdersBps = isV2 ? draft.holdersBps : 0;
   const holdersPct = Math.round(holdersBps / 100);
   const PRESETS: [string, number][] = [["Holders", 10000], ["Split", 5000], ["You", 0]];
-  const anchorKey = draft.quoteKey;
   return (
     <>
       <h1 className="census-wizard__title">Who gets the fees?</h1>
@@ -732,8 +789,8 @@ const Row = ({ k, v, accent }: { k: string; v: ReactNode; accent?: boolean }) =>
   </div>
 );
 
-type ReviewProps = { draft: Draft; ticker: string; isV2: boolean; usesBasket: boolean; picks: string[]; pctOf: (t: string) => number; reserved: { address: Address } | null; onEdit: (step: number) => void; status: string };
-function ReviewStep({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, onEdit, status }: ReviewProps) {
+type ReviewProps = { draft: Draft; ticker: string; isV2: boolean; usesBasket: boolean; picks: string[]; pctOf: (t: string) => number; reserved: { address: Address } | null; onEdit: (step: number) => void; status: string; anchorKey: string };
+function ReviewStep({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, onEdit, status, anchorKey }: ReviewProps) {
   return (
     <>
       <h1 className="census-wizard__title">Review &amp; launch.</h1>
@@ -744,13 +801,13 @@ function ReviewStep({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, o
         <div style={{ fontSize: 13, color: "var(--census-text-secondary)", marginTop: 8 }}>{draft.thesis}</div>
       </Group>
       <Group title="Anchors" onEdit={() => onEdit(1)}>
-        <Row k="Anchored to" v={draft.quoteKey} accent />
-        {isV2 && (usesBasket ? picks.map((t) => <Row key={t} k={t} v={`${pctOf(t)}%`} />) : <Row k="Holders earn" v={draft.quoteKey} />)}
+        <Row k="Anchored to" v={anchorKey} accent />
+        {isV2 && (usesBasket ? picks.map((t) => <Row key={t} k={t} v={`${pctOf(t)}%`} />) : <Row k="Holders earn" v={anchorKey} />)}
       </Group>
       <Group title="Economics" onEdit={() => onEdit(2)}>
         <Row k="Trade fee" v={TRADE_FEE_LABEL} />
         <Row k="Your rewards" v={isV2 ? `holders ${Math.round(draft.holdersBps / 100)}% · you ${100 - Math.round(draft.holdersBps / 100)}%` : "all to you"} accent />
-        <Row k="Graduation" v={gradLabel(draft.graduationEth, draft.quoteKey)} />
+        <Row k="Graduation" v={gradLabel(draft.graduationEth, anchorKey)} />
       </Group>
       <Group title="Identity" onEdit={() => onEdit(3)}>
         <Row k="Logo" v={draft.image ? (isHostedUrl(draft.image) ? "Set" : "Preview only — not saved yet") : "None"} />

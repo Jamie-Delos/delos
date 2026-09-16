@@ -43,6 +43,7 @@ export type DisplayCoin = {
   creator?: string; age?: string; anchor?: string;
   marketCap?: number | null; price?: number | null; graduation?: number | null;
   graduated?: boolean; reserve?: number; graduationTarget?: number | null; replies?: number | null;
+  quoteAddress?: string; anchorIsCoin?: boolean; // a coin anchored to another Census coin
 };
 
 /* -------- primitives -------- */
@@ -68,6 +69,12 @@ export function CxAssetLogo({ ticker, size = 14, src }: { ticker: string; size?:
   }
   return <img className="cx-asset-logo" src={src ?? assetLogoSrc(ticker)} alt={ticker} loading="lazy" width={size} height={size} onError={() => setFailed(true)} />;
 }
+
+/* The anchor's mark: the real asset logo for ETH/HOOD/stocks, a flat lettermark for a Census coin. */
+export const AnchorMark = ({ anchor, isCoin, size = 14 }: { anchor: string; isCoin?: boolean; size?: number }) =>
+  isCoin
+    ? <span className="cx-avatar" style={{ width: size, height: size, fontSize: Math.max(7, Math.round(size * 0.5)), borderRadius: 4 }}>{(anchor || "C").slice(0, 1)}</span>
+    : <CxAssetLogo ticker={anchor} size={size} />;
 
 export const GraduationBar = ({ pct, large = false }: { pct: number; large?: boolean }) => (
   <span className={`cx-bar${large ? " cx-bar--lg" : ""}${pct >= 100 ? " cx-bar--done" : ""}`}>
@@ -334,7 +341,7 @@ export const TrendingCard = ({ c, king }: { c: DisplayCoin; king?: boolean }) =>
     <div style={{ marginTop: 20 }}><GraduationBar pct={c.graduation ?? 0} /></div>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 9 }}>
       <span className="cx-label" style={{ display: "flex", alignItems: "center", gap: 7 }}>
-        <CxAssetLogo ticker={c.anchor ?? "ETH"} /> Anchored to {c.anchor ?? "ETH"}
+        <AnchorMark anchor={c.anchor ?? "ETH"} isCoin={c.anchorIsCoin} /> Anchored to {c.anchor ?? "ETH"}
       </span>
       <span className="cx-label">{fmtPct(c.graduation)}</span>
     </div>
@@ -352,7 +359,7 @@ export function BoardRow({ r }: { r: DisplayCoin }) {
           <span style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 5 }}>
             <span className="cx-row__meta" style={{ marginTop: 0 }}>${r.symbol}</span>
             <span style={{ width: 1, height: 10, background: "var(--census-border)" }} />
-            <CxAssetLogo ticker={r.anchor ?? "ETH"} />
+            <AnchorMark anchor={r.anchor ?? "ETH"} isCoin={r.anchorIsCoin} />
             <span className="cx-row__meta" style={{ marginTop: 0 }}>{r.anchor ?? "ETH"}</span>
           </span>
         </span>

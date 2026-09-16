@@ -43,7 +43,7 @@ export function Profile() {
     const s = stats[c.address.toLowerCase()];
     return {
       address: c.address, name: c.name, symbol: c.symbol, creator: c.creator, age: c.age,
-      anchor: s?.anchor ?? "ETH", marketCap: s?.mcapUsd ?? null, graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, graduationTarget: s?.graduationTarget,
+      anchor: s?.anchor ?? "ETH", marketCap: s?.mcapUsd ?? null, graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, graduationTarget: s?.graduationTarget, quoteAddress: s?.quoteAddress, anchorIsCoin: s?.anchorIsCoin,
     };
   });
   const best = created.reduce<DisplayCoin | null>((b, c) => (c.marketCap != null && (!b || (b.marketCap ?? 0) < c.marketCap) ? c : b), null);

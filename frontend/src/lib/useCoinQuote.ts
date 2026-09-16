@@ -18,6 +18,8 @@ export type CoinQuote = {
   graduated?: boolean; // curve filled + migrated to a real, permanently-locked Uniswap pool
   routerPoolFee?: number; // the coin's (graduated) pool fee tier, from the curve registry
   creator?: Address; // the coin's creator (creator-side fee recipient), from the curve registry
+  vault?: Address; // Maxima rewards vault (zero for Prima)
+  holdersBps?: number; // holders' share of the creator side (Maxima)
   virtualQuote?: bigint; // V — current virtual quote reserve (spot price = virtualQuote / tokenReserve)
   tokenReserve?: bigint; // tokens still in the curve
   realQuote?: bigint; // quote raised so far (for the graduation reserve caption)
@@ -59,6 +61,8 @@ export function useCoinQuote(coin?: string): CoinQuote {
           ...prev,
           quote: cv[0],
           creator: cv[1],
+          vault: cv[2],
+          holdersBps: Number(cv[3]),
           isV2: cv[2] !== zeroAddress, // a Maxima coin has a rewards vault; Prima's vault is address(0)
           routerPoolFee: Number(cv[4]),
           virtualQuote: cv[5],

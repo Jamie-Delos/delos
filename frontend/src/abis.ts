@@ -71,3 +71,16 @@ export const wethAbi = parseAbi([
 export const swapRouterAbi = parseAbi([
   "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
 ]);
+
+// DividendVault (Maxima) — the per-coin rewards vault: its stock basket, what a holder can withdraw
+// right now, and the one-call claim. Fees arrive in the coin's anchor and sit in the vault until the
+// operator's distribute() swaps them into the basket.
+export const vaultAbi = parseAbi([
+  "function token() view returns (address)",
+  "function quote() view returns (address)",
+  "function basketLength() view returns (uint256)",
+  "function basket(uint256) view returns (address)",
+  "function weights(uint256) view returns (uint16)",
+  "function withdrawableOf(address holder,address stock) view returns (uint256)",
+  "function claim()",
+]);

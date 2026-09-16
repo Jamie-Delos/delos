@@ -7,19 +7,21 @@ import { usePublicClient } from "wagmi";
 import { zeroAddress, type Address } from "viem";
 import { CONTRACTS } from "../config";
 import { censusCurveAbi, erc20Abi } from "../abis";
-import { anchorByQuote, cachedQuoteUsd } from "./anchors";
+import { cachedQuoteUsd, quoteInfo } from "./anchors";
 
 export type CurveStat = {
   priceUsd: number | null;
   mcapUsd: number | null;
   gradPct: number | null; // 0..100, or 100 once graduated
   graduated: boolean;
-  anchor: string; // "ETH" | "HOOD" — the coin's quote asset, for row/trade labels
+  anchor: string; // "ETH" | "HOOD" | a company coin's symbol — for row/trade labels
+  anchorIsCoin: boolean; // anchored to another Census coin
+  quoteAddress: string; // the anchor's address (ecosystem lookups)
   reserve: number; // quote raised so far (in the anchor's units), for the graduation caption
   graduationTarget: number | null; // quote needed to graduate (anchor units)
 };
 
-const EMPTY: CurveStat = { priceUsd: null, mcapUsd: null, gradPct: null, graduated: false, anchor: "ETH", reserve: 0, graduationTarget: null };
+const EMPTY: CurveStat = { priceUsd: null, mcapUsd: null, gradPct: null, graduated: false, anchor: "ETH", anchorIsCoin: false, quoteAddress: "", reserve: 0, graduationTarget: null };
 
 export function useCurveStats(addresses: string[]): Record<string, CurveStat> {
   const pc = usePublicClient();
@@ -40,9 +42,8 @@ export function useCurveStats(addresses: string[]): Record<string, CurveStat> {
             const cv = await pc.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "curves", args: [addr as Address] });
             if (!cv[10]) return [lc, EMPTY]; // not registered on the curve
             const [quote, , , , , virtualQuote, tokenReserve, realQuote, graduationQuote, graduated] = cv;
-            const a = anchorByQuote(quote);
-            const quoteDec = a?.quoteDecimals ?? 18;
-            const anchor = a?.key ?? "ETH";
+            const info = await quoteInfo(pc, quote);
+            const quoteDec = info.decimals;
 
             let priceUsd: number | null = null;
             let mcapUsd: number | null = null;
@@ -56,11 +57,21 @@ export function useCurveStats(addresses: string[]): Record<string, CurveStat> {
                   mcapUsd = priceUsd * (Number(supply) / 1e18);
                 } catch { /* keep priceUsd, leave mcap null */ }
               }
+            } else if (graduated) {
+              // Graduated: the coin's own USD price comes from its locked pool (same path a coin anchor uses).
+              const priceFromPool = await cachedQuoteUsd(pc, addr);
+              if (priceFromPool != null) {
+                priceUsd = priceFromPool;
+                try {
+                  const supply = await pc.readContract({ address: addr as Address, abi: erc20Abi, functionName: "totalSupply" });
+                  mcapUsd = priceUsd * (Number(supply) / 1e18);
+                } catch { /* leave mcap null */ }
+              }
             }
             const gradPct = graduated ? 100 : graduationQuote > 0n ? Math.min(100, Math.round(Number((realQuote * 10000n) / graduationQuote) / 100)) : null;
             const reserve = Number(realQuote) / 10 ** quoteDec;
             const graduationTarget = graduationQuote > 0n ? Number(graduationQuote) / 10 ** quoteDec : null;
-            return [lc, { priceUsd, mcapUsd, gradPct, graduated, anchor, reserve, graduationTarget }];
+            return [lc, { priceUsd, mcapUsd, gradPct, graduated, anchor: info.symbol, anchorIsCoin: info.isCoin, quoteAddress: quote, reserve, graduationTarget }];
           } catch {
             return [lc, EMPTY];
           }
