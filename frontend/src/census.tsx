@@ -216,16 +216,22 @@ export function useWalletConnect() {
   const [error, setError] = useState("");
   const connect = useCallback(async (): Promise<{ ok: boolean; error: string }> => {
     setError("");
-    const discovered = connectors.filter((c) => c.type === "injected" && c.id !== "injected"); // EIP-6963: one per wallet
+    // Candidate wallets: EIP-6963 announcements plus the explicit targets in wagmi.ts — kept only when the
+    // wallet is actually present (its provider resolves), and deduped by provider object so a wallet seen
+    // both ways (e.g. Phantom announced AND at window.phantom.ethereum) is listed once.
+    const named = connectors.filter((c) => c.type === "injected" && c.id !== "injected").sort((a, b) => Number(!a.icon) - Number(!b.icon)); // EIP-6963 entries (with icons) first, so they win the dedupe
     const generic = connectors.find((c) => c.id === "injected"); // whatever owns window.ethereum (older extensions, in-app browsers)
-    const hasProvider = typeof window !== "undefined" && !!(window as any).ethereum;
+    const resolved = await Promise.all(named.map(async (c) => ({ c, p: await c.getProvider().catch(() => undefined) })));
+    const seen = new Set<unknown>();
+    const discovered = resolved.filter(({ p }) => { if (!p || seen.has(p)) return false; seen.add(p); return true; }).map(({ c }) => c);
+    const genericProvider = generic ? await generic.getProvider().catch(() => undefined) : undefined;
     let connector = discovered.length === 1 ? discovered[0] : undefined;
     if (discovered.length > 1) {
       const id = await pickWallet("Choose a wallet", discovered.map((c) => ({ id: c.id, name: c.name, icon: c.icon })));
       if (!id) return { ok: false, error: "" };
       connector = discovered.find((c) => c.id === id);
     }
-    if (!connector && hasProvider && generic) connector = generic;
+    if (!connector && genericProvider && generic) connector = generic;
     if (!connector) {
       const isMobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       if (isMobile && typeof window !== "undefined") {
