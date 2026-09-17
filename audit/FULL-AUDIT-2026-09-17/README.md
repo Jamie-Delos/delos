@@ -25,9 +25,9 @@ lives in the track files listed at the bottom; this page is the verdict.
 ## The S2s (core-journey / operational blockers)
 
 Kill switch: **none exists** — no `pause` in any contract, so a live incident can't be halted (CX-W1).
-No monitoring of reserves/solvency; a 3am drain pages nobody (CX-W2). `/api/zeroex` is unauthenticated
-and unthrottled → 0x-key exhaustion (CX-L1). One RPC, no fallback, and the home page rescans from block
-0 every load (CX-K2, CX-M2). The live bundle isn't reproducible from the repo and CI never builds the
+No monitoring of reserves/solvency; a 3am drain pages nobody (CX-W2). `/api/zeroex` was unauthenticated
+and unthrottled → 0x-key exhaustion (CX-L1) — **FIXED 2026-09-17** (per-IP rate limit + chain cap). One
+RPC, no fallback, and the home page rescans from block 0 every load (CX-K2, CX-M2). The live bundle isn't reproducible from the repo and CI never builds the
 frontend (CX-V2, CX-V3). The fee (2% 75/25) is hard-coded and asserted as fact but the docs say 1% /
 "pending" and it isn't signed off (CX-Z2). No ToS / privacy / GDPR-deletion for the emails Privy collects
 (CX-X3, CX-X4). Graduation is griefable by a deep mispriced pre-pool (CX-B1). One keeper key over all

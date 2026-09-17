@@ -15,7 +15,9 @@ fragility** (see track K), and a handful of **a11y / polish** items — not auth
 
 ## Track L — serverless API (`frontend/api/{zeroex,upload,metadata}.ts`)
 
-### CX-L1 — S2 (easy) — `/api/zeroex` is unauthenticated and unthrottled → 0x key exhaustion
+### CX-L1 — S2 (easy) — `/api/zeroex` is unauthenticated and unthrottled → 0x key exhaustion — **FIXED 2026-09-17**
+**STATUS: FIXED.** `frontend/api/zeroex.ts` now enforces a per-IP fixed-window rate limit (KV `INCR`, `ZEROEX_RATE_PER_MIN` default 120) and a chain cap (rejects any `chainId` != `CENSUS_CHAIN_ID` before the upstream call, so the key can't be spent on other chains). Fail-open when KV is absent (a KV outage can't take trading down). Proven by `frontend/api.zeroex.test.cjs` (rate limit → 429+retry-after, independent IPs, chain-cap doesn't hit the key, fail-open, key/endpoint guards). Note: per-IP only — IP rotation is out of scope; the goal is to cap single-source cost. Original finding below.
+
 **WHERE** `frontend/api/zeroex.ts` (whole file — no auth, no rate limit). **WHAT HAPPENS** Anyone can
 curl `/api/zeroex?endpoint=quote&...` as fast as they like; each call spends the server's `ZEROX_API_KEY`
 against the 0x API. A scripted attacker exhausts the key's rate limit / paid quota, so every real user's
