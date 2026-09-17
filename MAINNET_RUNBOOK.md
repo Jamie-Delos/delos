@@ -38,8 +38,10 @@ The deploy does not bake curve economics; they are set per launch by the fronten
 ```
 cd contracts
 npx hardhat run scripts/preflight.js --network robinhood      # prints deployer + balance; balance must be > ~0.01 ETH
-node ../.../scratchpad/verifyMainnetUni.mjs                    # re-verify Uniswap addresses (optional; already PASS)
 ```
+The mainnet Uniswap V3 addresses are already verified on-chain (NPM.factory() == Router.factory() ==
+the Factory; WETH confirmed) and pinned in `contracts/uniswap.robinhood.json`, which deploy.js reads —
+so no separate re-verify script is needed.
 
 ## 4. Deploy
 ```
@@ -89,15 +91,20 @@ Without this, HOOD coins still trade, but buyers must already hold HOOD. The `fr
 ETH→HOOD quoting for HOOD coins is wired at cutover (needs the live pool to quote against; test with a small real buy).
 
 ## 5. Verify on Blockscout
-For each contract, using the constructor args from `deployments.robinhood.json` (the `verify` block):
+For each contract, using the constructor args from `deployments.robinhood.json` (the `verify` block).
+Note the `CensusCurve` constructor takes **five** args — `CensusCurve(npm, platform, locker, weth,
+swapRouter)` — so `<WETH>` must be passed between `<LaunchLocker>` and `<SwapRouter02>`:
 ```
 npx hardhat verify --network robinhood <FeeVault>       <deployer>
 npx hardhat verify --network robinhood <LaunchLocker>   <NPM> <FeeVault> 2500
-npx hardhat verify --network robinhood <CensusCurve>    <NPM> <FeeVault> <LaunchLocker> <SwapRouter02>
+npx hardhat verify --network robinhood <CensusCurve>    <NPM> <FeeVault> <LaunchLocker> <WETH> <SwapRouter02>
 npx hardhat verify --network robinhood <LaunchFactory>  <WETH> <CensusCurve>
 npx hardhat verify --network robinhood <LaunchFactoryV2> <WETH> <CensusCurve> <SwapRouter02> 3000 0x0000000000001fF3684f28c67538d4D072C22734
 npx hardhat verify --network robinhood <DividendVaultDeployer>
 ```
+(If `deploy.js` was run with `FEE_SPLIT_A/B` set, the treasury is a `FeeSplitter` — verify it with the
+splitter args from the `verify` block instead of the `FeeVault` line, and pass its address wherever
+`<FeeVault>` appears above.)
 
 ## 6. Cut the site over to mainnet
 - Set the mainnet VITE_ config (Vercel project env, or `frontend/.env` for a prebuilt build):
@@ -122,11 +129,15 @@ npx hardhat verify --network robinhood <DividendVaultDeployer>
   ```
 
 ## 7. Smoke test (mainnet)
+The old `scripts/launch.js` / `launchV2.js` use the pre-curve ABI and no longer work — launch real coins
+from the frontend `/create` wizard. For a scripted end-to-end check use `curveProof.js`, which launches a
+Prima coin on the live curve, does a small buy, and confirms the 2% fee (25% of it) reaches the treasury —
+the whole smoke test in one script (it self-launches, so no `COIN=` is needed):
 ```
 cd contracts
-npx hardhat run scripts/launch.js --network robinhood         # launches a Prima coin; note the token address
-COIN=<token> npx hardhat run scripts/curveProof.js --network robinhood   # small curve buy; confirm fee to FeeVault
+npx hardhat run scripts/curveProof.js --network robinhood     # launches a Prima coin + small curve buy; confirms fee to treasury
 ```
+(`scripts/demoLaunch.js` launches a few Prima coins to populate the board, if you want more than one.)
 Then open the live site and confirm the coin shows on the board and the coin page (curve trading + 2% fee,
 graduation progress).
 

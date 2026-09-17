@@ -15,6 +15,15 @@ const WEIGHTS = [5000, 5000]; // 50/50, sums to 10000 bps
 const PATHS = ["0x", "0x"];   // empty = single-hop; irrelevant on testnet (no stock pools)
 
 async function main() {
+  // CX-V1: SUPERSEDED. This script builds params for the old pre-curve LaunchFactoryV2.createLaunch ABI
+  // (sqrtPriceX96 / tickLower / tickUpper / graduationTick, via computeLaunchParams/computeGraduationTick).
+  // The current LaunchFactoryV2 takes LaunchParams{ name, symbol, totalSupply, decimals, poolFee,
+  // virtualQuote, graduationQuote } (see contracts/contracts/LaunchFactory.sol), so this would revert.
+  throw new Error(
+    "SUPERSEDED: scripts/launchV2.js targets the old pre-curve createLaunch ABI " +
+      "(sqrtPriceX96/tickLower/tickUpper/graduationTick) and no longer matches LaunchFactoryV2. " +
+      "Launch through the frontend launch wizard, or run scripts/demoLaunch.js (current bonding-curve ABI).",
+  );
   const netName = hre.network.name;
   const dep = JSON.parse(fs.readFileSync(path.join(__dirname, "..", `deployments.${netName}.json`), "utf8"));
   const uni = JSON.parse(fs.readFileSync(path.join(__dirname, "..", `uniswap.${netName}.json`), "utf8"));

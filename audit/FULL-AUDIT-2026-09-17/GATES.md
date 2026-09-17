@@ -24,12 +24,12 @@ Nothing here is vague enough to argue about later. Testnet is fine today; these 
 
 ## SHOULD-FIX (close before or immediately after launch)
 
-- **G15** Runbooks work if followed literally (CX-Z3): fix the broken scratchpad path, the CensusCurve verify arity, and the stale `launch.js`/`launchV2.js` (CX-V1) they invoke.
-- **G16** README describes the curve system, not the superseded Uniswap design (CX-Z1); `verifyAll.js` covers all contracts (CX-V6); TODO refreshed (CX-Z4).
-- **G17** ~~Unregistered-address coin *shell* → not-a-coin error (CX-N1)~~ **DONE**; ~~dedup/impersonation warning + confusable stripping (CX-P2)~~ **DONE 2026-09-17** (report/takedown path with a named recipient still a product decision); ~~testnet Uniswap wiring 3-way mismatch + un-chain-gated mainnet fallback (CX-H3)~~ **DONE 2026-09-17** (config chain-gated, addresses.js reconciled, .env.example clarified).
-- **G18** Anchor recursion: add a cycle guard + "quote asset impaired" UI (CX-H2 / DOOM-2).
-- **G19** a11y: 44px tap targets (CX-Q1); jargon tooltips + custom-error → plain English (CX-Q2).
-- **G20** Bundle/TTI: measure gzipped TTI; split heavy eager chunks (CX-S1); swaps carry no client deadline (CX-H5).
+- **G15** ~~Runbooks work if followed literally (CX-Z3); stale `launch.js`/`launchV2.js` (CX-V1)~~ **DONE 2026-09-17** — runbooks fixed (scratchpad path, 5-arg CensusCurve verify, repointed off the stale scripts, "2% isn't in this build" claim removed); `launch.js`/`launchV2.js` now fail-fast with a pointer to `demoLaunch.js`/the frontend.
+- **G16** ~~README describes the curve system (CX-Z1); `verifyAll.js` covers all contracts (CX-V6); TODO refreshed (CX-Z4)~~ **DONE 2026-09-17** — README rewritten to the curve system; `verifyAll.js` now iterates every `deployments.verify` entry (CensusCurve/LaunchFactoryV2/FeeSplitter/DividendVaultDeployer included); TODO retitled + superseded addresses marked.
+- **G17** ~~Unregistered-address shell → not-a-coin error (CX-N1)~~ **DONE**; ~~dedup/impersonation warning + confusable stripping (CX-P2)~~ **DONE** (report/takedown path with a named recipient still a product decision); ~~testnet Uniswap wiring mismatch + un-chain-gated mainnet fallback (CX-H3)~~ **DONE**.
+- **G18** ~~Anchor recursion: cycle guard (CX-H2)~~ **DONE 2026-09-17** — a `seen` set now short-circuits an A↔B anchor cycle (which otherwise hangs the row via the shared promise cache); depth cap retained. A dedicated "quote asset impaired" UI copy is optional polish still open.
+- **G19** a11y: ~~44px tap targets (CX-Q1)~~ **DONE 2026-09-17** — all coin-page controls now ≥44×44 (measured 0 sub-target, 0 overflow at 375px; design verified intact); jargon tooltips + custom-error→plain-English (CX-Q2) still open.
+- **G20** Bundle/TTI: ~~split heavy eager chunks (CX-S1)~~ **DONE 2026-09-17** — inner pages (Coin/Launch/Advanced/Home/Profile/Paper) are now lazy route chunks behind a Suspense + chunk-error boundary (Landing stays eager); every route verified to load. Measuring gzipped TTI and adding a client swap deadline (CX-H5) still open.
 - **G21** External-liquidity disclosure (CX-E3, Neil): describe/route the canonical pool, show execution venue, monitor alternate pools, and never promise every trade funds creator/holder rewards. Product decision — pairs with the securities-language work (G4).
 
 ## ALREADY CLOSED (verified this audit)

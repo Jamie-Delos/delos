@@ -108,6 +108,10 @@
 
 /* Quiet pill: Connect wallet / the connected address. */
 .cx-quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;                      /* a11y touch target (CX-Q1) */
   padding: 9px 18px;
   border-radius: var(--census-radius-pill);
   border: 1px solid var(--census-border);
@@ -120,22 +124,28 @@
 }
 .cx-quiet:hover { color: var(--census-text); border-color: rgba(242, 245, 241, 0.34) }
 
-/* Underline text control: sort, timeframe, quick amount, tabs, POST. */
+/* Underline text control: sort, timeframe, quick amount, tabs, POST. The underline is a text-decoration
+   (not a box border) so the control can be a 44px-tall touch target (a11y, CX-Q1) without the underline
+   detaching from the text; the small type keeps the compact look. */
 .cx-link-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;                      /* WCAG 2.5.5 touch target */
+  min-width: 44px;                       /* widens only the narrow chips (0.1, 1, 2%); text controls are already wider */
   font-family: var(--census-font-mono);
   font-size: 11.5px;
   letter-spacing: 0.02em;
   color: var(--census-text-muted);
-  padding-bottom: 5px;
-  border: 0;                             /* buttons ship a UA border — reset it, keep only the underline */
-  border-bottom: 1px solid transparent;
+  border: 0;                             /* buttons ship a UA border — reset it */
   text-decoration: none;
+  text-underline-offset: 4px;            /* sit the underline just under the text, as the old border did */
   background: none;
   cursor: pointer;
 }
-.cx-link-control:hover { color: var(--census-text); }
+.cx-link-control:hover { color: var(--census-text); text-decoration: underline; }
 .cx-link-control[aria-pressed="true"],
-.cx-link-control[aria-current="true"] { color: var(--census-lime); border-bottom-color: var(--census-lime); }
+.cx-link-control[aria-current="true"] { color: var(--census-lime); text-decoration: underline; text-decoration-color: var(--census-lime); }
 
 /* Underline field. No filled input boxes on these screens. */
 .cx-field {

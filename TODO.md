@@ -1,4 +1,9 @@
-# RobinPad — Build To-Do
+# Census — Build To-Do
+
+> **Historical/working list — not the source of truth.** This file predates the curve rebuild and the
+> full audit, so parts of it are superseded (the Phase 0 team deal, the "fee pending / 1% / V4" notes,
+> and the 2026-09-07 addresses). For current status and what blocks mainnet, see
+> `audit/FULL-AUDIT-2026-09-17/` — especially `GATES.md`.
 
 _Living list. Near-term first. Tick as we go._
 
@@ -53,7 +58,7 @@ _Living list. Near-term first. Tick as we go._
 - [x] **Wire the Maxima (v2) launch flow in the frontend** — DONE. `Launch.tsx` calls `LaunchFactoryV2.createLaunch(params, basket, weights, paths, salt)`, mapping the stock picker → `stockRoutes.ts` (address + path), even bps weights (sum 10000), salt=0 for now. Tiers relabelled Prima/Maxima; `factoryV2Abi` + `VITE_FACTORY_V2_ADDRESS` added; typecheck green. (c0de in-browser grind = remaining follow-up: needs the LaunchToken initcode embedded + a worker grind.)
 - [~] Join picker tickers → `stockRoutes` — launch now validates picks against the route table and errors on any not-yet-tradeable stock; graying them out in the picker UI is the remaining polish.
 - [x] Slippage protection on `DividendVault` swaps — DONE (operator-gated `distribute()` takes per-stock `minOut`; `amountOutMinimum` enforced, no longer 0). _(duplicate of the Phase 3 item)_
-- [x] Deploy contracts to Robinhood Chain — **DONE on TESTNET (46630, 2026-09-07).** `npm run rehearse:robinhoodTestnet` deployed our own Uniswap V3 + FeeVault + both lockers + Prima (`0xB3Cf…BbEe`) & Maxima (`0x2FDf…839B`) factories. **Prima launched** `0x54c2…306C0de` (c0de ✓, pool + locked LP), **Maxima launched** `0x4e99…C2aC0de` (c0de ✓, vault `0xA235…327A2`). Frontend wired to testnet (`frontend/.env`), indexer live (board shows both real coins, mock gone). Scripts: `launch.js` (Prima) + `launchV2.js` (Maxima). Mainnet flow same via `:robinhood` + `MAINNET_RUNBOOK.md`.
+- [x] Deploy contracts to Robinhood Chain — **DONE on TESTNET (46630, 2026-09-07).** **[SUPERSEDED: the 2026-09-07 addresses below are historical — the stack was redeployed in the curve rebuild, so treat them as not-live. `launch.js`/`launchV2.js` are also retired (pre-curve ABI); launch via the `/create` wizard or `demoLaunch.js`.]** `npm run rehearse:robinhoodTestnet` deployed our own Uniswap V3 + FeeVault + both lockers + Prima (`0xB3Cf…BbEe`) & Maxima (`0x2FDf…839B`) factories. **Prima launched** `0x54c2…306C0de` (c0de ✓, pool + locked LP), **Maxima launched** `0x4e99…C2aC0de` (c0de ✓, vault `0xA235…327A2`). Frontend wired to testnet (`frontend/.env`), indexer live (board shows both real coins, mock gone). Scripts: `launch.js` (Prima) + `launchV2.js` (Maxima). Mainnet flow same via `:robinhood` + `MAINNET_RUNBOOK.md`.
 - [ ] Remaining testnet lifecycle: buy → graduate → collect fees (drivable in the app with a wallet, or a script). Maxima `distribute()`+`claim()` needs live stock pools = mainnet (already devnet-proven adversarially in `devnetV2.js`).
 - [ ] Wire frontend `.env` to deployed addresses (factory, locker, weth, router, chainId)
 - [ ] Verify contracts on Blockscout

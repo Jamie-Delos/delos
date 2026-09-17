@@ -78,7 +78,7 @@ cd contracts && npm run verify:robinhoodTestnet
 
 ### Not needed for the testnet rehearsal
 - **0x coin-trading** needs the serverless proxy (`ZEROX_API_KEY` on Vercel, or `vercel dev` locally). On testnet, trading falls back to the pool automatically, so you can skip it.
-- **The 2% fee** isn't in this build — testnet runs the current 1% model. The 2% decision needs the Uniswap-V4 path (see notes); it doesn't affect the rehearsal.
+- **The 2% fee is already in this build** — the curve charges a flat 2% (`CensusCurve.FEE_BPS = 200`), split 25% protocol / 75% creator side, on testnet exactly as on mainnet (plus the buy-only launch tax that decays over 3 s). Nothing to configure; you can watch the protocol cut land in the treasury during the rehearsal. No Uniswap fee tier or token tax is involved — all trading is on the curve, so the fee is un-dodgeable.
 
 ### Then mainnet
 Same flow with `:robinhood` scripts (`deploy:robinhood`), a **mainnet** deployer wallet with a little real ETH for gas, and the mainnet `frontend/.env`. Do this only **after the audit**.

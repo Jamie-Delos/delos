@@ -574,7 +574,7 @@ export function Coin() {
               const on = buy === (side === "buy");
               return (
                 <button key={side} onClick={() => { setBuy(side === "buy"); setAmount(side === "buy" ? "0.1" : ""); }} aria-pressed={on}
-                  style={{ background: "none", border: 0, cursor: "pointer", fontSize: 15, paddingBottom: 14, marginBottom: -1,
+                  style={{ background: "none", border: 0, cursor: "pointer", fontSize: 15, paddingTop: 15, paddingBottom: 14, marginBottom: -1,
                     fontWeight: on ? 500 : 400, color: on ? "var(--census-text)" : "var(--census-text-muted)",
                     borderBottom: `1px solid ${on ? "var(--census-lime)" : "transparent"}` }}>
                   {side === "buy" ? "Buy" : "Sell"}

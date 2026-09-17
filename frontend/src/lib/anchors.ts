@@ -89,13 +89,20 @@ async function poolUsdPrice(pc: PublicClient, a: Anchor): Promise<number> {
 }
 
 // USD price of a Census coin: its price in its own anchor (curve spot pre-graduation, the locked pool's
-// spot after) times that anchor's USD price — recursive for coins anchored to coins (depth-capped).
-async function coinUsdPrice(pc: PublicClient, coin: Address, depth: number): Promise<number> {
+// spot after) times that anchor's USD price — recursive for coins anchored to coins. Guarded two ways:
+// a depth cap AND a `seen` set (CX-H2). The cycle guard matters because the shared price cache can hand
+// back an IN-FLIGHT promise for a coin already being priced upstream, so an A↔B anchor pair would await
+// each other forever (a hang) rather than hit the depth cap. On-chain rules prevent cycles today; this
+// makes an accidental one resolve to "—" instead of hanging the row.
+async function coinUsdPrice(pc: PublicClient, coin: Address, depth: number, seen: Set<string>): Promise<number> {
   if (depth > 3 || CONTRACTS.curve === zeroAddress) throw new Error("unpriceable anchor");
+  const key = coin.toLowerCase();
+  if (seen.has(key)) throw new Error("anchor cycle");
+  seen.add(key);
   const cv = await pc.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "curves", args: [coin] });
   if (!cv[10]) throw new Error("not a Census coin");
   const [quote, , , , poolFee, virtualQuote, tokenReserve, , , graduated] = cv;
-  const usdA = await quoteUsdDepth(pc, quote, depth + 1);
+  const usdA = await quoteUsdDepth(pc, quote, depth + 1, seen);
   if (usdA == null) throw new Error("anchor unpriceable");
   const decA = (await quoteInfo(pc, quote)).decimals;
   let priceInA: number;
@@ -111,22 +118,24 @@ async function coinUsdPrice(pc: PublicClient, coin: Address, depth: number): Pro
   return priceInA * usdA;
 }
 
-export const quoteUsdPrice = (pc: PublicClient, a: Anchor): Promise<number> => (a.coin ? coinUsdPrice(pc, a.quote, 0) : poolUsdPrice(pc, a));
+export const quoteUsdPrice = (pc: PublicClient, a: Anchor): Promise<number> => (a.coin ? coinUsdPrice(pc, a.quote, 0, new Set()) : poolUsdPrice(pc, a));
 export const ethUsdPrice = (pc: PublicClient) => poolUsdPrice(pc, ETH);
 
 // USD price of any quote asset by address — menu anchor or Census coin — cached for a minute so the
 // board doesn't re-read pools per row. null when it can't be priced (UI shows "—", never a made-up $).
 const priceCache = new Map<string, { at: number; p: Promise<number | null> }>();
-function quoteUsdDepth(pc: PublicClient, quote: string, depth: number): Promise<number | null> {
+function quoteUsdDepth(pc: PublicClient, quote: string, depth: number, seen: Set<string>): Promise<number | null> {
   const key = quote.toLowerCase();
+  if (seen.has(key)) return Promise.resolve(null); // anchor cycle: this coin is already being priced upstream (CX-H2)
   const hit = priceCache.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit.p;
   const a = anchorByQuote(quote);
-  const p = (a ? poolUsdPrice(pc, a) : coinUsdPrice(pc, quote as Address, depth)).catch(() => null);
+  const p = (a ? poolUsdPrice(pc, a) : coinUsdPrice(pc, quote as Address, depth, seen)).catch(() => null);
   priceCache.set(key, { at: Date.now(), p });
   return p;
 }
-export const cachedQuoteUsd = (pc: PublicClient, quote: string) => quoteUsdDepth(pc, quote, 0);
+// Each top-level lookup starts a fresh `seen` set (the cache is shared and path-independent across them).
+export const cachedQuoteUsd = (pc: PublicClient, quote: string) => quoteUsdDepth(pc, quote, 0, new Set());
 
 // What a quote asset is called and how it's denominated (menu anchor, or an ERC-20 read once).
 export type QuoteInfo = { symbol: string; decimals: number; isCoin: boolean };

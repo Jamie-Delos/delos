@@ -11,7 +11,7 @@ const fs = require("fs");
 const path = require("path");
 
 async function verify(name, address, args) {
-  if (!address) return;
+  if (!address) { console.log(`  - ${name}: no address recorded, skipped`); return; }
   try {
     await hre.run("verify:verify", { address, constructorArguments: args || [] });
     console.log(`  ✓ ${name} ${address}`);
@@ -32,10 +32,14 @@ async function main() {
   const dep = JSON.parse(fs.readFileSync(depFile, "utf8"));
   const v = dep.verify || {};
 
-  console.log(`Verifying launchpad contracts on ${netName} (Blockscout)…`);
-  await verify("FeeVault", dep.FeeVault, v.FeeVault);
-  await verify("LaunchLocker", dep.LaunchLocker, v.LaunchLocker);
-  await verify("LaunchFactory", dep.LaunchFactory, v.LaunchFactory);
+  const names = Object.keys(v);
+  console.log(`Verifying ${names.length} launchpad contract(s) on ${netName} (Blockscout)…`);
+  // Iterate EVERY entry deploy.js recorded in the `verify` map so none are skipped — this now
+  // covers CensusCurve, LaunchFactoryV2, FeeSplitter and DividendVaultDeployer too (CX-V6). The
+  // address is the same-named top-level field; the args are the recorded constructor-args array.
+  for (const [name, args] of Object.entries(v)) {
+    await verify(name, dep[name], args);
+  }
 
   // WETH9 (only exists when we deployed our own Uniswap stack, e.g. testnet).
   const uniFile = path.join(__dirname, "..", `uniswap.${netName}.json`);

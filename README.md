@@ -1,71 +1,95 @@
-# Launchpad
+# Census
 
-A single-sided Uniswap V3 token launchpad — an own-brand, from-scratch rebuild of the NOXA Fun mechanics.
+A token launchpad built on a shared **bonding curve** that graduates filled coins into
+**permanently-locked Uniswap V3 liquidity**. Own-brand rebuild of the NOXA Fun mechanics.
 
-Every token launches **straight into a single-sided Uniswap V3 position** (all token, no quote asset).
-The LP NFT is **locked forever** in the `LaunchLocker`; only *fees* can ever be collected, split between
-the token creator and the protocol. No bonding curve, no migration step, no token tax.
+Every coin launches its **whole fixed supply straight onto the shared `CensusCurve`** — there is no
+DEX pool at launch, so *all* early trading happens on the curve (which is why the fee is
+un-dodgeable). When a coin fills its graduation reserve, the curve migrates the tokens plus the
+raised quote into a Uniswap V3 pool whose LP NFT is **locked forever** in the `LaunchLocker`; only
+*fees* can ever be collected after that. Every Census token address ends in `…c0de` (a CREATE2
+vanity salt bound to the creator).
+
+## Fee model
+
+- **2% trade fee** (`CensusCurve.FEE_BPS = 200`) on every curve buy and sell.
+- Split **25% protocol / 75% creator side** (`PROTOCOL_BPS = 2500`). On Maxima the creator side is
+  further split between the creator and holders by the coin's `holdersBps`; on Prima `holdersBps = 0`,
+  so the whole 75% goes to the creator.
+- A **buy-only launch penalty** (anti-snipe) starts near 99% and **decays to 0 over 3 seconds**
+  (`SNIPE_TAX_SECONDS = 3`), following the same split. The creator and any declared bundle wallets
+  are exempt.
+- Post-graduation Uniswap V3 LP fees are collected through the `LaunchLocker` on the *same*
+  25/75 split (`PROTOCOL_FEE_BPS = 2500`).
+
+## Two flavours
+
+- **Prima** = `LaunchFactory` — a plain coin. The creator side of every fee goes to the creator.
+- **Maxima** = `LaunchFactoryV2` — the same curve launch, but each coin also gets its own
+  `DividendVault`. The holders' share of the fees buys a weighted basket of **tokenised stocks** and
+  pays it out **pro-rata to holders** (an operator/keeper calls `distribute`; anyone can then
+  `claim`). Prima and Maxima share one curve, one locker and one treasury.
+
+## Chain
+
+**Robinhood Chain** — an Arbitrum Orbit L2 with ETH gas. Mainnet `chainId 4663`, testnet
+`chainId 46630`. Uniswap V3 (for the graduated pools) is live on-chain; testnet stands up its own
+Uniswap V3 as part of the rehearsal.
 
 ## Repo layout (monorepo)
 
 ```
-Launchpad/
-  contracts/   Hardhat project — the on-chain engine (Factory, Token, Locker, FeeVault)   <-- built
-  frontend/    React/Vite dApp (launch form, token page, trade, claim fees)               <-- next
-  bot/         Reward/airdrop worker (claim creator fees -> buy reward token -> airdrop)   <-- next
+Census/
+  contracts/   Hardhat — CensusCurve, LaunchFactory (Prima), LaunchFactoryV2 (Maxima),
+               DividendVault, LaunchLocker, FeeVault/FeeSplitter, LaunchToken; deploy.js wires them
+  frontend/    React/Vite dApp — launch wizard (/create), board, coin page (curve trade / graduated
+               pool), portfolio
+  bot/         Keeper — converts curve/LP fees and distributes the Maxima stock-dividend baskets
+  indexer/     Postgres/Prisma + viem event indexer for the board (optional; the board reads the
+               chain directly until VITE_INDEXER_URL is set)
+  audit/       FULL-AUDIT-2026-09-17 — findings, money map, and the mainnet go/no-go GATES
 ```
 
 ## How a launch works
 
-1. `LaunchFactory.createLaunch(...)` deploys a fixed-supply ERC-20 (`LaunchToken`) and mints the whole
-   supply to the factory.
-2. The factory creates + initializes the Uniswap V3 pool `TOKEN/WETH` at a chosen starting price.
-3. It mints a **single-sided** V3 position: 100% of the token supply, 0 WETH, in a tick range placed
-   entirely on the sell side of the starting price. As buyers push the price through the range, the
-   position sells TOKEN for WETH — that WETH accrues to the locked position as tradable liquidity.
-4. The LP NFT is sent to the `LaunchLocker`, which records the creator. The NFT can never be withdrawn.
-5. Anyone can call `LaunchLocker.collectFees(tokenId)` to sweep accumulated V3 swap fees; the vault
-   takes a protocol cut and the rest goes to the creator.
+1. `LaunchFactory.createLaunch(params, salt)` (or `LaunchFactoryV2.createLaunch(params, basket,
+   weights, paths, salt)`) deploys a fixed-supply `LaunchToken` at a `…c0de` CREATE2 address and mints
+   the whole supply to the factory.
+2. The factory transfers the entire supply to the `CensusCurve` and registers the coin (with its
+   `virtualQuote`, `graduationQuote`, pool fee tier, and — on Maxima — its `DividendVault` and basket).
+   The 3-second launch tax window arms on registration.
+3. Buyers trade on the curve (2% fee, split 25/75). The net quote accumulates as the curve's real
+   reserve, which backs the price and seeds the future pool.
+4. Once `realQuote` reaches `graduationQuote`, anyone can call `CensusCurve.graduate(coin)`: it mints a
+   full-range Uniswap V3 position at the curve price and sends the **LP NFT to the `LaunchLocker`,
+   locked forever**.
+5. `LaunchLocker.collectFees(tokenId)` (permissionless) sweeps the graduated pool's swap fees on the
+   25/75 split. On Maxima the keeper converts the holders' share and the vault pays the stock basket.
 
-## Status / roadmap ("rinse and repeat")
+## Deploy
 
-- [x] **Iteration 1 — on-chain engine**: Factory, Token, Locker, FeeVault + Base Sepolia deploy/launch scripts. *(compiles; 4 unit tests pass)*
-- [x] **Iteration 2 — tests**: Base-fork integration test of a full launch + buy + fee claim. *(passes: creator 0.00135 / vault 0.00015 WETH on a 0.5 WETH buy)*
-- [x] **Iteration 3 — frontend**: `frontend/` Vite + React + wagmi/viem dApp — wallet connect, launch form, explore/buy/claim. *(builds clean)*
-- [x] **Iteration 4 — reward bot**: `bot/` claim fees → buy reward token → proportional airdrop, `DRY_RUN=true` by default. *(installs; syntax-clean)*
-- [ ] **Iteration 5 — testnet deploy**: needs a funded Base Sepolia key in `contracts/.env`; then deploy + live launch + wire the frontend `.env`.
-- [ ] **Iteration 6 — mainnet**: after full testnet validation, deploy to a mainnet with Uniswap V3.
-
-## Run the integration test (no wallet needed)
-
-```bash
-cd contracts
-BASE_FORK_RPC_URL=https://mainnet.base.org npx hardhat test test/integration.fork.test.js
-```
-
-## Run the frontend
-
-```bash
-cd frontend && npm install
-cp .env.example .env   # fill VITE_FACTORY_ADDRESS / VITE_LOCKER_ADDRESS after deploy
-npm run dev
-```
-
-## Run the reward bot (dry run)
-
-```bash
-cd bot && npm install
-cp .env.example .env   # fill in LOCKER_ADDRESS / TOKEN_ID / LAUNCH_TOKEN / REWARD_TOKEN
-npm run dry            # simulates everything, moves no funds
-```
-
-## Quick start (contracts)
+Everything is deployed and wired by one script — `contracts/scripts/deploy.js` (FeeVault/FeeSplitter →
+LaunchLocker → CensusCurve → LaunchFactory + LaunchFactoryV2):
 
 ```bash
 cd contracts
 npm install
-cp .env.example .env            # add PRIVATE_KEY + BASE_SEPOLIA_RPC_URL
+cp .env.example .env            # add PRIVATE_KEY + the target network's RPC URL
 npx hardhat compile
-npx hardhat run scripts/deploy.js --network baseSepolia    # deploy factory + locker + vault
-npx hardhat run scripts/launch.js --network baseSepolia    # launch a test token
+npx hardhat run scripts/deploy.js --network robinhoodTestnet   # or robinhood (mainnet)
 ```
+
+- **Testnet, end to end:** see [`TESTNET_RUNBOOK.md`](TESTNET_RUNBOOK.md) (stands up Uniswap V3 + both
+  stacks, launches a Prima and a Maxima coin, buys, graduates, pays + claims a stock dividend — all on
+  free faucet ETH).
+- **Mainnet:** see [`MAINNET_RUNBOOK.md`](MAINNET_RUNBOOK.md), and clear the go/no-go gates in
+  [`audit/FULL-AUDIT-2026-09-17/GATES.md`](audit/FULL-AUDIT-2026-09-17/GATES.md) first.
+
+## Launch a coin
+
+- **Frontend wizard** (the working path users take): `cd frontend && npm run dev`, then open `/create`
+  and pick Prima or Maxima.
+- **Scripted demo:** `npx hardhat run scripts/demoLaunch.js --network <net>` populates the board with a
+  few Prima coins (current curve ABI, `…c0de` addresses, one small buy so the first coin shows a price).
+- **Curve smoke test:** `npx hardhat run scripts/curveProof.js --network <net>` launches a Prima coin
+  and does a small curve buy, confirming the 2% fee (25% of it) lands in the treasury.

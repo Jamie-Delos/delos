@@ -23,6 +23,15 @@ function loadUni(netName) {
 }
 
 async function main() {
+  // CX-V1: SUPERSEDED. This script builds params for the old pre-curve LaunchFactory.createLaunch ABI
+  // (sqrtPriceX96 / tickLower / tickUpper / graduationTick, via computeLaunchParams/computeGraduationTick).
+  // The current LaunchFactory takes LaunchParams{ name, symbol, totalSupply, decimals, poolFee,
+  // virtualQuote, graduationQuote } (see contracts/contracts/LaunchFactory.sol), so this would revert.
+  throw new Error(
+    "SUPERSEDED: scripts/launch.js targets the old pre-curve createLaunch ABI " +
+      "(sqrtPriceX96/tickLower/tickUpper/graduationTick) and no longer matches LaunchFactory. " +
+      "Launch through the frontend launch wizard, or run scripts/demoLaunch.js (current bonding-curve ABI).",
+  );
   const netName = hre.network.name;
   const dep = loadDeployment(netName);
   const uni = loadUni(netName);
