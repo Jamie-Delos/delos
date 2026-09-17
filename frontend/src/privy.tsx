@@ -4,7 +4,7 @@
 // connector state from Privy, so every page's useAccount / useWriteContract / useSignMessage talks to
 // whichever wallet is active — an extension or the embedded wallet.
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { PrivyProvider, useConnectWallet, useCreateWallet, useExportWallet, useLogin, useLogout, usePrivy, useWallets, type PrivyClientConfig, type User } from "@privy-io/react-auth";
+import { PrivyProvider, useConnectWallet, useCreateWallet, useExportWallet, useLogin, useLogout, useModalStatus, usePrivy, useWallets, type PrivyClientConfig, type User } from "@privy-io/react-auth";
 import { WagmiProvider, createConfig, useSetActiveWallet } from "@privy-io/wagmi";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { http, useAccount, useConnections, useDisconnect } from "wagmi";
@@ -61,15 +61,40 @@ function PrivyAuthBridge({ children }: { children: ReactNode }) {
 
   // One modal at a time: each call parks its resolver here until Privy reports success or exit.
   const pending = useRef<((r: ConnectResult) => void) | null>(null);
-  const settle = (r: ConnectResult) => { const p = pending.current; pending.current = null; p?.(r); };
+  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settle = (r: ConnectResult) => {
+    if (watchdog.current) { clearTimeout(watchdog.current); watchdog.current = null; }
+    const p = pending.current; pending.current = null; p?.(r);
+  };
   const preferEmbedded = useRef(false);
 
+  // Never leave a button stuck on "Connecting…": if Privy's modal hasn't opened within 15s the call fails
+  // with a retryable message, and if the modal closes without Privy reporting back, the call settles.
+  const { isOpen: modalOpen } = useModalStatus();
+  const wasOpen = useRef(false);
+  const modalOpenRef = useRef(modalOpen);
+  modalOpenRef.current = modalOpen;
+  useEffect(() => {
+    if (modalOpen) wasOpen.current = true;
+    else if (wasOpen.current) {
+      wasOpen.current = false;
+      // Give Privy's own onSuccess/onError a beat to arrive first.
+      setTimeout(() => { if (pending.current) settle({ ok: false, error: "" }); }, 400);
+    }
+  }, [modalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const armWatchdog = () => {
+    if (watchdog.current) clearTimeout(watchdog.current);
+    watchdog.current = setTimeout(() => {
+      if (pending.current && !modalOpenRef.current) settle({ ok: false, error: "The wallet window didn't open — check your connection and try again." });
+    }, 15000);
+  };
+
   const { connectWallet } = useConnectWallet({
-    onSuccess: async ({ wallet }) => {
+    onSuccess: ({ wallet }) => {
+      settle({ ok: true, error: "" }); // first, so the modal-close watcher can't report a cancel
       // The wallet just connected becomes the one wagmi (and so every page) uses.
       const connected = wallets.find((w) => w.address.toLowerCase() === wallet.address.toLowerCase());
-      if (connected) { try { await setActiveWallet(connected); } catch { /* wagmi keeps its current wallet */ } }
-      settle({ ok: true, error: "" });
+      if (connected) setActiveWallet(connected).catch(() => { /* wagmi keeps its current wallet */ });
     },
     onError: (e) => settle({ ok: false, error: isExit(e) ? "" : "Couldn't connect that wallet — try again." }),
   });
@@ -113,6 +138,7 @@ function PrivyAuthBridge({ children }: { children: ReactNode }) {
       if (!ready) { resolve({ ok: false, error: "Wallet connect is still loading — try again in a moment." }); return; }
       settle({ ok: false, error: "" });
       pending.current = resolve;
+      armWatchdog();
       connectWallet({ walletChainType: "ethereum-only", description: `Connect a wallet on ${CHAIN.name}` });
     }),
     signUp: () => new Promise<ConnectResult>((resolve) => {
@@ -120,6 +146,7 @@ function PrivyAuthBridge({ children }: { children: ReactNode }) {
       if (authenticated) { preferEmbedded.current = true; resolve({ ok: true, error: "" }); return; }
       settle({ ok: false, error: "" });
       pending.current = resolve;
+      armWatchdog();
       login({ loginMethods });
     }),
     signOut: async () => {
