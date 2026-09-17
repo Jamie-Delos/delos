@@ -1,0 +1,41 @@
+# GATES — mainnet go / no-go
+
+Each gate: why it blocks, who owns it, and how to prove it's closed. Ordered by "don't launch without."
+Nothing here is vague enough to argue about later. Testnet is fine today; these are for **real funds**.
+
+## BLOCKING (do not deploy to mainnet with real funds until closed)
+
+| # | Gate | Why | Owner | Proof it's closed |
+|---|------|-----|-------|-------------------|
+| G1 | **Treasury is a FeeSplitter/multisig, not a deployer EOA** (CX-G2) | Unset `FEE_SPLIT_A/B` → all protocol fees withdrawable by one key, immutably | Jamie | `deployments.robinhood.json` `TreasuryKind == "FeeSplitter"` (or a multisig addr); the deploy script *fails* on mainnet if unset |
+| G2 | **Keeper key in HSM/multisig; `KEEPER_ADDRESS` set** (CX-G1, W2) | One keeper key can MEV-drain pending dividends across all vaults | Jamie/Coolio | `curve.keeper()` == the intended address; key custody documented; not an EOA on the deploy laptop |
+| G3 | **Deployer custody + backup** (CX-G3, V4) | Single immutable deployer EOA; lost key = un-administrable forever; lost disk = lost `.env`/`deployments.json` | Jamie | Deployer is a multisig **or** the key + `frontend/.env` + `deployments.*.json` are backed up in ≥2 places; a second person can deploy |
+| G4 | **Securities/trademark counsel sign-off on framing** (CX-X1, X2) | "dividend in real stocks", "taking companies public", real-company impersonation, "Robinhood Chain" branding | Jamie + lawyer | Written legal opinion; copy changed per advice; impersonation blocklist live |
+| G5 | **ToS + privacy policy + risk disclosure + Privy GDPR path** (CX-X3, X4) | None exist; Privy collects email/phone/social PII with no consent/deletion | Jamie | `/terms`, `/privacy`, risk banner live; Privy consent + a documented delete-my-data path |
+| G6 | **Fee decision signed off + docs reconciled** (CX-Z2; user's standing constraint) | 2% 75/25 is hard-coded (`FEE_BPS=200`) but runbook/TODO/fee-model say 1% / pending / 70-30 | Jamie/team | One signed-off number; `TESTNET_RUNBOOK`, `TODO`, `CENSUS_FEE_MODEL`, `deploy.js` all agree; UI label matches |
+| G7 | **Creator/bundle exemption decision** (CX-C1) | Creator + 32 wallets are tax-exempt and uncapped → structural insider position; the fairness story | Jamie/team | A decision on the record: cap exempt buys / vest / or disclose creator allocation in the UI |
+| G8 | **Incident plan + monitoring (no kill switch exists)** (CX-W1, W2) | Contracts are immutable and unpausable; today the response to a drain is "watch it happen" | Jamie | Reserve/solvency monitoring + alerting live; the drafted incident runbook adopted; a status page; a documented non-frontend sell path |
+| G9 | **Rate-limits + spend caps + RPC fallback** (CX-L1/L2/L3, K2, K3) | `/api/zeroex` unauth+unthrottled → 0x key exhaustion; single RPC no fallback; per-wallet-only upload quota | Coolio | Per-IP limits on the endpoints; a Vercel spend alert; a second RPC configured; a keyed RPC never in a `VITE_` var |
+| G10 | **Indexer deployed** (CX-S2, track M) | Home scans logs from block 0 every load → won't scale, hammers the one RPC | Coolio | `VITE_INDEXER_URL` set; board/coin read the indexer; block-0 scan retired |
+| G11 | **Reproducible build + CI builds the frontend** (CX-V2, V3) | `VITE_*` addresses bake from gitignored `.env`; a clean rebuild ships a zero-address site; CI only `tsc`, never `vite build` | Coolio | `deployments.*.json` (or a committed prod-config source) in the repo; CI runs `vite build` + contract tests + lint on every push; a rebuilt bundle matches prod |
+| G12 | **Real Uniswap V3 addresses/tiers + HOOD zap verified on mainnet** (track H; fork tests skipped) | The graduated-pool + ETH-zap depend on the actual RH-Chain Uniswap deployment | Jamie | A mainnet-fork test (or read-only preflight) confirms factory/NPM/router/tiers and the WETH→USDG→HOOD route exist |
+| G13 | **Price/market-cap/min-out off raw `slot0`** (CX-H1, S1) | A manipulable spot (no TWAP) drives displayed price + market cap **and** the on-chain trade `amountOutMinimum` on every graduated/non-ETH coin; thin company-coin pools → real execution loss + fake mcaps | Coolio/Jamie | Price + mcap read a TWAP (or indexer-served); the pool-path `minOut` is derived from a manipulation-resistant reference, not the same-block spot |
+| G14 | **Indexer USD pricing fixed before it's switched on** (CX-M1, S1) | The indexer hardcodes ETH=$3000 and non-ETH anchors=$0; the day `VITE_INDEXER_URL` is set, every USD price/mcap goes wrong | Coolio | Indexer sources a live ETH/USD + anchor prices; a staging check shows correct USD before the flag flips |
+
+## SHOULD-FIX (close before or immediately after launch)
+
+- **G15** Runbooks work if followed literally (CX-Z3): fix the broken scratchpad path, the CensusCurve verify arity, and the stale `launch.js`/`launchV2.js` (CX-V1) they invoke.
+- **G16** README describes the curve system, not the superseded Uniswap design (CX-Z1); `verifyAll.js` covers all contracts (CX-V6); TODO refreshed (CX-Z4).
+- **G17** Unregistered-address coin *shell* → render the not-a-coin error (CX-N1); dedup/impersonation warning + report path (CX-P2); fix the testnet Uniswap wiring 3-way mismatch + un-chain-gated mainnet fallback (CX-H3).
+- **G18** Anchor recursion: add a cycle guard + "quote asset impaired" UI (CX-H2 / DOOM-2).
+- **G19** a11y: 44px tap targets (CX-Q1); jargon tooltips + custom-error → plain English (CX-Q2).
+- **G20** Bundle/TTI: measure gzipped TTI; split heavy eager chunks (CX-S1); swaps carry no client deadline (CX-H5).
+
+## ALREADY CLOSED (verified this audit)
+- **CX-F1** launch front-running — fixed (salt bound to creator), committed `c57156f`, repro passing.
+- The three prior P1s (F01/F02/F03) — fixed and re-verified against real Uniswap V3.
+- No secrets in the bundle (CX-U); no stored XSS (CX-P); no gas-scaling DoS (CX-K6).
+
+## Deferred decisions still unassigned to a named owner + date
+CX-C1 (fairness), CX-Z2 (fee), deferred-fee expiry policy, keeper custody, KV/Blob provisioning, indexer
+hosting, whether 2% ever needs Uniswap V4. **Assign each a name and a date before mainnet.**
