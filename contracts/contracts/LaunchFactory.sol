@@ -24,7 +24,7 @@ contract LaunchFactory {
     // Anti-snipe defaults (armed on the curve; window is in blocks — ~10s at Robinhood Chain's ~0.1s blocks).
     uint256 private constant ANTISNIPE_WINDOW = 100;
     uint16 private constant ANTISNIPE_MAX_WALLET_BPS = 200; // 2% max wallet during the window
-    uint16 private constant ANTISNIPE_MAX_BUY_BPS = 100;    // 1% cumulative buy per wallet during the window
+    uint16 private constant ANTISNIPE_MAX_BUY_BPS = 0;      // no cumulative purchase cap
 
     struct LaunchParams {
         string name;

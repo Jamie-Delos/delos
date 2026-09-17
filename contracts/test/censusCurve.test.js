@@ -205,9 +205,9 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     expect(c.tokenReserve).to.be.gt(PARAMS.totalSupply - E(1)); // ~whole supply back in the curve
   });
 
-  it("anti-snipe: over-cap buy in the window reverts; the exempt creator bypasses it; free after ~10s", async () => {
+  it("anti-snipe: wallet balance cap applies in the window; creator is exempt; free after 100 blocks", async () => {
     const { creator, trader, quote, curve, coin } = await setup();
-    // In-window over-cap buy by a normal wallet reverts (E(1) would buy ~40% of supply, way over the 1% cap).
+    // In-window buy by a normal wallet reverts because it exceeds the 2% wallet balance limit.
     await quote.mint(trader.address, E(1));
     await quote.connect(trader).approve(await curve.getAddress(), E(1));
     await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), 0)).to.be.reverted;

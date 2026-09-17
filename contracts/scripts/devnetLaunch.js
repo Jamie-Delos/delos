@@ -98,7 +98,7 @@ async function main() {
   // --- anti-snipe: an oversized buy inside the restriction window is rejected ---
   let sniped = false;
   try { await buy("0.1"); } catch { sniped = true; }
-  console.log("\n[3b] anti-snipe: oversized buy inside window rejected?", sniped, "(expect true — capped at 1%/wallet)");
+  console.log("\n[3b] anti-snipe: oversized buy inside window rejected?", sniped, "(expect true — 2% wallet balance limit)");
   if (!sniped) throw new Error("anti-snipe FAILED: oversized in-window buy was not blocked");
   await ethers.provider.send("hardhat_mine", ["0x65"]); // fast-forward past the ~100-block window
 
