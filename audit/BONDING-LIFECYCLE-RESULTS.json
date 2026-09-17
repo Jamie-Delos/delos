@@ -1,7 +1,7 @@
 {
-  "date": "2026-09-17T10:03:39.053Z",
+  "date": "2026-09-17T10:32:51.450Z",
   "network": "isolated local Hardhat (31337)",
-  "implementation": "fc83c8f17a602b0e3b042361609191afa82847ee",
+  "implementation": "d13f3d03f68ec6bd5a1c1c032208c60ad69a143f",
   "scenarios": [
     {
       "label": "Prima",
@@ -16,9 +16,9 @@
         {
           "action": "Launch",
           "phase": "curve",
-          "txHash": "0xc59a24522602a3b1eaac608f69df13f92890e1f674d7e5ee7f43953f6c873afd",
+          "txHash": "0x0e3404eaafbc8fe0c9e11cc961fdec4df7b49aefbf727db77068b606be01be86",
           "block": 11,
-          "gasUsed": "1215458",
+          "gasUsed": "1065011",
           "priceEthPerToken": 1.3884297520661157e-9,
           "fdvEth": 1.3884297520661157,
           "curveQuoteEth": 0,
@@ -28,9 +28,9 @@
         {
           "action": "Alice buys with 1 ETH",
           "phase": "curve",
-          "txHash": "0xa34d3bf44cd61b9b97a9141049253b341a7fc82cd24d088976e9d3d11a1beadc",
-          "block": 122,
-          "gasUsed": "198308",
+          "txHash": "0x681ce546c9e4d9e5566937a1eb13382af8ab618d9be0b252eeac370aec3db579",
+          "block": 21,
+          "gasUsed": "203508",
           "priceEthPerToken": 3.795288154269973e-9,
           "fdvEth": 3.7952881542699726,
           "curveQuoteEth": 0.98,
@@ -45,9 +45,9 @@
         {
           "action": "Bob buys with 0.75 ETH",
           "phase": "curve",
-          "txHash": "0x004b080224a49ad8febc86eb27acae347dbb5951ca66a0c65ce25396e20ef6ad",
-          "block": 123,
-          "gasUsed": "129896",
+          "txHash": "0x20b67fde471d466cb481c7a0303c28abfd08d74bea9cd74f55f1f7820dad5828",
+          "block": 22,
+          "gasUsed": "135096",
           "priceEthPerToken": 6.378276584022039e-9,
           "fdvEth": 6.378276584022039,
           "curveQuoteEth": 1.715,
@@ -62,9 +62,9 @@
         {
           "action": "Alice sells 25% of her tokens",
           "phase": "curve",
-          "txHash": "0xa95f4b24a114fbe4c821fa8edfc2281fc4924a62b57977fa7ef36976c231ca23",
-          "block": 124,
-          "gasUsed": "127311",
+          "txHash": "0x86338b47213c307b05ed1f38b076c003f74e85f60db0f43b16c548e5ca6609f7",
+          "block": 23,
+          "gasUsed": "127410",
           "priceEthPerToken": 4.3439421724513515e-9,
           "fdvEth": 4.343942172451351,
           "curveQuoteEth": 1.1532081394510474,
@@ -77,9 +77,9 @@
         {
           "action": "Bob buys with another 1.25 ETH",
           "phase": "curve",
-          "txHash": "0x771e879db54a4af2ae59b650b7476fa7a2443e238837a1000a3fc446d9d82e49",
-          "block": 125,
-          "gasUsed": "112796",
+          "txHash": "0x5d599a05c6973ea579afcff3e05115e865197377411261ccc791674b5f64f5ed",
+          "block": 24,
+          "gasUsed": "117996",
           "priceEthPerToken": 9.281189078596627e-9,
           "fdvEth": 9.281189078596627,
           "curveQuoteEth": 2.3782081394510475,
@@ -94,9 +94,9 @@
         {
           "action": "Carol submits 10 ETH; final fill plus refund",
           "phase": "curve",
-          "txHash": "0xf358a9596846b6484025dce62ca2c5ab3cb590940c7be9a4cb67b2e792770883",
-          "block": 127,
-          "gasUsed": "148741",
+          "txHash": "0x3203d47cb658b7b0dae89bcfac33f8d8a997870f7aa8ffad9b428037efe9f505",
+          "block": 26,
+          "gasUsed": "153939",
           "priceEthPerToken": 1.866666666666667e-8,
           "fdvEth": 18.666666666666668,
           "curveQuoteEth": 4,
@@ -111,9 +111,9 @@
         {
           "action": "Graduation: liquidity deposited and NFT locked",
           "phase": "pool",
-          "txHash": "0xe28fde043828da19bf32555c91488a52cba18826431f319598859b74a24c6fde",
-          "block": 129,
-          "gasUsed": "5406186",
+          "txHash": "0xb4084e0b591f942918c1375f56b46761f3a11c7f1a11311f8d4a051826feea35",
+          "block": 28,
+          "gasUsed": "5406374",
           "priceEthPerToken": 1.866666666666667e-8,
           "fdvEth": 18.666666666666668,
           "curveQuoteEth": 0,
@@ -125,8 +125,8 @@
         {
           "action": "Dave buys in pool with 0.25 ETH",
           "phase": "pool",
-          "txHash": "0xf4ea491712d7f1f407d79e97cd2ffcb7ed9214912be6c62cdfda21c9f845caaa",
-          "block": 135,
+          "txHash": "0x3cc30ace9ad13320910d9709c20b0a47ed1a0b0d2ccb04459e84058a4625f268",
+          "block": 34,
           "gasUsed": "140148",
           "priceEthPerToken": 2.1048132291666667e-8,
           "fdvEth": 21.048132291666665,
@@ -140,8 +140,8 @@
         {
           "action": "Alice sells 30% of remaining tokens in pool",
           "phase": "pool",
-          "txHash": "0x7714b65a647faefeb9e4a79e15fe694e3b3e658bde4b9cf5afa29c293195d002",
-          "block": 136,
+          "txHash": "0xbbc841d3cb0d0082a91c51cc87027b1eb5ac7be15c4ffb53b7a29eba4ce1bb0e",
+          "block": 35,
           "gasUsed": "128457",
           "priceEthPerToken": 9.724071149381613e-9,
           "fdvEth": 9.724071149381613,
@@ -155,8 +155,8 @@
         {
           "action": "Bob buys in pool with 0.6 ETH",
           "phase": "pool",
-          "txHash": "0x1f6f52a35e860f6b64ade5b7631ce16bb91d89ed3d61aa926d604f4656e05ac2",
-          "block": 139,
+          "txHash": "0x68fef25335179e1e6ec4f5c945c6623a55e75c3b7ecca6fb43817f11a8f68aa9",
+          "block": 38,
           "gasUsed": "105920",
           "priceEthPerToken": 1.4137130946150027e-8,
           "fdvEth": 14.137130946150027,
@@ -170,8 +170,8 @@
         {
           "action": "Dave sells half his pool purchase",
           "phase": "pool",
-          "txHash": "0x17a7e8288ee97feaa9960a0b785d048ae493b94ec225d5a930acb5a774b05728",
-          "block": 140,
+          "txHash": "0x9cb6fc8bf0302d8431d112e7ff6ebe64bd1b1171b2541229d3a73bb2c1536b20",
+          "block": 39,
           "gasUsed": "128429",
           "priceEthPerToken": 1.3453268422477862e-8,
           "fdvEth": 13.453268422477862,
@@ -185,8 +185,8 @@
         {
           "action": "LP fees collected and split",
           "phase": "pool",
-          "txHash": "0xfd3f06bd46589a62d3d17324d124d24bba4ae85a22927e963cd15e119902514d",
-          "block": 141,
+          "txHash": "0xec677904f39c956a6710811fb35777f191cbdfe0db394706f7b75e93010653cf",
+          "block": 40,
           "gasUsed": "295863",
           "priceEthPerToken": 1.3453268422477862e-8,
           "fdvEth": 13.453268422477862,
@@ -209,7 +209,7 @@
       ],
       "claims": [],
       "checks": [
-        "Anti-snipe rejects an oversized early buy",
+        "No wallet/buy caps; launch fee starts at 99% and expires after three seconds",
         "Premature graduation rejected",
         "Final buy stops at 4 ETH net and refunds excess; further curve buys rejected",
         "Graduation preserves marginal price, locks LP NFT, disables curve trades and cannot repeat",
@@ -236,9 +236,9 @@
         {
           "action": "Launch",
           "phase": "curve",
-          "txHash": "0xf02880f2d3d06a232bbd9a10c0cc0435ddd875d93672f44e2509021b732e103c",
-          "block": 152,
-          "gasUsed": "3911279",
+          "txHash": "0x61c4862044121866f661d347af9e1d96497bd03e9ab1615ff1d8163dd1b47c32",
+          "block": 51,
+          "gasUsed": "3738288",
           "priceEthPerToken": 1.3884297520661157e-9,
           "fdvEth": 1.3884297520661157,
           "curveQuoteEth": 0,
@@ -248,9 +248,9 @@
         {
           "action": "Alice buys with 1 ETH",
           "phase": "curve",
-          "txHash": "0x7ccebc26f5c52e0f11391d031f7843889abca0a4bbc54d65a813283ca541baa3",
-          "block": 263,
-          "gasUsed": "228448",
+          "txHash": "0x3ed15d993130a014971d953f17709edf1576d41019a2990a48e8c87394d3f187",
+          "block": 61,
+          "gasUsed": "233648",
           "priceEthPerToken": 3.795288154269973e-9,
           "fdvEth": 3.7952881542699726,
           "curveQuoteEth": 0.98,
@@ -265,9 +265,9 @@
         {
           "action": "Bob buys with 0.75 ETH",
           "phase": "curve",
-          "txHash": "0xaea99f2f8ca66674a37e03abc3f388d9ce41fa17da66d4aa5dbe08af33340afa",
-          "block": 264,
-          "gasUsed": "160036",
+          "txHash": "0x5ea5ab0979d1c93b35513b3e4a92e7b0258ebf68e8f350291685e190eb6fce67",
+          "block": 62,
+          "gasUsed": "165236",
           "priceEthPerToken": 6.378276584022039e-9,
           "fdvEth": 6.378276584022039,
           "curveQuoteEth": 1.715,
@@ -282,9 +282,9 @@
         {
           "action": "Alice sells 25% of her tokens",
           "phase": "curve",
-          "txHash": "0xdf4e797fbd03ce63a18f2cfb81f72762865ad16bfc76422c1120ba55ee8fd29c",
-          "block": 265,
-          "gasUsed": "155343",
+          "txHash": "0x3adb7c1d453afbb633f02246d862dca6a02bde513b5ec3ef337aaa0b908260d9",
+          "block": 63,
+          "gasUsed": "155442",
           "priceEthPerToken": 4.3439421724513515e-9,
           "fdvEth": 4.343942172451351,
           "curveQuoteEth": 1.1532081394510474,
@@ -297,9 +297,9 @@
         {
           "action": "Bob buys with another 1.25 ETH",
           "phase": "curve",
-          "txHash": "0xd73727ed81fc053bd0f277fcd61fb87475e3e04f45ba28558c1ec9d993fee7c5",
-          "block": 266,
-          "gasUsed": "142936",
+          "txHash": "0x1f7976133e0cf21813208389dd7bcab81ccd5c95f96e010008c5dc5c4b513269",
+          "block": 64,
+          "gasUsed": "148136",
           "priceEthPerToken": 9.281189078596627e-9,
           "fdvEth": 9.281189078596627,
           "curveQuoteEth": 2.3782081394510475,
@@ -314,9 +314,9 @@
         {
           "action": "Carol submits 10 ETH; final fill plus refund",
           "phase": "curve",
-          "txHash": "0x77f41e6015498ebef97227d5fe2dd9e7107de80607f40f70d6c19bf9bf0104d8",
-          "block": 273,
-          "gasUsed": "218681",
+          "txHash": "0x7acaba1137fb03363a0a0505fefa578b22e80d10f86fed8a880f1dd49460811a",
+          "block": 71,
+          "gasUsed": "223879",
           "priceEthPerToken": 1.866666666666667e-8,
           "fdvEth": 18.666666666666668,
           "curveQuoteEth": 4,
@@ -331,9 +331,9 @@
         {
           "action": "Graduation: liquidity deposited and NFT locked",
           "phase": "pool",
-          "txHash": "0xeb66a131475688db0c0db64ccce38442578d2742cbacbcddff6ae52dd37ddbde",
-          "block": 275,
-          "gasUsed": "5565685",
+          "txHash": "0xf3b71a945527d1e431ff69fcf7117bb3a24d1adc1fd452a6b2dfa8c7dc03fd3c",
+          "block": 73,
+          "gasUsed": "5565873",
           "priceEthPerToken": 1.866666666666667e-8,
           "fdvEth": 18.666666666666668,
           "curveQuoteEth": 0,
@@ -345,8 +345,8 @@
         {
           "action": "Dave buys in pool with 0.25 ETH",
           "phase": "pool",
-          "txHash": "0x4e9e7aec5c0e51fcce2875bb7afaae9d390cda089067e362791f08d9a3af1920",
-          "block": 281,
+          "txHash": "0x25119393a12b102cc14d4721282ef760e72ca15934ce98a955d9e14c7cd792c5",
+          "block": 79,
           "gasUsed": "208832",
           "priceEthPerToken": 2.104813229166667e-8,
           "fdvEth": 21.04813229166667,
@@ -360,8 +360,8 @@
         {
           "action": "Alice sells 30% of remaining tokens in pool",
           "phase": "pool",
-          "txHash": "0x1926ac8b610c9f9fc8f9d568d3b658cf563540f1d391f186ce67c72a694811cc",
-          "block": 282,
+          "txHash": "0x3637adc9615c60b17dc746cb8fe65a66f44e6917418c91360cb9e93bfe1b8dd1",
+          "block": 80,
           "gasUsed": "237881",
           "priceEthPerToken": 9.724071149381613e-9,
           "fdvEth": 9.724071149381613,
@@ -375,8 +375,8 @@
         {
           "action": "Bob buys in pool with 0.6 ETH",
           "phase": "pool",
-          "txHash": "0x3b9ae37c444cceb8accc7ae63b69c4cb0703f57a988171b745036111ebf10ee7",
-          "block": 285,
+          "txHash": "0x7a0d5f9bd226530e7bf17cd92519a1585a1ce59f401c074f201bc431f88049eb",
+          "block": 83,
           "gasUsed": "219204",
           "priceEthPerToken": 1.4137130946150029e-8,
           "fdvEth": 14.137130946150029,
@@ -390,8 +390,8 @@
         {
           "action": "Dave sells half his pool purchase",
           "phase": "pool",
-          "txHash": "0x51baee016bbeacd60c6ebca4f37525ef93f4d320ffd3b954c50ac5fad608bb6e",
-          "block": 286,
+          "txHash": "0x19fba50970c4ac235534a88257ab03ae27562aeb874495f7182fc980d6c0770b",
+          "block": 84,
           "gasUsed": "163853",
           "priceEthPerToken": 1.3453268422477858e-8,
           "fdvEth": 13.453268422477858,
@@ -405,8 +405,8 @@
         {
           "action": "LP fees collected and split",
           "phase": "pool",
-          "txHash": "0x396ca211febe33b8367d0e92731b3986210a84d6c92919d215b025cbf28c81a9",
-          "block": 287,
+          "txHash": "0x645c838dac623ecd6b8041cccb9bca5062b76c41db4da7f910c85c2af39ae4b9",
+          "block": 85,
           "gasUsed": "405057",
           "priceEthPerToken": 1.3453268422477858e-8,
           "fdvEth": 13.453268422477858,
@@ -417,9 +417,9 @@
         {
           "action": "Holder token-fees converted to WETH",
           "phase": "pool",
-          "txHash": "0x48560420c2745e4a24a5b32649240cc5990228a6ff7a6a9dd0890190eb0046e2",
-          "block": 288,
-          "gasUsed": "142367",
+          "txHash": "0x3e9018d5857b82c4b4482cb6506f922dcb7354f08ceac04b9b1dda56d312c595",
+          "block": 86,
+          "gasUsed": "142510",
           "priceEthPerToken": 1.3372664433608643e-8,
           "fdvEth": 13.372664433608643,
           "curveQuoteEth": 0,
@@ -446,53 +446,53 @@
           "stage": "curve",
           "holder": "Alice",
           "amountEth": 0.02582121679233871,
-          "txHash": "0x6acce4d7d90d08cf6979795b21f2843877fca5cd2d60fda94a1e837b515c043e"
+          "txHash": "0x7a88253f156b72790352d9e2611a49a59d8378cfe3f342f4658601a5c466f1b4"
         },
         {
           "stage": "curve",
           "holder": "Bob",
           "amountEth": 0.0276056607724143,
-          "txHash": "0xbc6bf139c1a2968b8c4f48bb9a5c3b5c22e9c3ea7cd1cf5971c075d933588594"
+          "txHash": "0xab379b81638cb6f6ef8e9a20b772a8bba0c33cf4f7ba8c5be46e7d58fe7df9aa"
         },
         {
           "stage": "curve",
           "holder": "Carol",
           "amountEth": 0,
-          "txHash": "0xc3161ae4ec85bbbc09fa8bf4b8102a6a2d6a858b36db8dc5b71d9d3ed6f6196a"
+          "txHash": "0xbe0db5f39669738f361d597863cd52f35c01608f6f5824dd0897f549fe41c5c6"
         },
         {
           "stage": "curve",
           "holder": "Dave",
           "amountEth": 0,
-          "txHash": "0x888ee93181a47826e4295c6d0c7d6259b2e96a53177ba68a4a291557e0dab284"
+          "txHash": "0xe4f77ac6cee19e454063832c09494df57ef14867d5bef8ab1b6f2357e85ad77e"
         },
         {
           "stage": "afterGraduation",
           "holder": "Alice",
           "amountEth": 0.012420618170413306,
-          "txHash": "0x3b79fffa5cbc35eaac51a620a1dc178c8f0f79d61c0ee7224713418fa02189d8"
+          "txHash": "0x0af6ea0ee33e51221fb2195136369bdde3c216eb0a4668c226bbc110dc2aee02"
         },
         {
           "stage": "afterGraduation",
           "holder": "Bob",
           "amountEth": 0.021777495455640845,
-          "txHash": "0x783379b6a9536901d2de558ae9d543818723e5cecc6099b9853598d566327137"
+          "txHash": "0x7830925caf9f6462e91d8d82d5586263f0c98f21bfbf76b6649772824dbb3008"
         },
         {
           "stage": "afterGraduation",
           "holder": "Carol",
           "amountEth": 0.006828134784475364,
-          "txHash": "0x9358d1995688dc1119dc6116ccf91da65dfd34d7535f8d92eaeb86b766a27289"
+          "txHash": "0x8d4e4e5db57aaed576ec4f38232dbc81baf02135751861b1fbc1b43d6937022d"
         },
         {
           "stage": "afterGraduation",
           "holder": "Dave",
           "amountEth": 0.000345976980660892,
-          "txHash": "0x788066bafd115abbc90d28daa6cb1b846ed71ec5f7c99aa93cea96b260365666"
+          "txHash": "0x685d13f7a2b0f1daee07e33addbf13a0d45b79b861e104c20997393c378b42bb"
         }
       ],
       "checks": [
-        "Anti-snipe rejects an oversized early buy",
+        "No wallet/buy caps; launch fee starts at 99% and expires after three seconds",
         "Premature graduation rejected",
         "Final buy stops at 4 ETH net and refunds excess; further curve buys rejected",
         "Graduation preserves marginal price, locks LP NFT, disables curve trades and cannot repeat",
@@ -522,9 +522,9 @@
         {
           "action": "Launch",
           "phase": "curve",
-          "txHash": "0x6dc55e1d9fd8dd41286af4fd99fb210cadc16dd543e014f1aaff0b4ee46ce073",
-          "block": 305,
-          "gasUsed": "3911255",
+          "txHash": "0x4f007e5742b85ec804fa33caef968c8d616d5dfcc9140f6fe7986a67f01e594f",
+          "block": 103,
+          "gasUsed": "3738264",
           "priceEthPerToken": 1.3884297520661157e-9,
           "fdvEth": 1.3884297520661157,
           "curveQuoteEth": 0,
@@ -534,9 +534,9 @@
         {
           "action": "Alice buys with 1 ETH",
           "phase": "curve",
-          "txHash": "0xf0ae99e9bea5e05e50fe715806abbb867a63f103aa9ad96220624bba850cbddd",
-          "block": 416,
-          "gasUsed": "254642",
+          "txHash": "0x8830457c3e6f22b0f9df7567abad0b1566b720c87638d1f1b223dfd63c6803d6",
+          "block": 113,
+          "gasUsed": "259842",
           "priceEthPerToken": 3.795288154269973e-9,
           "fdvEth": 3.7952881542699726,
           "curveQuoteEth": 0.98,
@@ -551,9 +551,9 @@
         {
           "action": "Bob buys with 0.75 ETH",
           "phase": "curve",
-          "txHash": "0xf83e4d5b8335ba9f56ca44ed1952ee229e0564b9a078c5885f96fc2c47fbd6f2",
-          "block": 417,
-          "gasUsed": "169130",
+          "txHash": "0xc51182707814396d329460f05ed61a09eb753b9485f617e42d1e98ae21856616",
+          "block": 114,
+          "gasUsed": "174330",
           "priceEthPerToken": 6.378276584022039e-9,
           "fdvEth": 6.378276584022039,
           "curveQuoteEth": 1.715,
@@ -568,9 +568,9 @@
         {
           "action": "Alice sells 25% of her tokens",
           "phase": "curve",
-          "txHash": "0xe083a8e01e522edf7e72695033ba4435a40f9503cb02b2b6dfe44c30628423ed",
-          "block": 418,
-          "gasUsed": "166437",
+          "txHash": "0x3c9ab759fc2d8f8dfbcf758d01d2023a541bdcf4516cb1d80c730cb51f379fcf",
+          "block": 115,
+          "gasUsed": "166536",
           "priceEthPerToken": 4.3439421724513515e-9,
           "fdvEth": 4.343942172451351,
           "curveQuoteEth": 1.1532081394510474,
@@ -583,9 +583,9 @@
         {
           "action": "Bob buys with another 1.25 ETH",
           "phase": "curve",
-          "txHash": "0xfd476ef199975283e0f07b240adfdbc0ec0cefcbd3de89f2b6f0172b3c12b800",
-          "block": 419,
-          "gasUsed": "152030",
+          "txHash": "0x42056cb8a6a508c6abad9ba41214d268d3b0aa0991e3705879ebda0f3875f83b",
+          "block": 116,
+          "gasUsed": "157230",
           "priceEthPerToken": 9.281189078596627e-9,
           "fdvEth": 9.281189078596627,
           "curveQuoteEth": 2.3782081394510475,
@@ -600,9 +600,9 @@
         {
           "action": "Carol submits 10 ETH; final fill plus refund",
           "phase": "curve",
-          "txHash": "0xbc24e3a0f53287eed0f1dd984b1ae5edd2415ae36b139150bbcdf0137acc6f2d",
-          "block": 426,
-          "gasUsed": "227775",
+          "txHash": "0x08007b291756ff9279ed961f9f4da14b34aca8b1f3e0c969d23c72a9f0ee9573",
+          "block": 123,
+          "gasUsed": "232973",
           "priceEthPerToken": 1.866666666666667e-8,
           "fdvEth": 18.666666666666668,
           "curveQuoteEth": 4,
@@ -617,9 +617,9 @@
         {
           "action": "Graduation: liquidity deposited and NFT locked",
           "phase": "pool",
-          "txHash": "0x6c70f297d0539f0026851bf105d5688717d0052967a783df8a81142fa7d76b39",
-          "block": 428,
-          "gasUsed": "5566349",
+          "txHash": "0xd2385fd99149c1f91a9e47d28a72a04051abdb11cc428bcc9ab4030702b9bedf",
+          "block": 125,
+          "gasUsed": "5566537",
           "priceEthPerToken": 1.866666666666667e-8,
           "fdvEth": 18.666666666666668,
           "curveQuoteEth": 0,
@@ -631,8 +631,8 @@
         {
           "action": "Dave buys in pool with 0.25 ETH",
           "phase": "pool",
-          "txHash": "0x4e4ac1f2b619ebae3df8e5f2d2b9f3e2262fe28122ba166c148ba3a37edb2999",
-          "block": 434,
+          "txHash": "0xef03dcb98ea95fe09f1b619900c03890d2db4de1eea26a523af088329e5f409e",
+          "block": 131,
           "gasUsed": "210007",
           "priceEthPerToken": 2.1048132291666667e-8,
           "fdvEth": 21.048132291666665,
@@ -646,8 +646,8 @@
         {
           "action": "Alice sells 30% of remaining tokens in pool",
           "phase": "pool",
-          "txHash": "0xe011351975d713a3c998efdcf14b6cb1f04306fcdb2ef3f09f1fc512056048ea",
-          "block": 435,
+          "txHash": "0x944988ee1dc321e1340c4621b898103ba9b809859497dc51f31da587d90f4ed7",
+          "block": 132,
           "gasUsed": "238008",
           "priceEthPerToken": 9.724071149381613e-9,
           "fdvEth": 9.724071149381613,
@@ -661,8 +661,8 @@
         {
           "action": "Bob buys in pool with 0.6 ETH",
           "phase": "pool",
-          "txHash": "0xfa0e9d1a064521346c073e1d3d761f2bb255ceecce606eabc7436f11e92dc624",
-          "block": 438,
+          "txHash": "0xf4bc0b61e6190fd0aba6b8d309ffc295e59f50d42d3f49c158148748e5c88f8d",
+          "block": 135,
           "gasUsed": "220379",
           "priceEthPerToken": 1.4137130946150027e-8,
           "fdvEth": 14.137130946150027,
@@ -676,8 +676,8 @@
         {
           "action": "Dave sells half his pool purchase",
           "phase": "pool",
-          "txHash": "0x286ddb346e7c66b1f8add1bd51fada8f842328f5e2806f9f1c706b285e3ca4d2",
-          "block": 439,
+          "txHash": "0x7565f510db4e09ebed4bc0d72f1fc94482475d195468bc62bc7e4c3fc547aac3",
+          "block": 136,
           "gasUsed": "163980",
           "priceEthPerToken": 1.3453268422477862e-8,
           "fdvEth": 13.453268422477862,
@@ -691,8 +691,8 @@
         {
           "action": "LP fees collected and split",
           "phase": "pool",
-          "txHash": "0xadcae07f6e91321772e15c60a64c971d48d39b2389f749ffaa685a35e3c2efcb",
-          "block": 440,
+          "txHash": "0xdab717d5ef9ff5a9edcaff996d168dc962fe5a24d97b9753e5f5933f82a465d8",
+          "block": 137,
           "gasUsed": "495809",
           "priceEthPerToken": 1.3453268422477862e-8,
           "fdvEth": 13.453268422477862,
@@ -703,9 +703,9 @@
         {
           "action": "Holder token-fees converted to WETH",
           "phase": "pool",
-          "txHash": "0x5b92e08b89e7caefce1b765a3598eb59861986491776c7f62b83377dd0012d9f",
-          "block": 441,
-          "gasUsed": "141482",
+          "txHash": "0x0e74482546676638a0c7e6b3331dbadd5b0a316a4658a0a36575cfbe8281b011",
+          "block": 138,
+          "gasUsed": "141625",
           "priceEthPerToken": 1.3412875606232421e-8,
           "fdvEth": 13.41287560623242,
           "curveQuoteEth": 0,
@@ -732,53 +732,53 @@
           "stage": "curve",
           "holder": "Alice",
           "amountEth": 0.012910608396169355,
-          "txHash": "0x27b472d090c0fc00da855f86e8a032a22e078a08a0a8561b3ec1aa57ba12fe5c"
+          "txHash": "0xe46bffa61bca3b8d336ad3f9cfb7d04ac9fed82c4d8d310438bba7354e5e0153"
         },
         {
           "stage": "curve",
           "holder": "Bob",
           "amountEth": 0.01380283038620715,
-          "txHash": "0xbf7160f9ae90650ed7c9f37c7807eee00d4db3ce14ad67c031d9a02c7d3c5bf1"
+          "txHash": "0x68e17662d9d40ac15e8220b49ce00acd5d27bd6d01e7a83d46e6cb4b7d99121c"
         },
         {
           "stage": "curve",
           "holder": "Carol",
           "amountEth": 0,
-          "txHash": "0x4c2b799410eb268f12e9fd4873485dd54afe1eaad17b02e04a00f8a39943739d"
+          "txHash": "0x80aceaee8cba1c2d9e97202f1d1723cb78983a8a38ba728a82d024d597e79d25"
         },
         {
           "stage": "curve",
           "holder": "Dave",
           "amountEth": 0,
-          "txHash": "0xee7fba66a49e790d654adcca1bbead4b8c9b90a1fc57ad60820cadefe24c3e25"
+          "txHash": "0x99aaca7900c7ae1a28f2759bbb8aea21bed8ebdbb134af4d90e15079ec6da731"
         },
         {
           "stage": "afterGraduation",
           "holder": "Alice",
           "amountEth": 0.006209416149117944,
-          "txHash": "0xc9791972b05fe5a67673b0f72d1580d5904ba93680d629b0f399c543ddbaa4b9"
+          "txHash": "0x3419d82235b53ba64bacf2dc75ac0453855dbfe029af17af801baf0368d6843d"
         },
         {
           "stage": "afterGraduation",
           "holder": "Bob",
           "amountEth": 0.010887182112377837,
-          "txHash": "0x5b915b1cc6d896f50aae7a4768c9587741755afdd2a6bcba95797e18c81d5f2b"
+          "txHash": "0x0e56339a4833170fb1480afd84dd5c4fbb0bfbc023f3d2ff0031bb5971f43748"
         },
         {
           "stage": "afterGraduation",
           "holder": "Carol",
           "amountEth": 0.00341357650781599,
-          "txHash": "0xc085f8e9ef25b674ef09a23afb14e113320660591d96a5f6f2234e949c76299b"
+          "txHash": "0xa6a293edb0394fd8a4a5ff928d8f748754e18cba0158c8196791c40537e9faf6"
         },
         {
           "stage": "afterGraduation",
           "holder": "Dave",
           "amountEth": 0.000172963617548137,
-          "txHash": "0xa49f62fd8d38528dd129ee900504e716ac119554dc19c268f0e0b8423c76f7c6"
+          "txHash": "0xa64f4433ad070f42ddf7430195f2deaeb28d9a79621548cc506ae6ede65687e0"
         }
       ],
       "checks": [
-        "Anti-snipe rejects an oversized early buy",
+        "No wallet/buy caps; launch fee starts at 99% and expires after three seconds",
         "Premature graduation rejected",
         "Final buy stops at 4 ETH net and refunds excess; further curve buys rejected",
         "Graduation preserves marginal price, locks LP NFT, disables curve trades and cannot repeat",

@@ -1,6 +1,6 @@
 # Bonding lifecycle rehearsal
 
-Executed 2026-09-17T10:03:39.053Z against implementation fc83c8f17a602b0e3b042361609191afa82847ee.
+Executed 2026-09-17T10:32:51.450Z against implementation d13f3d03f68ec6bd5a1c1c032208c60ad69a143f.
 All transactions used fake funds on an isolated local chain with actual Census and Uniswap V3 bytecode. No public-chain transactions.
 This tests contract behavior, not browser UX, live issuer assets, external routing, or production infrastructure.
 
@@ -28,7 +28,7 @@ Venue quote balances include uncollected LP fees after graduation. FDV is margin
 Final curve buy: 1.65489 ETH accepted, 8.34511 ETH returned. Graduation price change: 0.000e+0%.
 LP fee collection: 0.0085 WETH and 1,022,991.158309 launch tokens.
 
-- PASS: Anti-snipe rejects an oversized early buy
+- PASS: No wallet/buy caps; launch fee starts at 99% and expires after three seconds
 - PASS: Premature graduation rejected
 - PASS: Final buy stops at 4 ETH net and refunds excess; further curve buys rejected
 - PASS: Graduation preserves marginal price, locks LP NFT, disables curve trades and cannot repeat
@@ -59,7 +59,7 @@ Final curve buy: 1.65489 ETH accepted, 8.34511 ETH returned. Graduation price ch
 LP fee collection: 0.0085 WETH and 1,022,991.158309 launch tokens.
 Rewards pushed: 0.053427 WETH before graduation; 0.041372 WETH in the later batch (includes the final curve buy plus collected LP revenue).
 
-- PASS: Anti-snipe rejects an oversized early buy
+- PASS: No wallet/buy caps; launch fee starts at 99% and expires after three seconds
 - PASS: Premature graduation rejected
 - PASS: Final buy stops at 4 ETH net and refunds excess; further curve buys rejected
 - PASS: Graduation preserves marginal price, locks LP NFT, disables curve trades and cannot repeat
@@ -91,7 +91,7 @@ Final curve buy: 1.65489 ETH accepted, 8.34511 ETH returned. Graduation price ch
 LP fee collection: 0.0085 WETH and 1,022,991.158309 launch tokens.
 Rewards pushed: 0.026713 WETH before graduation; 0.020683 WETH in the later batch (includes the final curve buy plus collected LP revenue).
 
-- PASS: Anti-snipe rejects an oversized early buy
+- PASS: No wallet/buy caps; launch fee starts at 99% and expires after three seconds
 - PASS: Premature graduation rejected
 - PASS: Final buy stops at 4 ETH net and refunds excess; further curve buys rejected
 - PASS: Graduation preserves marginal price, locks LP NFT, disables curve trades and cannot repeat
