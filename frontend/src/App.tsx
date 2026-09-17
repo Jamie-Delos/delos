@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, useLocation, useNavigate, Link } from "react-router-dom";
-import { AppShell, Tape, CensusConnect, Icon } from "./census";
+import { AppShell, Tape, CensusConnect, Icon, WalletPicker } from "./census";
 import { Home } from "./pages/Home";
 import { Launch } from "./pages/Launch";
 import { Coin } from "./pages/Coin";
@@ -43,9 +43,11 @@ function TopBar({ path }: { path: string }) {
 export function App() {
   const loc = useLocation();
   // The brand splash and the full-page launch wizard (/create, /create/<step>) render bare (no app chrome).
-  if (loc.pathname === "/") return <Landing />;
-  if (loc.pathname === "/create" || loc.pathname.startsWith("/create/")) return <Launch />;
-  return (
+  const page = loc.pathname === "/" ? (
+    <Landing />
+  ) : loc.pathname === "/create" || loc.pathname.startsWith("/create/") ? (
+    <Launch />
+  ) : (
     <AppShell active={activeKey(loc.pathname)} topbar={<TopBar path={loc.pathname} />}>
       <Routes>
         <Route path="/home" element={<Home />} />
@@ -58,4 +60,6 @@ export function App() {
       </Routes>
     </AppShell>
   );
+  // The wallet picker is one host for every "Connect wallet" in the app, including the bare pages.
+  return <>{page}<WalletPicker /></>;
 }

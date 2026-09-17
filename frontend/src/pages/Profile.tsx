@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useAccount, useBalance } from "wagmi";
+import { useAccount, useBalance, useDisconnect } from "wagmi";
 import { type Address } from "viem";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
@@ -18,7 +18,9 @@ export function Profile() {
   const { address: param } = useParams();
   const { address: me } = useAccount();
   const { connect, connecting, error: connectError } = useWalletConnect();
+  const { disconnect } = useDisconnect();
   const addr = (param || me) as Address | undefined;
+  const isMine = !!me && (!param || param.toLowerCase() === me.toLowerCase());
   const [tab, setTab] = useState<"created" | "held" | "replies">("created");
   const [copied, setCopied] = useState(false);
 
@@ -59,6 +61,8 @@ export function Profile() {
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 14 }}>
             <h1 className="cx-num" style={{ margin: 0, fontWeight: 400, fontSize: 31, letterSpacing: "-0.01em" }}>{shortAddr(addr)}</h1>
             <button className="cx-link-control" onClick={copy} aria-label="Copy address">{copied ? "Copied" : <Icon name="copy" size={16} />}</button>
+            {/* Lets people switch wallets: disconnect, then "Connect wallet" shows the picker again. */}
+            {isMine && <button className="cx-link-control" onClick={() => disconnect()}>Disconnect</button>}
           </div>
         </div>
       </div>

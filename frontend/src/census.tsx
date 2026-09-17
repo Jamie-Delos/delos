@@ -4,7 +4,7 @@
  * mono/tabular; coin avatars are the real image or a FLAT tile (never metal); anchors/stocks always use
  * the real logo; a value we do not have renders as "—", never 0 or a fabricated number.
  */
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAccount, useConnect, useSwitchChain } from "wagmi";
 import { CHAIN as CONFIG_CHAIN } from "./config";
@@ -145,37 +145,106 @@ const MOBILE_TABS = [
   { key: "profile", label: "Profile", icon: "profile", to: "/profile" },
 ];
 
-// One wallet-connect flow, shared by the app chrome (CensusConnect), the coin page and the launch
-// wizard, so "Connect wallet" behaves identically everywhere. It opens the wallet FIRST (no chainId),
-// then best-effort switches to Robinhood Chain — decoupling the two means a network add/switch hiccup
-// can never stop the wallet window from opening. Errors come back as clear text, never silence.
+/* -------- wallet picker: one host (mounted in App), opened by useWalletConnect -------- */
+export type WalletOption = { id: string; name: string; icon?: string; hint?: string };
+type PickerState = { open: boolean; title: string; options: WalletOption[]; resolve: ((id: string | null) => void) | null };
+let picker: PickerState = { open: false, title: "", options: [], resolve: null };
+const pickerSubs = new Set<() => void>();
+const setPicker = (s: PickerState) => { picker = s; pickerSubs.forEach((f) => f()); };
+const pickWallet = (title: string, options: WalletOption[]) => new Promise<string | null>((resolve) => setPicker({ open: true, title, options, resolve }));
+const closePicker = (id: string | null) => { picker.resolve?.(id); setPicker({ open: false, title: "", options: [], resolve: null }); };
+
+export function WalletPicker() {
+  const s = useSyncExternalStore((cb) => { pickerSubs.add(cb); return () => { pickerSubs.delete(cb); }; }, () => picker);
+  useEffect(() => {
+    if (!s.open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closePicker(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [s.open]);
+  if (!s.open) return null;
+  return (
+    <div className="cx-modal-backdrop" onClick={() => closePicker(null)} role="presentation">
+      <div className="cx-modal" role="dialog" aria-modal="true" aria-label={s.title} onClick={(e) => e.stopPropagation()}>
+        <div className="cx-label" style={{ marginBottom: 14 }}>{s.title}</div>
+        <div className="cx-wallets">
+          {s.options.map((o) => (
+            <button key={o.id} className="cx-wallet" onClick={() => closePicker(o.id)}>
+              {o.icon
+                ? <img src={o.icon} alt="" width={28} height={28} style={{ borderRadius: 8 }} />
+                : <span className="cx-avatar" style={{ width: 28, height: 28, fontSize: 11, borderRadius: 8 }}>{o.name.slice(0, 1)}</span>}
+              <span style={{ minWidth: 0 }}>
+                <span className="cx-wallet__name">{o.name}</span>
+                {o.hint && <span className="cx-wallet__hint">{o.hint}</span>}
+              </span>
+              <span className="cx-label" aria-hidden="true">→</span>
+            </button>
+          ))}
+        </div>
+        <button className="cx-link-control" style={{ marginTop: 16 }} onClick={() => closePicker(null)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// Plain mobile Safari/Chrome inject no wallet; the big wallet apps' in-app browsers do. Each link opens
+// the current page inside that app, where "Connect wallet" then works like on desktop.
+function mobileWalletLinks(): (WalletOption & { href: string })[] {
+  const enc = encodeURIComponent(window.location.href);
+  const bare = window.location.host + window.location.pathname + window.location.search + window.location.hash;
+  const hint = "Opens this page inside the app";
+  return [
+    { id: "metamask", name: "MetaMask", hint, href: `https://metamask.app.link/dapp/${bare}` },
+    { id: "phantom", name: "Phantom", hint, href: `https://phantom.app/ul/browse/${enc}?ref=${encodeURIComponent(window.location.origin)}` },
+    { id: "trust", name: "Trust Wallet", hint, href: `https://link.trustwallet.com/open_url?coin_id=60&url=${enc}` },
+    { id: "coinbase", name: "Coinbase Wallet", hint, href: `https://go.cb-w.com/dapp?cb_url=${enc}` },
+  ];
+}
+
+// One wallet-connect flow, shared by the app chrome (CensusConnect), the coin page, the profile and the
+// launch wizard, so "Connect wallet" behaves identically everywhere. Wallets are discovered via
+// EIP-6963 (one connector per installed extension — MetaMask, Phantom, Trust, Rabby…); with several
+// installed the user picks, instead of silently getting whichever one won the window.ethereum race. It
+// opens the wallet FIRST (no chainId), then best-effort switches to Robinhood Chain — decoupling the two
+// means a network add/switch hiccup can never stop the wallet window from opening. Errors come back as
+// clear text, never silence.
 export function useWalletConnect() {
   const { connectAsync, connectors } = useConnect();
+  const { connector: active } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const connect = useCallback(async (): Promise<{ ok: boolean; error: string }> => {
     setError("");
-    const injectedC = connectors.find((c) => c.type === "injected") ?? connectors[0];
+    const discovered = connectors.filter((c) => c.type === "injected" && c.id !== "injected"); // EIP-6963: one per wallet
+    const generic = connectors.find((c) => c.id === "injected"); // whatever owns window.ethereum (older extensions, in-app browsers)
     const hasProvider = typeof window !== "undefined" && !!(window as any).ethereum;
-    if (!injectedC || !hasProvider) {
-      // Mobile browsers (Safari/Chrome) have no injected wallet — a plain "retry" is a dead end. Open the
-      // page inside a wallet app's in-app browser (MetaMask), where a provider IS injected and connect works.
+    let connector = discovered.length === 1 ? discovered[0] : undefined;
+    if (discovered.length > 1) {
+      const id = await pickWallet("Choose a wallet", discovered.map((c) => ({ id: c.id, name: c.name, icon: c.icon })));
+      if (!id) return { ok: false, error: "" };
+      connector = discovered.find((c) => c.id === id);
+    }
+    if (!connector && hasProvider && generic) connector = generic;
+    if (!connector) {
       const isMobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       if (isMobile && typeof window !== "undefined") {
-        const target = window.location.host + window.location.pathname + window.location.search + window.location.hash;
-        window.location.href = `https://metamask.app.link/dapp/${target}`;
-        const m = "Opening your wallet app…";
+        const links = mobileWalletLinks();
+        const id = await pickWallet("Open in your wallet app", links);
+        const link = links.find((l) => l.id === id);
+        if (!link) return { ok: false, error: "" };
+        window.location.href = link.href;
+        const m = `Opening ${link.name}…`;
         setError(m);
         return { ok: false, error: m };
       }
-      const m = "No wallet detected. Install MetaMask or another browser wallet, unlock it, then retry.";
+      const m = "No wallet detected. Install MetaMask, Phantom or another browser wallet, unlock it, then retry.";
       setError(m);
       return { ok: false, error: m };
     }
     setConnecting(true);
     try {
-      await connectAsync({ connector: injectedC });                       // opens the wallet
+      await connectAsync({ connector });                                  // opens the chosen wallet
       try { await switchChainAsync({ chainId: CHAIN.id }); } catch { /* stay connected; the tx re-prompts the switch */ }
       setConnecting(false);
       return { ok: true, error: "" };
@@ -193,16 +262,20 @@ export function useWalletConnect() {
 
   // Make sure the wallet is on Robinhood Chain before a tx. Without this a user connected to Ethereum
   // mainnet would be asked to pay real gas there and the tx would fail — there are no Census contracts
-  // on Ethereum. Returns false (with a clear error) if the switch is declined.
+  // on Ethereum. Returns false (with a clear error) if the switch is declined. Phantom ships Robinhood
+  // Chain built in but off by default, and can't add networks, so its message says where the switch is.
   const ensureChain = useCallback(async (): Promise<boolean> => {
     try {
       await switchChainAsync({ chainId: CHAIN.id });
       return true;
     } catch {
-      setError(`Switch your wallet to ${CHAIN.name} to continue.`);
+      const phantom = /phantom/i.test(active?.name ?? "");
+      setError(phantom
+        ? `Switch Phantom to ${CHAIN.name}: Settings → Active Networks → turn on ${CHAIN.name}, then retry.`
+        : `Switch your wallet to ${CHAIN.name} to continue.`);
       return false;
     }
-  }, [switchChainAsync]);
+  }, [switchChainAsync, active]);
 
   return { connect, connecting, error, ensureChain };
 }
