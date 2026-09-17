@@ -10,6 +10,7 @@ async function main() {
   const { keccak256 } = require('viem');
   const wallet = privateKeyToAccount('0x' + '31'.repeat(32));
   const other = privateKeyToAccount('0x' + '32'.repeat(32));
+  const w3 = privateKeyToAccount('0x' + '33'.repeat(32));
 
   // Fake KV (INCR/EXPIRE) REST endpoint.
   const counters = {};
@@ -22,6 +23,7 @@ async function main() {
       let reply = { result: null };
       if (kvFail) reply = { error: 'ERR' };
       else if (cmd[0] === 'INCR') { counters[cmd[1]] = (counters[cmd[1]] ?? 0) + 1; reply = { result: counters[cmd[1]] }; }
+      else if (cmd[0] === 'INCRBY') { counters[cmd[1]] = (counters[cmd[1]] ?? 0) + Number(cmd[2]); reply = { result: counters[cmd[1]] }; }
       else if (cmd[0] === 'EXPIRE') reply = { result: 1 };
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(reply));
@@ -95,6 +97,17 @@ async function main() {
   check(r.code === 500 && !JSON.stringify(r.body).includes('blob-secret-token'), 'provider errors never leak');
   check(errors.some((e) => e.includes('[upload] request failed')), 'provider errors are logged');
   putFail = false;
+
+  // CX-L3: a global daily byte cap across ALL wallets, so a sybil can't fill the store with fresh keys.
+  for (const k in counters) delete counters[k]; // fresh day counters for a deterministic cap
+  process.env.UPLOAD_DAILY_BYTES = '20'; // read per-call; one 12-byte image fits, two exceed
+  t = now();
+  r = await post({ image, address: w3.address, signature: await sign(w3, { issuedAt: t }), issuedAt: t });
+  check(r.code === 200, 'first upload under the global byte cap');
+  r = await post({ image, address: w3.address, signature: await sign(w3, { issuedAt: t }), issuedAt: t });
+  check(r.code === 429 && /capacity/i.test(r.body.message), 'global daily byte cap enforced across wallets');
+  delete process.env.UPLOAD_DAILY_BYTES;
+  for (const k in counters) delete counters[k];
 
   delete process.env.BLOB_READ_WRITE_TOKEN;
   check((await post({ image, address: wallet.address, signature: await sign(wallet), issuedAt: now() })).code === 503, 'no blob token -> fail closed');

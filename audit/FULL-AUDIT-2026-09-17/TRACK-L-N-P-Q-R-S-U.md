@@ -30,7 +30,9 @@ proxy (fixed `price|quote` path + `ALLOWED_PARAMS` allowlist), so this is abuse-
 short cache to `quote` misses or a global QPS ceiling. **TEST** A loop of N calls returns 429 after the
 budget.
 
-### CX-L2 — S3 (easy) — `/api/metadata` POST costs an RPC read + KV op per attempt, unthrottled
+### CX-L2 — S3 (easy) — `/api/metadata` POST costs an RPC read + KV op per attempt, unthrottled — **FIXED 2026-09-17**
+**STATUS: FIXED.** `frontend/api/metadata.ts` now applies the same per-IP fixed-window rate limit (`METADATA_RATE_PER_MIN` default 30) to POST, **before** the signature recover + on-chain read, so a scripted caller can't abuse the RPC/function budget. Fail-open (a POST already 503s without KV). Tested in `api.metadata.test.cjs` (6th POST from one IP → 429; a different IP is not throttled). Original finding below.
+
 **WHERE** `frontend/api/metadata.ts:131-145`. **WHAT HAPPENS** A well-formed 130-hex signature recovers
 to *some* address (cheap), then the handler always does `getChainId` + `curves()` `readContract` against
 `CENSUS_RPC_URL` before the creator check rejects it. No rate limit → an attacker forces one RPC round
@@ -39,7 +41,9 @@ trip (and KV GET) per request, abusing the single RPC (track K) and function-inv
 per-IP rate limit; optionally a cheap pre-check (KV existence) before the RPC. GET is fine (public,
 10 s cache).
 
-### CX-L3 — S3 (cost) — Upload quota is per-wallet with no global cap → sybil fill of Blob
+### CX-L3 — S3 (cost) — Upload quota is per-wallet with no global cap → sybil fill of Blob — **FIXED 2026-09-17**
+**STATUS: FIXED.** `frontend/api/upload.ts` now enforces a global daily byte cap across all wallets (`UPLOAD_DAILY_BYTES` default 500 MB) via a KV `INCRBY` counter, on top of the per-wallet count quota, so a sybil with many free wallets can't slowly fill Blob. Tested in `api.upload.test.cjs` (a second upload that pushes the day's bytes over the cap → 429 "capacity"). Still recommend a Vercel spend alert as the ultimate backstop (G9). Original finding below.
+
 **WHERE** `frontend/api/upload.ts:88-99`. **WHAT HAPPENS** Uploads are gated by signature + a per-wallet
 daily KV quota (default 20 × ≤1.5 MB). Wallets are free, so an attacker with N wallets stores
 ~30·N MB/day; there is **no global cap and no spend alert**. **PROOF** DERIVED. **BLAST RADIUS** Slow,
@@ -83,7 +87,7 @@ Verified by reading `Coin.tsx:233-329` and live testing:
 - PROVEN (live): a malformed address (`#/coin/0xdeadbeef`) shows a clean error ("That's not a coin address … ends in c0de"); no console errors on landing, board, or coin pages.
 - DERIVED: `trade()` has a `busy` re-entry guard (`:234`), ordered validation (connected → canTrade → amount → balance → quote), `ensureChain()` before every trade, human-readable status at each await, `friendly(e)` maps user-rejection to "Cancelled in your wallet." (no hex dump), and `finally{ setBusy(false) }` so it can't hang on a spinner. **Success ("Bought ✓") renders only AFTER `waitForTransactionReceipt` — the UI does not fake success.** Button is `disabled={busy || !canTrade}`.
 - **CX-A1 (from the A–G pass) — MITIGATED on the curve path, but see CX-H1 for the pool path:** `Coin.tsx:243` sets `minOut = quoteOut·(1−2%)` and passes it as the real `minTokensOut`/`minEthOut` to `buyWithETH`/`sellForETH` (`:258,278`). **Pre-graduation this is solid** — `quoteOut` comes from the deterministic on-chain curve quote (`quoteBuyFor`/`quoteSell`), so the floor is real and the zap's internal `amountOutMinimum:0` is covered. **Post-graduation it is weak** — `quoteOut` there comes from the *manipulable* Uniswap `slot0` spot (`poolSpotOut`), so "2% of a manipulable number" gives little protection on a thin company-coin pool (this is track H's **CX-H1**, an S1). Net: CX-A1 is contract-side defence-in-depth on the curve; the real execution-safety gap is CX-H1 on graduated/non-ETH pools.
-- **CX-N1 — S3:** a well-formed but **unregistered** address renders a full "Unknown token" coin *shell* (live-confirmed at `#/coin/0x1111…1111`) rather than an error, and its fee labels disagree (trade panel "Fee (1%)" via the pool-fee branch vs curve-facts "2%"). Trading is correctly blocked (`tradeBlock="This address isn't a Census coin"`), so it's cosmetic — but the shell could make a phishing link look like a real Census coin. **FIX** Render the not-a-coin error for unresolved/unregistered addresses instead of the shell.
+- **CX-N1 — S3 — FIXED 2026-09-17:** a well-formed but **unregistered** address used to render a full "Unknown token" coin *shell* a phishing link could pass off as a real launch. `Coin.tsx` now renders an honest "Not a Census coin" page for a confirmed miss, and — crucially — a **separate** "Couldn't reach the chain" retry state for an RPC failure (I fixed `useCoinQuote` to set a distinct `error` flag instead of conflating an RPC throw with "not registered", which also closes part of CX-M4 for the coin page). Live-verified: registered coin → full page; `0x1111…1111` → "Not a Census coin"; `0xdead` → "That's not a coin address". The old 1%/2% fee-label mismatch was on the shell and is now moot.
 - **CX-N2 — S4:** the curve buy(non-ETH)/sell paths always send an `approve` tx without checking existing allowance (`:265,275`), unlike the graduated path (`:299`). Wastes a signature+gas on repeat trades. **FIX** Read allowance first, approve only if short.
 - **CX-N3 — S3 (see track K):** the UI resolves at 1 soft confirmation (`waitForTransactionReceipt`, default) — on this ~100 ms-block L2 with ~13-min hard finality, a "✓" trade can in principle be reordered/voided before batch posting. Normal for a launchpad, but worth a "pending finality" nuance for large trades.
 

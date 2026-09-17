@@ -13,6 +13,7 @@ export type CoinQuote = {
   quote: Address; // the anchor/quote token the coin trades against
   isV2: boolean; // Maxima (has a rewards vault) vs Prima
   resolved: boolean; // true once the curve registry has been read (registered or not)
+  error?: boolean; // the curve read threw (RPC down) — distinct from a confirmed "not registered"
   name?: string; // real on-chain token name
   symbol?: string;
   routed?: boolean; // registered on the CensusCurve (curves(coin).exists)
@@ -31,7 +32,8 @@ export type CoinQuote = {
 
 // Read the coin's CensusCurve state (curves(coin)) — the authoritative anchor, pool-fee tier, vault
 // flag and graduation state — plus its real ERC-20 name/symbol/supply.
-export function useCoinQuote(coin?: string): CoinQuote {
+// `nonce` lets a caller force a re-read (e.g. a Retry button after an RPC failure).
+export function useCoinQuote(coin?: string, nonce = 0): CoinQuote {
   const pc = usePublicClient();
   const [info, setInfo] = useState<CoinQuote>({ quote: CONTRACTS.weth, isV2: false, resolved: false });
 
@@ -78,10 +80,10 @@ export function useCoinQuote(coin?: string): CoinQuote {
           routed: true,
           resolved: true,
         }));
-      } catch { if (!cancelled) setInfo((prev) => ({ ...prev, resolved: true, routed: false })); }
+      } catch { if (!cancelled) setInfo((prev) => ({ ...prev, resolved: true, error: true })); } // couldn't read — NOT a confirmed "not a coin"
     })();
     return () => { cancelled = true; };
-  }, [pc, coin]);
+  }, [pc, coin, nonce]);
 
   return info;
 }

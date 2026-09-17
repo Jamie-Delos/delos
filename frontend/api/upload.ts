@@ -95,6 +95,18 @@ export default async function handler(req: any, res: any) {
     if (n === 1) await kv(["EXPIRE", key, 2 * 86400]);
     if (n > quota) return res.status(429).json({ message: "daily upload quota reached for this wallet" });
 
+    // Global daily byte cap (CX-L3): the per-wallet quota above still lets a sybil (many free wallets)
+    // slowly fill the store, so cap total bytes/day across everyone as a backstop. Reserve-then-check;
+    // a rejected upload's bytes stay counted until the counter expires (bounded over-count, self-heals).
+    const bytesCap = Number(process.env.UPLOAD_DAILY_BYTES || 500_000_000); // 500 MB/day, all wallets
+    const bytesKey = `census:upload:bytes:${chain}:${day}`;
+    const totalBytes = await kv(["INCRBY", bytesKey, buf.length]);
+    if (totalBytes?.unavailable) return res.status(503).json({ message: "image store not provisioned" });
+    const tb = Number(totalBytes?.result);
+    if (!Number.isFinite(tb)) { console.error("[upload] KV INCRBY rejected", totalBytes?.error ?? totalBytes); return res.status(502).json({ message: "quota store rejected the request" }); }
+    if (tb === buf.length) await kv(["EXPIRE", bytesKey, 2 * 86400]);
+    if (tb > bytesCap) return res.status(429).json({ message: "daily image capacity reached — try again later" });
+
     const name = `census/${chain}/${address.toLowerCase()}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const { url } = await deps.put(name, buf, { access: "public", contentType: mime, token: blobToken });
     return res.status(200).json({ url });

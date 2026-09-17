@@ -39,7 +39,8 @@ export function Coin() {
   const { writeContractAsync } = useWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
   const { signMessageAsync } = useSignMessage();
-  const cq = useCoinQuote(coinAddr);
+  const [retryNonce, setRetryNonce] = useState(0); // bumped by the "couldn't reach the chain" retry
+  const cq = useCoinQuote(coinAddr, retryNonce);
 
   const [buy, setBuy] = useState(true);
   const [amount, setAmount] = useState("0.1");
@@ -378,6 +379,30 @@ export function Coin() {
       <div className="cx-panel cx-empty">
         <div className="cx-empty__title">That's not a coin address</div>
         <div className="cx-empty__body">A Census coin address is 42 characters long and ends in c0de. Check the link and try again.</div>
+        <Link className="cx-cta" style={{ marginTop: 26 }} to="/board">Open the market</Link>
+      </div>
+    );
+  }
+
+  // The registry read failed (RPC down) — a retry state, NOT "not a coin" (CX-N1/CX-M4: never mask an
+  // outage as emptiness). Distinct from a confirmed miss below.
+  if (hasCurve && cq.resolved && cq.error) {
+    return (
+      <div className="cx-panel cx-empty">
+        <div className="cx-empty__title">Couldn't reach the chain</div>
+        <div className="cx-empty__body">We couldn't read this coin from {CHAIN.name} just now. Check your connection and try again.</div>
+        <button className="cx-cta" style={{ marginTop: 26 }} onClick={() => setRetryNonce((n) => n + 1)}>Retry</button>
+      </div>
+    );
+  }
+
+  // A real, well-formed address that is not a Census coin — show the honest error, not a blank coin
+  // shell that a phishing link could pass off as a real launch (CX-N1).
+  if (hasCurve && cq.resolved && !registered) {
+    return (
+      <div className="cx-panel cx-empty">
+        <div className="cx-empty__title">Not a Census coin</div>
+        <div className="cx-empty__body">{shortAddr(coinAddr)} isn't a coin launched on Census. Only Census launches trade here.</div>
         <Link className="cx-cta" style={{ marginTop: 26 }} to="/board">Open the market</Link>
       </div>
     );

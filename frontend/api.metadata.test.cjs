@@ -18,6 +18,7 @@ async function main() {
 
   const kvCommands = [];
   let kvStore = {};
+  const rlCounters = {}; // INCR counters for the per-IP write rate limit
   let rpcChainHex = '0x1237'; // 4663
   let kvSetReply = () => 'OK';
   // One local server plays both the JSON-RPC node and the Upstash KV REST endpoint.
@@ -51,6 +52,8 @@ async function main() {
       let reply = { result: null };
       if (parsed[0] === 'SET') { const r = kvSetReply(); if (r === 'OK') kvStore[parsed[1]] = parsed[2]; reply = r === 'OK' ? { result: 'OK' } : { error: r }; }
       if (parsed[0] === 'GET') reply = { result: kvStore[parsed[1]] ?? null };
+      if (parsed[0] === 'INCR') { rlCounters[parsed[1]] = (rlCounters[parsed[1]] ?? 0) + 1; reply = { result: rlCounters[parsed[1]] }; }
+      if (parsed[0] === 'EXPIRE') reply = { result: 1 };
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(reply));
     });
@@ -63,6 +66,7 @@ async function main() {
   process.env.CENSUS_CURVE_ADDRESS = CURVE;
   process.env.KV_REST_API_URL = base;
   process.env.KV_REST_API_TOKEN = 'test-token';
+  process.env.METADATA_RATE_PER_MIN = '5'; // low so the burst test is short; existing checks use unique IPs
 
   const mod = require('./.test-build/metadata.cjs');
   const handler = mod.default;
@@ -85,7 +89,10 @@ async function main() {
   const hashOf = (m) => keccak256(stringToBytes(JSON.stringify({ name: m.name, thesis: m.thesis, description: m.description, image: m.image })));
   const sign = (account, { chain = 4663, token = TOKEN, m = meta, issuedAt = now() } = {}) =>
     account.signMessage({ message: metadataMessage(chain, token, hashOf(m), issuedAt) });
-  const post = async (body) => { const r = res(); await handler({ method: 'POST', body }, r); return r; };
+  // Each POST gets a unique IP by default so existing checks don't accumulate on the per-IP rate limit;
+  // the burst test below pins one IP to trip it.
+  let ipSeq = 0;
+  const post = async (body, ip) => { const r = res(); await handler({ method: 'POST', body, headers: { 'x-forwarded-for': ip || `10.0.0.${++ipSeq}` } }, r); return r; };
   let checks = 0;
   const check = (cond, msg) => { assert.ok(cond, msg); checks++; };
 
@@ -163,6 +170,13 @@ async function main() {
   process.env.CENSUS_RPC_URL = `${base}/rpc`;
 
   // 14. Fail closed when verification is unconfigured; no silent mainnet default for the chain id (M10).
+  // CX-L2: per-IP write rate limit — a burst from one IP is throttled before the recover/RPC work.
+  const rlT = now();
+  let rl;
+  for (let i = 0; i < 6; i++) rl = await post({ address: TOKEN, chainId: 4663, metadata: meta, signature: await sign(creator, { issuedAt: rlT }), issuedAt: rlT }, '9.9.9.9');
+  check(rl.code === 429 && /too many/i.test(rl.body.message), 'per-IP metadata write rate limit enforced (6th from one IP)');
+  check((await post({ address: TOKEN, chainId: 4663, metadata: meta, signature: await sign(creator, { issuedAt: now() }), issuedAt: now() }, '9.9.9.8')).code !== 429, 'a different IP is not throttled');
+
   delete process.env.CENSUS_RPC_URL;
   check((await post({ address: TOKEN, chainId: 4663, metadata: meta, signature: await sign(creator), issuedAt: now() })).code === 503, 'missing RPC config must fail closed');
   process.env.CENSUS_RPC_URL = `${base}/rpc`;

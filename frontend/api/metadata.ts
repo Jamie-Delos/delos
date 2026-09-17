@@ -73,12 +73,37 @@ async function kv(command: unknown[]): Promise<any> {
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
   if (!url || !token) return { unavailable: true };
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(command),
-  });
-  return r.json();
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(command),
+    });
+    return await r.json();
+  } catch {
+    return { unavailable: true };
+  }
+}
+
+// Per-IP write rate limit (CX-L2): a signed POST costs a signature recover + an on-chain readContract +
+// KV ops, so an unthrottled caller can abuse the single RPC and function budget with well-formed-but-wrong
+// signatures. Fail-open: a POST already fails closed (503) without KV, so this never weakens anything.
+const METADATA_RATE_PER_MIN = Number(process.env.METADATA_RATE_PER_MIN || 30);
+function clientIp(req: any): string {
+  const xff = req.headers?.["x-forwarded-for"];
+  if (typeof xff === "string" && xff.length) return xff.split(",")[0].trim();
+  const xr = req.headers?.["x-real-ip"];
+  if (typeof xr === "string" && xr.length) return xr.trim();
+  return "unknown";
+}
+async function rateLimited(req: any): Promise<boolean> {
+  const key = `census:meta:rl:${clientIp(req)}:${Math.floor(Date.now() / 60000)}`;
+  const counted = await kv(["INCR", key]);
+  if (counted?.unavailable) return false;
+  const n = Number(counted?.result);
+  if (!Number.isFinite(n)) return false;
+  if (n === 1) await kv(["EXPIRE", key, 120]);
+  return n > METADATA_RATE_PER_MIN;
 }
 
 /// Read the coin's on-chain creator. "unconfigured" when the curve/RPC isn't set, "mismatch" when the
@@ -121,6 +146,9 @@ export default async function handler(req: any, res: any) {
       const now = Math.floor(Date.now() / 1000);
       if (!Number.isSafeInteger(issuedAt) || issuedAt > now + FUTURE_SKEW_S) return res.status(400).json({ message: "bad timestamp" });
       if (issuedAt < now - SIGNATURE_TTL_S) return res.status(400).json({ message: "signature expired" });
+
+      // Throttle before the signature recover + on-chain read, so a scripted caller can't abuse them.
+      if (await rateLimited(req)) { res.setHeader("retry-after", "60"); return res.status(429).json({ message: "too many requests — slow down and retry" }); }
 
       const clean = cleanMetadata(body.metadata);
       const contentHash = keccak256(stringToBytes(JSON.stringify(clean)));
