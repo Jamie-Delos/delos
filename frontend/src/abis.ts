@@ -62,6 +62,36 @@ export const erc20Abi = parseAbi([
 export const v3FactoryAbi = parseAbi([
   "function getPool(address tokenA,address tokenB,uint24 fee) view returns (address pool)",
 ]);
+// Uniswap V3 QuoterV2 — simulates a swap and returns the real output INCLUDING price impact (unlike a
+// spot read). Declared `view` locally so viem can eth_call it; on-chain it is non-view (it reverts to
+// unwind the simulated swap), which eth_call runs fine. Used to quote/bound direct-pool trades.
+export const quoterV2Abi = [
+  {
+    type: "function",
+    name: "quoteExactInputSingle",
+    stateMutability: "view",
+    inputs: [
+      {
+        type: "tuple",
+        name: "params",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "amountIn", type: "uint256" },
+          { name: "fee", type: "uint24" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
+    ],
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
+] as const;
+
 export const poolAbi = parseAbi([
   "function slot0() view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,uint8 feeProtocol,bool unlocked)",
   "function token0() view returns (address)",

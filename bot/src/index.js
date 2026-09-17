@@ -12,6 +12,10 @@ const { ERC20_ABI, LOCKER_ABI, ROUTER_ABI, WETH_ABI, discoverHolders, computeAir
 function log(...a) { console.log(...a); }
 
 async function main() {
+  // RETIRED for live use (CX-G1, flagged in Neil's audit): the swap below uses amountOutMinimum: 0 — no
+  // slippage protection, full MEV exposure. Live runs are refused; use src/keeper0x.js (0x with a real
+  // minOut) or src/keeperd.js instead. Dry-run inspection (DRY_RUN unset) is still allowed.
+  if (!cfg.DRY_RUN) throw new Error("RETIRED: this reward loop swaps with amountOutMinimum:0 (no slippage protection). Do not run it live — use src/keeper0x.js / src/keeperd.js.");
   log(`\n=== Launchpad reward loop === ${cfg.DRY_RUN ? "[DRY RUN — no funds will move]" : "[LIVE]"}`);
 
   const provider = new ethers.JsonRpcProvider(cfg.RPC_URL);

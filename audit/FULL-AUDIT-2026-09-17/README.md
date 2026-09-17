@@ -6,7 +6,17 @@ V3. What blocks mainnet is not a core exploit — it is economics, law, and oper
 exempt "fair" launch, a manipulable price feed, no kill switch, no monitoring, a securities-shaped
 pitch with no terms, and a build only one laptop can reproduce.** Testnet is fine to keep running.
 
-Two things were fixed during/after the audit: **CX-F1 (launch front-running) — committed `c57156f`.** **CX-H1 (manipulable spot price feed) — TWAP feed added 2026-09-17, `test/audit.twap.test.js` passing.**
+Fixed during/after the audit (committed + pushed): **CX-F1** (launch front-running, `c57156f`), **CX-H1**
+(manipulable price feed — TWAP display + oracle growth + trade deviation guard, `a2ffb81`, **and** its
+price-impact residual that Neil's audit surfaced — QuoterV2 impact-aware trade quoting + user slippage,
+`test/audit.priceimpact.test.js`), **CX-L1/L2/L3** (API cost-abuse — rate limits + chain cap + upload
+byte cap), and **CX-N1** (honest not-a-coin / RPC-retry pages).
+
+**Independent cross-audit (Neil, 17 Sep, commit `a2ffb81`):** reached the same verdict and the same P0
+set as this report (strong cross-validation), confirmed the CX-F1/CX-H1 fixes are present and tested,
+and added two items this pass had missed or under-weighted — the QuoterV2 price-impact residual (now
+fixed, above) and **CX-E3** external-liquidity fee leakage (now folded in below). Both verified against
+the code.
 
 Scope: every Solidity contract + deploy wiring (A–G, read line-by-line, suite run, maths re-derived);
 the serverless API, frontend, wallets, bundle, chain, indexer, integrations, build/ops, legal, and
@@ -18,9 +28,10 @@ lives in the track files listed at the bottom; this page is the verdict.
 | ID | Track | The defect |
 |----|-------|-----------|
 | CX-C1 | C | Creator + 32-wallet bundle are **tax-exempt and uncapped** on the curve — every launch is structurally an insider position; the "fair launch" story is false. |
-| CX-H1 | H | Price, market cap **and** the on-chain trade `minOut` all come from a manipulable Uniswap `slot0` spot (no TWAP), on every graduated / non-ETH coin. Thin company-coin pools → fake mcaps + real execution loss. — **FIXED 2026-09-17** (graduation grows the oracle buffer; display/mcap read a TWAP; trades blocked when spot deviates >10% from the TWAP). |
+| CX-H1 | H | Price/mcap/trade `minOut` from a manipulable `slot0` spot (no TWAP) on graduated/non-ETH coins — fake mcaps + reverts/loss. — **FIXED** (TWAP display + oracle growth + >10% deviation guard; QuoterV2 impact-aware trade quoting + user slippage). Mainnet activation of the impact-aware path needs `VITE_QUOTER` set (G13). |
 | CX-M1 | M | The indexer hardcodes ETH = **$3000** and other anchors = **$0**; the day it's switched on, every USD price is wrong. |
 | CX-X1 | X | Securities-shaped pitch — "taking companies public on-chain", "a coin that pays a **dividend in real stocks**" — with no terms, disclosure, or counsel. Existential legal risk. |
+| CX-E3 | E | (Neil) Launch tokens are freely transferable, so external pools/aggregators bypass Census fees — "every trade funds creator/holder rewards" is false. Disclosure + routing decision. |
 
 ## The S2s (core-journey / operational blockers)
 

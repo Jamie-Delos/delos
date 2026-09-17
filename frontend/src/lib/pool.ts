@@ -9,7 +9,7 @@
 // spot but is gated by poolTwapDeviationBps (a spot far from the TWAP = manipulation/instability → block).
 import { zeroAddress, type Address, type PublicClient } from "viem";
 import { CONTRACTS, DEFAULT_FEE } from "../config";
-import { v3FactoryAbi, poolAbi } from "../abis";
+import { v3FactoryAbi, poolAbi, quoterV2Abi } from "../abis";
 
 type PoolInfo = { pool: Address; token0: Address };
 const cache = new Map<string, PoolInfo | null>();
@@ -83,6 +83,28 @@ export async function poolSpotOut(pc: PublicClient, tokenIn: Address, tokenOut: 
   if (!p) return null;
   const r = await poolRawPrice(pc, p.pool, spotOnly);
   return r == null ? null : outFromRaw(r.raw, tokenIn, p.token0, amountIn, fee);
+}
+
+// Real, price-impact-aware output for swapping `amountIn` of tokenIn for tokenOut through the pool, via
+// Uniswap V3 QuoterV2 (it simulates the actual swap). This is what the trade estimate + minimum-out
+// should use: unlike the spot/TWAP estimate above (which ignores price impact), it won't cause a normal
+// trade on a shallow pool to revert against a too-tight buffer. null when no QuoterV2 is configured
+// (see CONTRACTS.quoter) or the quote reverts (no route / no liquidity) — the caller then falls back to
+// the impact-free estimate, protected by the user's slippage.
+export async function poolQuoteOut(pc: PublicClient, tokenIn: Address, tokenOut: Address, amountIn: bigint, fee = DEFAULT_FEE): Promise<bigint | null> {
+  if (CONTRACTS.quoter === zeroAddress || amountIn <= 0n) return null;
+  try {
+    const res = await pc.readContract({
+      address: CONTRACTS.quoter,
+      abi: quoterV2Abi,
+      functionName: "quoteExactInputSingle",
+      args: [{ tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96: 0n }],
+    });
+    const out = res[0] as bigint;
+    return out > 0n ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 // How far the live spot has moved from the TWAP, in bps — the instability/manipulation signal used to

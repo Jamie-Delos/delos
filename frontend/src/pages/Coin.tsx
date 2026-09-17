@@ -6,7 +6,7 @@ import { CONTRACTS, DEFAULT_FEE, CHAIN, TRADE_FEE_BPS, TRADE_FEE_LABEL } from ".
 import { wethAbi, erc20Abi, swapRouterAbi, censusCurveAbi, vaultAbi } from "../abis";
 import { zeroExPrice, zeroExQuote, allowanceSpender, routeSummary } from "../lib/zeroex";
 import { cachedQuoteUsd, quoteInfo, type QuoteInfo } from "../lib/anchors";
-import { poolSpotOut, poolTwapDeviationBps } from "../lib/pool";
+import { poolSpotOut, poolQuoteOut, poolTwapDeviationBps } from "../lib/pool";
 import { useCoinQuote } from "../lib/useCoinQuote";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
@@ -15,7 +15,8 @@ import { curveSpot } from "../lib/curveOffset";
 import { readRewards, type Rewards } from "../lib/rewards";
 import { CxAvatar, AnchorMark, HomeRow, Num, StatBand, PendingPanel, GraduationBar, Icon, fmtUsd, fmtPrice, fmtAmount, shortAddr, reserveCaption, useWalletConnect, type DisplayCoin } from "../census";
 
-const SLIPPAGE_BPS = 200; // 2% — the minimum-out on every trade path
+const SLIPPAGE_BPS = 200; // 2% — the default minimum-out tolerance; user-adjustable (see SLIPPAGE_PRESETS)
+const SLIPPAGE_PRESETS = [50, 200, 500, 1000]; // 0.5% / 2% / 5% / 10% — a shallow post-graduation pool may need more
 // CX-H1: a graduated pool's minimum-out is derived from the live spot; refuse to trade when the spot has
 // moved more than this from the pool TWAP (manipulation, or a violent move) rather than execute against a
 // number an attacker could have set one block earlier. A warming pool with no TWAP yet is allowed on spot.
@@ -40,6 +41,7 @@ export function Coin() {
   const { sendTransactionAsync } = useSendTransaction();
   const { signMessageAsync } = useSignMessage();
   const [retryNonce, setRetryNonce] = useState(0); // bumped by the "couldn't reach the chain" retry
+  const [slippageBps, setSlippageBps] = useState(SLIPPAGE_BPS); // user-chosen minimum-out tolerance
   const cq = useCoinQuote(coinAddr, retryNonce);
 
   const [buy, setBuy] = useState(true);
@@ -228,11 +230,14 @@ export function Coin() {
             if (q.liquidityAvailable !== false && q.buyAmount) { setQuoteOut(BigInt(q.buyAmount)); setVia(routeSummary(q)); return; }
           } catch { /* fall through to the pool */ }
         }
-        // The "you receive ~" for the actual trade is the executable spot (accurate to what fills now);
-        // the headline price/mcap use the TWAP. Manipulation of the spot is caught by the deviation guard
-        // in trade(), not by pricing the estimate off a stale average.
-        const out = await poolSpotOut(publicClient, sellToken, buyToken, amt, poolFee, true);
-        if (!cancelled) { setQuoteOut(out); setVia(out ? "pool" : ""); }
+        // "You receive ~" for a direct-pool trade: prefer QuoterV2 (real, price-impact-aware) so the
+        // estimate — and the minimum-out derived from it — reflect a shallow pool and don't revert a
+        // normal trade. Fall back to the impact-free spot estimate when no quoter is configured; the
+        // user's slippage then covers the impact. Headline price/mcap still use the TWAP; spot
+        // manipulation is caught by the deviation guard in trade().
+        const quoted = await poolQuoteOut(publicClient, sellToken, buyToken, amt, poolFee);
+        const out = quoted ?? (await poolSpotOut(publicClient, sellToken, buyToken, amt, poolFee, true));
+        if (!cancelled) { setQuoteOut(out); setVia(out ? (quoted != null ? "pool" : "pool (est.)") : ""); }
       } catch { if (!cancelled) { setQuoteOut(null); setVia(""); } }
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
@@ -248,7 +253,7 @@ export function Coin() {
     if (amountIn <= 0n) { setStatus("Enter an amount."); return; }
     if (!buy && coinBal != null && amountIn > coinBal) { setStatus(`You hold ${fmtAmount(Number(formatUnits(coinBal, 18)))} ${coinSym}.`); return; }
     if (quoteOut == null) { setStatus("No price for this amount right now — adjust it or try again."); return; }
-    const minOut = (quoteOut * BigInt(10000 - SLIPPAGE_BPS)) / 10000n; // never trade unprotected
+    const minOut = (quoteOut * BigInt(10000 - slippageBps)) / 10000n; // never trade unprotected (user slippage)
     setBusy(true);
     try {
       // On the right network first — otherwise the trade goes to whatever chain the wallet is on and fails.
@@ -300,7 +305,7 @@ export function Coin() {
         await publicClient.waitForTransactionReceipt({ hash: w });
       }
       if (isWethQuote) {
-        const q = await zeroExQuote({ sellToken, buyToken, sellAmount: amountIn, taker: me, slippageBps: SLIPPAGE_BPS }).catch(() => undefined);
+        const q = await zeroExQuote({ sellToken, buyToken, sellAmount: amountIn, taker: me, slippageBps }).catch(() => undefined);
         if (q && q.liquidityAvailable !== false && q.transaction?.data) {
           const spender = allowanceSpender(q);
           if (spender) {
@@ -599,7 +604,14 @@ export function Coin() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 28 }}>
             <QuoteRow label="You receive ~" value={outHuman != null ? `${fmtAmount(outHuman, 6)} ${buy ? coinSym : anchor}` : "—"} bright />
             <QuoteRow label={`Fee (${feePctLabel})`} value={feeDisp} />
-            <QuoteRow label="Slippage" value={`${SLIPPAGE_BPS / 100}%`} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span className="cx-label">Max slippage</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                {SLIPPAGE_PRESETS.map((bps) => (
+                  <button key={bps} className="cx-link-control" aria-pressed={slippageBps === bps} onClick={() => setSlippageBps(bps)}>{bps / 100}%</button>
+                ))}
+              </div>
+            </div>
             <QuoteRow label="Route" value={routeDisp} />
           </div>
           {launchTaxBps > 0 && buy && (

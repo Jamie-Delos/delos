@@ -74,7 +74,7 @@ Paths are `contracts/contracts/…` unless noted. All against `main`, commit at 
 
 **WHY IT EXISTS** Deliberate: one keeper auto-distributes so creators don't each delegate. The price-bound trust was moved to that key.
 
-**FIX** Keeper key in an HSM/multisig; rotate on any suspicion (`setKeeper` exists); consider an on-chain sanity bound on `minOut` vs the canonical pool TWAP so even a bad keeper can't set it to dust; per-vault operator override remains for creators who want their own keeper.
+**FIX** Keeper key in an HSM/multisig; rotate on any suspicion (`setKeeper` exists); consider an on-chain sanity bound on `minOut` vs the canonical pool TWAP so even a bad keeper can't set it to dust; per-vault operator override remains for creators who want their own keeper. **Also (Neil's audit): never run the legacy `bot/src/index.js` or `bot/src/buyback.js` — both swap with `amountOutMinimum: 0n` (confirmed `index.js:55`, `buyback.js:59`), i.e. zero slippage protection / full MEV exposure. Use only the operator-`minOut` keeper path (`keeperd.js`/`keeper0x.js`); delete or clearly quarantine the legacy scripts.**
 
 **TEST** A test that a distribution with `minOut` below a TWAP-derived floor reverts (after adding such a floor).
 
@@ -143,6 +143,22 @@ Paths are `contracts/contracts/…` unless noted. All against `main`, commit at 
 **PROOF** DERIVED. Basket assets are tokenised stocks (unlikely to be FoT/rebasing), and each vault is isolated (a bad basket only harms that coin's own holders), so likelihood is low — but nothing validates it.
 
 **FIX** Document that baskets must be standard ERC-20s; optionally gate basket assets to a deployer-curated allowlist (mirrors `allowedQuote`).
+
+---
+
+## CX-E3 — S2 (certain, market structure) — External pools bypass Census fees; "every trade funds rewards" is false (found by Neil's independent audit)
+
+**WHERE** `LaunchToken.sol` (a plain, freely-transferable ERC-20 post-launch — confirmed: the anti-snipe window is dormant in the curve flow and lifts to "zero restrictions"); the canonical locked pool is only one venue.
+
+**WHAT HAPPENS** After graduation the coin is an ordinary ERC-20, so anyone can create another Uniswap (or other DEX) pool for it, and aggregators route wherever execution is best. Trades on an external pool pay **neither** the curve's 2% fee **nor** the canonical locked LP's fee — so the creator/holder-reward stream only captures trades that go through the canonical pool. Adding external liquidity to the *same* canonical pool also dilutes the locked position's fee share. This is a market-structure fact, not a patchable bug (short of making the token non-transferable, which nobody wants).
+
+**PROOF** DERIVED (transferability confirmed in `LaunchToken.sol`; standard V3 permissionless-pool behaviour). Credit: raised by Neil's 17 Sep independent audit; my first pass missed it.
+
+**BLAST RADIUS** The holder-reward value proposition is weaker than "a coin that pays a dividend on every trade" implies — a fairness/disclosure gap that compounds the securities-language risk (CX-X1).
+
+**FIX** (product decision, not code alone) Describe the canonical pool in the UI, preferentially route through it, show the execution venue, monitor alternate pools, and **never** promise that every trade funds creator/holder rewards. Don't portray external-pool volume as recoverable "missing" accounting.
+
+**TEST** N/A (disclosure/routing) — a UI check that reward copy is qualified, and monitoring for alternate pools.
 
 ---
 

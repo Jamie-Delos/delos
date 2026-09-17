@@ -13,6 +13,10 @@ const DEAD = "0x000000000000000000000000000000000000dEaD";
 const FEE_VAULT_ABI = ["function withdrawAll(address token,address to)"];
 
 async function main() {
+  // RETIRED for live use (CX-G1, flagged in Neil's audit): the swap below uses amountOutMinimum: 0 — no
+  // slippage protection, full MEV exposure. Live runs are refused; route buybacks through a keeper that
+  // supplies a real minimum-out instead. Dry-run inspection (DRY_RUN unset) is still allowed.
+  if (!cfg.DRY_RUN) throw new Error("RETIRED: this buyback swaps with amountOutMinimum:0 (no slippage protection). Do not run it live — use a keeper path that sets a real minimum-out.");
   console.log(`\n=== Launchpad buyback & burn === ${cfg.DRY_RUN ? "[DRY RUN — no funds will move]" : "[LIVE]"}`);
 
   const provider = new ethers.JsonRpcProvider(cfg.RPC_URL);

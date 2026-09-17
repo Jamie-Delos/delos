@@ -35,6 +35,11 @@ export const CONTRACTS = {
   swapRouter: addr(import.meta.env.VITE_SWAP_ROUTER, "0xCaf681a66D020601342297493863E78C959E5cb2"), // SwapRouter02
   v3Factory: addr(import.meta.env.VITE_V3_FACTORY, IS_MAINNET ? "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA" : zeroAddress),
   ethPricePool: addr(import.meta.env.VITE_ETH_PRICE_POOL, IS_MAINNET ? "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca" : zeroAddress), // WETH/USDG 0.01%
+  // Uniswap V3 QuoterV2 — gives a real, price-impact-aware output for a direct-pool trade so the trade
+  // estimate + minimum-out aren't derived from an impact-free spot (which reverts normal trades on a
+  // shallow pool). No default: the Robinhood Chain QuoterV2 must be verified on-chain and set here via
+  // VITE_QUOTER (mainnet gate). Until set, the pool path falls back to the estimate + user slippage.
+  quoter: addr(import.meta.env.VITE_QUOTER, zeroAddress),
 };
 
 export const DEFAULT_FEE = 10000; // 1% tier — the pool every coin graduates into
