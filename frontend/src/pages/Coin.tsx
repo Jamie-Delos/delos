@@ -30,7 +30,7 @@ export function Coin() {
   const loc = useLocation();
   const coinAddr = param && isAddress(param) ? (param as Address) : undefined;
   const { address: me, isConnected } = useAccount();
-  const { connect, connecting, error: connectError, ensureChain } = useWalletConnect();
+  const { connect, signUp, connecting, pending, error: connectError, ensureChain } = useWalletConnect();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
@@ -581,9 +581,16 @@ export function Coin() {
               {busy ? "Working…" : !cq.resolved || (!qi && !tradeBlock) ? "Loading…" : "Place trade"}
             </button>
           ) : (
-            <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={connecting} onClick={connect}>
-              {connecting ? "Connecting…" : "Connect wallet"}
-            </button>
+            <>
+              <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={connecting} onClick={connect}>
+                {pending === "wallet" ? "Connecting…" : "Connect wallet"}
+              </button>
+              {signUp && (
+                <button className="cx-link-control" style={{ display: "block", margin: "12px auto 0" }} disabled={connecting} onClick={signUp}>
+                  {pending === "signup" ? "Signing up…" : "No wallet? Sign up with email"}
+                </button>
+              )}
+            </>
           )}
           <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>{onCurve ? (launchTaxBps > 0 && buy ? `${feePctLabel} during the launch window` : `${TRADE_FEE_LABEL} trade fee`) : graduated ? `${feePctLabel} pool fee` : "—"}</div>
           {anchorIsCoin && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>Trades settle in ${anchor} — hold some to buy.</div>}

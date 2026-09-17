@@ -4,21 +4,66 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5173,
+      "cwd": "frontend"
+    },
+    {
+      "name": "frontend-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5176"
+      ],
+      "port": 5176,
       "cwd": "frontend"
     },
     {
       "name": "frontend-devnet",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--mode", "devnet", "--port", "5174"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--mode",
+        "devnet",
+        "--port",
+        "5174"
+      ],
       "port": 5174,
+      "cwd": "frontend"
+    },
+    {
+      "name": "frontend-privycheck",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--mode",
+        "privycheck",
+        "--port",
+        "5175"
+      ],
+      "port": 5175,
       "cwd": "frontend"
     },
     {
       "name": "gaea-static",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8137", "--directory", "C:/Users/johnk/AppData/Local/Temp/claude/C--Users-johnk-Documents-AJM-Pad/de6a2bb6-4b98-43a5-b0ed-34527774da32/scratchpad"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8137",
+        "--directory",
+        "C:/Users/johnk/AppData/Local/Temp/claude/C--Users-johnk-Documents-AJM-Pad/de6a2bb6-4b98-43a5-b0ed-34527774da32/scratchpad"
+      ],
       "port": 8137
     }
   ]

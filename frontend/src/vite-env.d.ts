@@ -14,6 +14,9 @@ interface ImportMetaEnv {
   readonly VITE_INDEXER_URL?: string;
   readonly VITE_FROM_BLOCK?: string;
   readonly VITE_ZEROX_PROXY?: string;
+  readonly VITE_PRIVY_APP_ID?: string;
+  readonly VITE_PRIVY_CLIENT_ID?: string;
+  readonly VITE_PRIVY_LOGIN_METHODS?: string;
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv;

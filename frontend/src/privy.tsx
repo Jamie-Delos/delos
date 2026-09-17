@@ -1,0 +1,129 @@
+// Privy: email / social sign-up with an embedded wallet, alongside "Connect wallet" for people who
+// already have one. Loaded lazily by main.tsx only when VITE_PRIVY_APP_ID is set, so without it the
+// SDK never reaches the browser. Wagmi keeps working unchanged: @privy-io/wagmi drives wagmi's
+// connector state from Privy, so every page's useAccount / useWriteContract / useSignMessage talks to
+// whichever wallet is active — an extension or the embedded wallet.
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { PrivyProvider, useConnectWallet, useExportWallet, useLogin, useLogout, usePrivy, useWallets, type PrivyClientConfig, type User } from "@privy-io/react-auth";
+import { WagmiProvider, createConfig, useSetActiveWallet } from "@privy-io/wagmi";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
+import { http, useAccount } from "wagmi";
+import { CHAIN, PRIVY_APP_ID, PRIVY_CLIENT_ID, PRIVY_LOGIN_METHODS } from "./config";
+import { AuthContext, type AuthImpl, type ConnectResult } from "./lib/auth";
+
+const privyWagmiConfig = createConfig({ chains: [CHAIN], transports: { [CHAIN.id]: http() } });
+
+type LoginMethod = NonNullable<PrivyClientConfig["loginMethods"]>[number];
+const loginMethods = PRIVY_LOGIN_METHODS as LoginMethod[];
+
+const privyConfig: PrivyClientConfig = {
+  appearance: {
+    theme: "#07130d", // Census ground
+    accentColor: "#b4f03d", // the one accent
+    logo: `${window.location.origin}/census-logo.svg`,
+    landingHeader: "Sign up to Census",
+    loginMessage: `We create a wallet on ${CHAIN.name} for you. You can export its key any time.`,
+    showWalletLoginFirst: false,
+    walletChainType: "ethereum-only",
+    walletList: ["detected_ethereum_wallets", "metamask", "phantom", "rabby_wallet", "robinhood_wallet", "coinbase_wallet", "wallet_connect"],
+  },
+  loginMethods,
+  embeddedWallets: {
+    ethereum: { createOnLogin: "users-without-wallets" },
+    showWalletUIs: true, // every signature/transaction from the embedded wallet shows a confirmation
+  },
+  defaultChain: CHAIN,
+  supportedChains: [CHAIN],
+};
+
+// "exited_auth_flow" and friends: the user closed the modal — not an error worth showing.
+const isExit = (e: unknown) => /exit|cancel|closed|reject/i.test(String(e ?? ""));
+
+function sessionMethod(user: User | null): string | null {
+  if (!user) return null;
+  if (user.email?.address) return `email ${user.email.address}`;
+  if (user.google?.email) return `Google (${user.google.email})`;
+  if (user.apple?.email) return `Apple (${user.apple.email})`;
+  if (user.twitter?.username) return `X (@${user.twitter.username})`;
+  if (user.phone?.number) return `phone ${user.phone.number}`;
+  return "Privy";
+}
+
+function PrivyAuthBridge({ children }: { children: ReactNode }) {
+  const { ready, authenticated, user } = usePrivy();
+  const { wallets, ready: walletsReady } = useWallets();
+  const { setActiveWallet } = useSetActiveWallet();
+  const { exportWallet } = useExportWallet();
+  const { logout } = useLogout();
+  const { address } = useAccount();
+
+  // One modal at a time: each call parks its resolver here until Privy reports success or exit.
+  const pending = useRef<((r: ConnectResult) => void) | null>(null);
+  const settle = (r: ConnectResult) => { const p = pending.current; pending.current = null; p?.(r); };
+  const preferEmbedded = useRef(false);
+
+  const { connectWallet } = useConnectWallet({
+    onSuccess: async ({ wallet }) => {
+      // The wallet just connected becomes the one wagmi (and so every page) uses.
+      const connected = wallets.find((w) => w.address.toLowerCase() === wallet.address.toLowerCase());
+      if (connected) { try { await setActiveWallet(connected); } catch { /* wagmi keeps its current wallet */ } }
+      settle({ ok: true, error: "" });
+    },
+    onError: (e) => settle({ ok: false, error: isExit(e) ? "" : "Couldn't connect that wallet — try again." }),
+  });
+
+  const { login } = useLogin({
+    onComplete: () => { preferEmbedded.current = true; settle({ ok: true, error: "" }); },
+    onError: (e) => settle({ ok: false, error: isExit(e) ? "" : "Sign up didn't complete — try again." }),
+  });
+
+  // After a sign-up the embedded wallet appears a moment later; make it the active wallet when it does.
+  useEffect(() => {
+    if (!preferEmbedded.current || !walletsReady) return;
+    const embedded = wallets.find((w) => w.walletClientType === "privy");
+    if (!embedded) return;
+    preferEmbedded.current = false;
+    setActiveWallet(embedded).catch(() => { /* stays on the previous wallet */ });
+  }, [wallets, walletsReady, setActiveWallet]);
+
+  const embedded = wallets.find((w) => w.walletClientType === "privy");
+  const activeIsEmbedded = !!embedded && !!address && embedded.address.toLowerCase() === address.toLowerCase();
+
+  const impl = useMemo<AuthImpl>(() => ({
+    provider: "privy",
+    ready,
+    connectWallet: () => new Promise<ConnectResult>((resolve) => {
+      if (!ready) { resolve({ ok: false, error: "Wallet connect is still loading — try again in a moment." }); return; }
+      settle({ ok: false, error: "" });
+      pending.current = resolve;
+      connectWallet({ walletChainType: "ethereum-only", description: `Connect a wallet on ${CHAIN.name}` });
+    }),
+    signUp: () => new Promise<ConnectResult>((resolve) => {
+      if (!ready) { resolve({ ok: false, error: "Sign up is still loading — try again in a moment." }); return; }
+      if (authenticated) { preferEmbedded.current = true; resolve({ ok: true, error: "" }); return; }
+      settle({ ok: false, error: "" });
+      pending.current = resolve;
+      login({ loginMethods });
+    }),
+    signOut: async () => {
+      for (const w of wallets) if (w.walletClientType !== "privy") { try { w.disconnect(); } catch { /* extensions disconnect from their own UI */ } }
+      if (authenticated) await logout();
+    },
+    session: { method: authenticated ? sessionMethod(user) : null, embedded: activeIsEmbedded },
+    exportWallet: authenticated && embedded ? async () => { await exportWallet({ address: embedded.address }); } : null,
+  }), [ready, authenticated, user, wallets, embedded, activeIsEmbedded, connectWallet, login, logout, exportWallet]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return <AuthContext.Provider value={impl}>{children}</AuthContext.Provider>;
+}
+
+export function PrivyRoot({ queryClient, children }: { queryClient: QueryClient; children: ReactNode }) {
+  return (
+    <PrivyProvider appId={PRIVY_APP_ID} clientId={PRIVY_CLIENT_ID} config={privyConfig}>
+      <QueryClientProvider client={queryClient}>
+        <WagmiProvider config={privyWagmiConfig}>
+          <PrivyAuthBridge>{children}</PrivyAuthBridge>
+        </WagmiProvider>
+      </QueryClientProvider>
+    </PrivyProvider>
+  );
+}

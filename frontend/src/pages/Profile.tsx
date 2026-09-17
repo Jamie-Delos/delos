@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useAccount, useBalance, useDisconnect } from "wagmi";
+import { useAccount, useBalance } from "wagmi";
 import { type Address } from "viem";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
 import { CxAvatar, HomeRow, StatBand, PendingPanel, EmptyPanel, Icon, fmtUsd, shortAddr, CHAIN, useWalletConnect, type DisplayCoin } from "../census";
+import { IS_MAINNET } from "../config";
 
 const TABS = [
   { key: "created", label: "Created" },
@@ -17,8 +18,8 @@ const TABS = [
 export function Profile() {
   const { address: param } = useParams();
   const { address: me } = useAccount();
-  const { connect, connecting, error: connectError } = useWalletConnect();
-  const { disconnect } = useDisconnect();
+  const { connect, signUp, connecting, pending, error: connectError, signOut, session, exportWallet } = useWalletConnect();
+  const [exporting, setExporting] = useState(false);
   const addr = (param || me) as Address | undefined;
   const isMine = !!me && (!param || param.toLowerCase() === me.toLowerCase());
   const [tab, setTab] = useState<"created" | "held" | "replies">("created");
@@ -34,8 +35,11 @@ export function Profile() {
       <div className="cx-panel cx-empty">
         <div className="cx-avatar cx-avatar--wallet" style={{ width: 58, height: 58, margin: "0 auto" }}>0x</div>
         <div className="cx-empty__title" style={{ marginTop: 20 }}>Your address is your profile</div>
-        <div className="cx-empty__body">Connect to see what you started and what you hold.</div>
-        <button className="cx-cta" style={{ marginTop: 26 }} onClick={connect} disabled={connecting}>{connecting ? "Connecting…" : "Connect wallet"}</button>
+        <div className="cx-empty__body">{signUp ? "Connect a wallet, or sign up with email and we'll create one for you." : "Connect to see what you started and what you hold."}</div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 26 }}>
+          <button className="cx-cta" onClick={connect} disabled={connecting}>{pending === "wallet" ? "Connecting…" : "Connect wallet"}</button>
+          {signUp && <button className="cx-quiet" onClick={signUp} disabled={connecting}>{pending === "signup" ? "Signing up…" : "Sign up"}</button>}
+        </div>
         {connectError && <div style={{ marginTop: 14, fontSize: 13, color: "#e06c60", maxWidth: 320, marginLeft: "auto", marginRight: "auto" }}>{connectError}</div>}
       </div>
     );
@@ -61,11 +65,28 @@ export function Profile() {
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 14 }}>
             <h1 className="cx-num" style={{ margin: 0, fontWeight: 400, fontSize: 31, letterSpacing: "-0.01em" }}>{shortAddr(addr)}</h1>
             <button className="cx-link-control" onClick={copy} aria-label="Copy address">{copied ? "Copied" : <Icon name="copy" size={16} />}</button>
-            {/* Lets people switch wallets: disconnect, then "Connect wallet" shows the picker again. */}
-            {isMine && <button className="cx-link-control" onClick={() => disconnect()}>Disconnect</button>}
+            {/* Lets people switch wallets: disconnect (or sign out), then connect again. */}
+            {isMine && <button className="cx-link-control" onClick={() => { signOut(); }}>{session.method ? "Sign out" : "Disconnect"}</button>}
+            {isMine && exportWallet && (
+              <button className="cx-link-control" disabled={exporting} onClick={async () => { setExporting(true); try { await exportWallet(); } finally { setExporting(false); } }}>Export wallet</button>
+            )}
           </div>
+          {isMine && session.method && <div className="cx-label" style={{ marginTop: 10 }}>Signed in with {session.method}</div>}
         </div>
       </div>
+
+      {/* A wallet created at sign-up starts empty: say plainly how to fund it. */}
+      {isMine && session.embedded && bal.data && bal.data.value === 0n && (
+        <div className="cx-panel cx-panel--plain" style={{ marginTop: 28 }}>
+          <div className="cx-section-title" style={{ marginBottom: 10 }}>Add funds</div>
+          <div className="cx-stat__note" style={{ marginTop: 0, lineHeight: 1.55 }}>
+            {IS_MAINNET
+              ? `Trading and launching need ETH on ${CHAIN.name}. Send it to your address above: withdraw from the Robinhood app or an exchange and choose ${CHAIN.name} as the network, or send from another wallet.`
+              : `This is ${CHAIN.name}. Get test ETH from the Robinhood Chain testnet faucet and send it to your address above.`}
+          </div>
+          <button className="cx-quiet" style={{ marginTop: 14 }} onClick={copy}>{copied ? "Address copied" : "Copy my address"}</button>
+        </div>
+      )}
 
       <div style={{ marginTop: 36 }}>
         <StatBand stats={[

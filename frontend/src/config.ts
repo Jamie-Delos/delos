@@ -53,6 +53,17 @@ export const START_FDV_ETH = 1.5;
 export const TRADE_FEE_BPS = 200;
 export const TRADE_FEE_LABEL = `${TRADE_FEE_BPS / 100}%`;
 
+// Privy: email/social sign-up with an embedded wallet, next to "Connect wallet". Unset App ID => wallets
+// only, and the Privy SDK is never loaded. The login methods must match what's enabled in the Privy
+// dashboard. A Client ID selects a per-environment app client (e.g. one that allows localhost).
+export const PRIVY_APP_ID = (import.meta.env.VITE_PRIVY_APP_ID ?? "").trim();
+export const PRIVY_CLIENT_ID = (import.meta.env.VITE_PRIVY_CLIENT_ID ?? "").trim() || undefined;
+// Privy App IDs are exactly 25 characters; anything else would crash its provider, so treat it as unset.
+export const PRIVY_ENABLED = PRIVY_APP_ID.length === 25;
+if (PRIVY_APP_ID && !PRIVY_ENABLED) console.warn("VITE_PRIVY_APP_ID is set but is not a 25-character Privy App ID; sign-up stays off.");
+export const PRIVY_LOGIN_METHODS = (import.meta.env.VITE_PRIVY_LOGIN_METHODS ?? "email,google,apple,twitter")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+
 export const STANDARD = {
   decimals: 18,
   totalSupply: 1_000_000_000, // 1B, every coin

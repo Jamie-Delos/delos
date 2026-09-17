@@ -4,10 +4,11 @@
  * mono/tabular; coin avatars are the real image or a FLAT tile (never metal); anchors/stocks always use
  * the real logo; a value we do not have renders as "—", never 0 or a fabricated number.
  */
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAccount, useConnect, useSwitchChain } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { CHAIN as CONFIG_CHAIN } from "./config";
+import { AuthContext, type AuthImpl, type ConnectResult } from "./lib/auth";
 
 // Real, env-driven chain (46630 on testnet, 4663 on mainnet) — used for the sidebar meta and for
 // connecting on the correct network.
@@ -201,21 +202,16 @@ function mobileWalletLinks(): (WalletOption & { href: string })[] {
   ];
 }
 
-// One wallet-connect flow, shared by the app chrome (CensusConnect), the coin page, the profile and the
-// launch wizard, so "Connect wallet" behaves identically everywhere. Wallets are discovered via
-// EIP-6963 (one connector per installed extension — MetaMask, Phantom, Trust, Rabby…); with several
-// installed the user picks, instead of silently getting whichever one won the window.ethereum race. It
-// opens the wallet FIRST (no chainId), then best-effort switches to Robinhood Chain — decoupling the two
-// means a network add/switch hiccup can never stop the wallet window from opening. Errors come back as
-// clear text, never silence.
-export function useWalletConnect() {
+// Wallets-only auth (the default when Privy isn't configured). Wallets are discovered via EIP-6963 (one
+// connector per installed extension — MetaMask, Phantom, Trust, Rabby…); with several installed the user
+// picks, instead of silently getting whichever one won the window.ethereum race. It opens the wallet
+// FIRST (no chainId), then best-effort switches to Robinhood Chain — decoupling the two means a network
+// add/switch hiccup can never stop the wallet window from opening. Errors come back as clear text.
+export function WalletsAuthProvider({ children }: { children: ReactNode }) {
   const { connectAsync, connectors } = useConnect();
-  const { connector: active } = useAccount();
+  const { disconnectAsync } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState("");
-  const connect = useCallback(async (): Promise<{ ok: boolean; error: string }> => {
-    setError("");
+  const connectWallet = useCallback(async (): Promise<ConnectResult> => {
     // Candidate wallets: EIP-6963 announcements plus the explicit targets in wagmi.ts — kept only when the
     // wallet is actually present (its provider resolves), and deduped by provider object so a wallet seen
     // both ways (e.g. Phantom announced AND at window.phantom.ethereum) is listed once.
@@ -240,31 +236,60 @@ export function useWalletConnect() {
         const link = links.find((l) => l.id === id);
         if (!link) return { ok: false, error: "" };
         window.location.href = link.href;
-        const m = `Opening ${link.name}…`;
-        setError(m);
-        return { ok: false, error: m };
+        return { ok: false, error: `Opening ${link.name}…` };
       }
-      const m = "No wallet detected. Install MetaMask, Phantom or another browser wallet, unlock it, then retry.";
-      setError(m);
-      return { ok: false, error: m };
+      return { ok: false, error: "No wallet detected. Install MetaMask, Phantom or another browser wallet, unlock it, then retry." };
     }
-    setConnecting(true);
     try {
       await connectAsync({ connector });                                  // opens the chosen wallet
       try { await switchChainAsync({ chainId: CHAIN.id }); } catch { /* stay connected; the tx re-prompts the switch */ }
-      setConnecting(false);
       return { ok: true, error: "" };
     } catch (e: any) {
-      setConnecting(false);
       const raw = String(e?.shortMessage ?? e?.message ?? "");
-      let m: string;
-      if (/reject|denied|cancel|user/i.test(raw)) m = "Connection cancelled in your wallet — retry.";
-      else if (/provider|not found|no injected|getProvider/i.test(raw)) m = "No wallet detected. Install a browser wallet, unlock it, then retry.";
-      else m = (raw || "Couldn't connect").slice(0, 90);
-      setError(m);
-      return { ok: false, error: m };
+      if (/reject|denied|cancel|user/i.test(raw)) return { ok: false, error: "Connection cancelled in your wallet — retry." };
+      if (/provider|not found|no injected|getProvider/i.test(raw)) return { ok: false, error: "No wallet detected. Install a browser wallet, unlock it, then retry." };
+      return { ok: false, error: (raw || "Couldn't connect").slice(0, 90) };
     }
   }, [connectAsync, connectors, switchChainAsync]);
+
+  const impl = useMemo<AuthImpl>(() => ({
+    provider: "wallets",
+    ready: true,
+    connectWallet,
+    signUp: null,
+    signOut: async () => { try { await disconnectAsync(); } catch { /* already disconnected */ } },
+    session: { method: null, embedded: false },
+    exportWallet: null,
+  }), [connectWallet, disconnectAsync]);
+
+  return <AuthContext.Provider value={impl}>{children}</AuthContext.Provider>;
+}
+
+// The one connect hook every page uses — "Connect wallet" and (when Privy is configured) "Sign up" behave
+// identically everywhere. State is per call site, so an error shows next to the button that caused it.
+export function useWalletConnect() {
+  const auth = useContext(AuthContext);
+  if (!auth) throw new Error("useWalletConnect must be used inside an auth provider (see main.tsx)");
+  const { connector: active } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+  const [pending, setPending] = useState<"wallet" | "signup" | null>(null);
+  const [error, setError] = useState("");
+  const [errorFrom, setErrorFrom] = useState<"wallet" | "signup" | null>(null); // which button the error belongs to
+  const run = useCallback(async (kind: "wallet" | "signup", fn: () => Promise<ConnectResult>): Promise<ConnectResult> => {
+    setError("");
+    setErrorFrom(null);
+    setPending(kind);
+    try {
+      const r = await fn();
+      if (!r.ok && r.error) { setError(r.error); setErrorFrom(kind); }
+      return r;
+    } finally {
+      setPending(null);
+    }
+  }, []);
+  const connect = useCallback(() => run("wallet", auth.connectWallet), [run, auth.connectWallet]);
+  const signUpFn = auth.signUp;
+  const signUp = useMemo(() => (signUpFn ? () => run("signup", signUpFn) : null), [run, signUpFn]);
 
   // Make sure the wallet is on Robinhood Chain before a tx. Without this a user connected to Ethereum
   // mainnet would be asked to pay real gas there and the tx would fail — there are no Census contracts
@@ -276,6 +301,7 @@ export function useWalletConnect() {
       return true;
     } catch {
       const phantom = /phantom/i.test(active?.name ?? "");
+      setErrorFrom(null);
       setError(phantom
         ? `Switch Phantom to ${CHAIN.name}: Settings → Active Networks → turn on ${CHAIN.name}, then retry.`
         : `Switch your wallet to ${CHAIN.name} to continue.`);
@@ -283,18 +309,29 @@ export function useWalletConnect() {
     }
   }, [switchChainAsync, active]);
 
-  return { connect, connecting, error, ensureChain };
+  return {
+    connect, signUp, ensureChain, error, errorFrom,
+    connecting: pending !== null, pending,
+    signOut: auth.signOut, session: auth.session, exportWallet: auth.exportWallet, authReady: auth.ready,
+  };
 }
 
 export function CensusConnect() {
   const { address, isConnected } = useAccount();
-  const { connect, connecting, error } = useWalletConnect();
+  const { connect, signUp, connecting, pending, error, errorFrom } = useWalletConnect();
   const nav = useNavigate();
   if (!isConnected)
     return (
-      <button className="cx-quiet" onClick={connect} title={error || undefined} style={{ whiteSpace: "nowrap" }}>
-        {connecting ? "Connecting…" : error ? "Connect wallet — retry" : "Connect wallet"}
-      </button>
+      <span className="cx-connect">
+        {signUp && (
+          <button className="cx-quiet" onClick={signUp} disabled={connecting} title={errorFrom === "signup" ? error : undefined} style={{ whiteSpace: "nowrap" }}>
+            {pending === "signup" ? "Signing up…" : errorFrom === "signup" ? "Sign up — retry" : "Sign up"}
+          </button>
+        )}
+        <button className="cx-quiet" onClick={connect} disabled={connecting} title={errorFrom === "wallet" ? error : undefined} style={{ whiteSpace: "nowrap" }}>
+          {pending === "wallet" ? "Connecting…" : <>Connect<span className="cx-connect__wide"> wallet</span>{errorFrom === "wallet" ? " — retry" : ""}</>}
+        </button>
+      </span>
     );
   return (
     <button className="cx-quiet" onClick={() => nav("/profile")} title="Profile" style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>

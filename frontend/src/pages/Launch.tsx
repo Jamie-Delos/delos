@@ -69,7 +69,7 @@ export function Launch() {
   const nav = useNavigate();
   const loc = useLocation();
   const { isConnected, address } = useAccount();
-  const { connect, connecting, error: connectError, ensureChain } = useWalletConnect();
+  const { connect, signUp, connecting, pending, error: connectError, ensureChain } = useWalletConnect();
   const publicClient = usePublicClient();
   const { writeContractAsync, isPending } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
@@ -185,9 +185,9 @@ export function Launch() {
     usesBasket ? (picks.length ? `${picks.join(" · ")} — economics next.` : "Anchor at least one stock to continue.") : `Anchored to ${anchor.key} — economics next.`,
     `Fee ${TRADE_FEE_LABEL} · graduates at ${gradLabel(draft.graduationEth, anchor.key)}`,
     draft.publicConsent ? "Review next." : "Accept the moderation terms to continue.",
-    "Everything looks right? Launch it.",
+    isConnected || !signUp ? "Everything looks right? Launch it." : "Everything looks right? Connect a wallet, or sign up above, to launch.",
   ][step];
-  const ctaLabel = ["Continue to Anchors", "Continue to Economics", "Continue to Identity", "Review launch", isConnected ? `Launch $${ticker}` : connecting ? "Connecting…" : "Connect wallet"][step];
+  const ctaLabel = ["Continue to Anchors", "Continue to Economics", "Continue to Identity", "Review launch", isConnected ? `Launch ${ticker}` : pending === "wallet" ? "Connecting…" : "Connect wallet"][step];
   const launching = launchPct != null || isPending;
 
   const toggleStock = (t: string) => {
@@ -207,7 +207,14 @@ export function Launch() {
   async function connectWallet() {
     setStatus("");
     const { ok, error } = await connect();
-    if (!ok) setStatus(error || "Couldn't connect — make sure your wallet is unlocked.");
+    if (!ok && error) setStatus(error);
+  }
+
+  async function signUpHere() {
+    if (!signUp) return;
+    setStatus("");
+    const { ok, error } = await signUp();
+    if (!ok && error) setStatus(error);
   }
 
   async function launch() {
@@ -337,7 +344,8 @@ export function Launch() {
           ) : (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
               {connectError && <span className="census-mono" style={{ fontSize: 11.5, color: "#e06c60", maxWidth: 230, textAlign: "right", lineHeight: 1.25 }}>{connectError}</span>}
-              <button className="census-chip" onClick={connectWallet} style={{ cursor: "pointer", whiteSpace: "nowrap" }}>{connecting ? "Connecting…" : "Connect wallet"}</button>
+              {signUp && <button className="census-chip" onClick={signUpHere} disabled={connecting} style={{ cursor: "pointer", whiteSpace: "nowrap" }}>{pending === "signup" ? "Signing up…" : "Sign up"}</button>}
+              <button className="census-chip" onClick={connectWallet} disabled={connecting} style={{ cursor: "pointer", whiteSpace: "nowrap" }}>{pending === "wallet" ? "Connecting…" : "Connect wallet"}</button>
             </span>
           )}
           <button onClick={() => nav("/home")} style={{ color: "var(--census-text-secondary)", fontSize: 14, background: "none", border: 0, cursor: "pointer" }}>Save &amp; exit</button>

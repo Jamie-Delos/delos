@@ -1,4 +1,4 @@
-import { createConfig, http } from "wagmi";
+import { createConfig, http, type CreateConnectorFn } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { CHAIN } from "./config";
 
@@ -7,9 +7,13 @@ import { CHAIN } from "./config";
 // MetaMask and Phantom targets make those two detectable even where an in-app browser doesn't announce
 // (Phantom's provider lives at window.phantom.ethereum). useWalletConnect dedupes by provider object, so
 // a wallet found both ways is listed once.
+// Typed as a plain array so the registered config type also fits the Privy config (privy.tsx), whose
+// connectors are driven by Privy rather than listed here.
+const connectors: CreateConnectorFn[] = [injected(), injected({ target: "metaMask" }), injected({ target: "phantom" })];
+
 export const wagmiConfig = createConfig({
   chains: [CHAIN],
-  connectors: [injected(), injected({ target: "metaMask" }), injected({ target: "phantom" })],
+  connectors,
   transports: {
     [CHAIN.id]: http(),
   },

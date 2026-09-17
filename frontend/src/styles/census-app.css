@@ -446,3 +446,11 @@
 .cx-wallet:hover { border-color: var(--census-lime-border); background: rgba(180, 240, 61, 0.03); }
 .cx-wallet__name { display: block; font-size: 15px; font-weight: 500; }
 .cx-wallet__hint { display: block; font-size: 12px; color: var(--census-text-muted); margin-top: 2px; }
+
+/* ------------------------------------------------------------ connect + sign up (top bar, landing) */
+.cx-connect { display: inline-flex; align-items: center; gap: 8px; }
+.cx-quiet:disabled { opacity: 0.6; cursor: default; }
+@media (max-width: 420px) {
+  .cx-connect .cx-quiet { padding: 8px 13px; font-size: 13.5px; }
+  .cx-connect__wide { display: none; } /* "Connect wallet" reads "Connect" on narrow phones */
+}
