@@ -6,6 +6,7 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
+    "rehearse:bonding": "hardhat run scripts/rehearseBondingLifecycle.js --network hardhat",
     "devnet": "hardhat run scripts/devnetLaunch.js",
     "devnet:v2": "hardhat run scripts/devnetCurveV2.js --network hardhat",
     "artifacts:check": "hardhat compile && node scripts/exportTokenBytecode.js --check",

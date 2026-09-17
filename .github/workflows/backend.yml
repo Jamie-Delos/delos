@@ -18,6 +18,7 @@ jobs:
       - run: npx hardhat compile
       - run: node scripts/exportTokenBytecode.js --check   # client bytecode parity + EIP-170 sizes
       - run: npx hardhat test --network hardhat
+      - run: npm run rehearse:bonding
       - run: npm ci --prefix ../indexer
       - run: node ../indexer/pf.parity.cjs # real contract events must reproduce indexer reserves/prices
 
