@@ -4,10 +4,10 @@
 // connector state from Privy, so every page's useAccount / useWriteContract / useSignMessage talks to
 // whichever wallet is active — an extension or the embedded wallet.
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { PrivyProvider, useConnectWallet, useExportWallet, useLogin, useLogout, usePrivy, useWallets, type PrivyClientConfig, type User } from "@privy-io/react-auth";
+import { PrivyProvider, useConnectWallet, useCreateWallet, useExportWallet, useLogin, useLogout, usePrivy, useWallets, type PrivyClientConfig, type User } from "@privy-io/react-auth";
 import { WagmiProvider, createConfig, useSetActiveWallet } from "@privy-io/wagmi";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { http, useAccount } from "wagmi";
+import { http, useAccount, useConnections, useDisconnect } from "wagmi";
 import { CHAIN, PRIVY_APP_ID, PRIVY_CLIENT_ID, PRIVY_LOGIN_METHODS } from "./config";
 import { AuthContext, type AuthImpl, type ConnectResult } from "./lib/auth";
 
@@ -56,6 +56,8 @@ function PrivyAuthBridge({ children }: { children: ReactNode }) {
   const { exportWallet } = useExportWallet();
   const { logout } = useLogout();
   const { address } = useAccount();
+  const connections = useConnections();
+  const { disconnectAsync } = useDisconnect();
 
   // One modal at a time: each call parks its resolver here until Privy reports success or exit.
   const pending = useRef<((r: ConnectResult) => void) | null>(null);
@@ -86,6 +88,21 @@ function PrivyAuthBridge({ children }: { children: ReactNode }) {
     setActiveWallet(embedded).catch(() => { /* stays on the previous wallet */ });
   }, [wallets, walletsReady, setActiveWallet]);
 
+  // Safety net: the SDK config asks Privy to create the wallet at sign-up, but if the dashboard's own
+  // setting wins, a signed-in user could end up with no wallet at all. Give Privy a moment, then create it.
+  const { createWallet } = useCreateWallet();
+  const creating = useRef(false);
+  useEffect(() => {
+    if (!ready || !authenticated || !walletsReady || !user || creating.current) return;
+    if (user.linkedAccounts.some((a) => a.type === "wallet")) return;
+    const t = setTimeout(() => {
+      creating.current = true;
+      preferEmbedded.current = true;
+      createWallet().catch(() => { /* already created by the modal flow */ }).finally(() => { creating.current = false; });
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [ready, authenticated, walletsReady, user, createWallet]);
+
   const embedded = wallets.find((w) => w.walletClientType === "privy");
   const activeIsEmbedded = !!embedded && !!address && embedded.address.toLowerCase() === address.toLowerCase();
 
@@ -106,12 +123,20 @@ function PrivyAuthBridge({ children }: { children: ReactNode }) {
       login({ loginMethods });
     }),
     signOut: async () => {
-      for (const w of wallets) if (w.walletClientType !== "privy") { try { w.disconnect(); } catch { /* extensions disconnect from their own UI */ } }
+      // Extensions (MetaMask, Phantom, Rabby…) can't be disconnected programmatically and keep reporting
+      // their account, so Privy would re-detect them at once. Disconnecting through wagmi marks each
+      // connector "disconnected" in storage, which Privy's wagmi adapter honours until the user connects
+      // again. WalletConnect and Coinbase sessions can really be closed, so close those too.
+      for (const c of connections) { try { await disconnectAsync({ connector: c.connector }); } catch { /* already gone */ } }
+      for (const w of wallets) {
+        if (w.walletClientType === "privy" || w.connectorType === "injected") continue;
+        try { w.disconnect(); } catch { /* session already closed */ }
+      }
       if (authenticated) await logout();
     },
     session: { method: authenticated ? sessionMethod(user) : null, embedded: activeIsEmbedded },
     exportWallet: authenticated && embedded ? async () => { await exportWallet({ address: embedded.address }); } : null,
-  }), [ready, authenticated, user, wallets, embedded, activeIsEmbedded, connectWallet, login, logout, exportWallet]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [ready, authenticated, user, wallets, connections, embedded, activeIsEmbedded, connectWallet, login, logout, disconnectAsync, exportWallet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <AuthContext.Provider value={impl}>{children}</AuthContext.Provider>;
 }
