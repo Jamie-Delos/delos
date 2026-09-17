@@ -90,7 +90,7 @@ describe('Audit regressions and remaining design risks', function () {
     const before = await s.weth.balanceOf(s.creator.address);
     const c = await s.curve.curves(s.token.target);
     const raised = c.realQuote;
-    const [a0, a1] = coinFirst ? [c.tokenReserve, c.realQuote] : [c.realQuote, c.tokenReserve];
+    const [a0, a1] = coinFirst ? [c.tokenReserve + await s.curve.virtualTokenOffset(s.token.target), c.virtualQuote] : [c.virtualQuote, c.tokenReserve + await s.curve.virtualTokenOffset(s.token.target)];
     const isqrt = n => { if (n < 2n) return n; let x = n, y = (x + 1n) / 2n; while (y < x) { x = y; y = (x + n / x) / 2n; } return x; };
     const target = isqrt((a1 << 192n) / a0);
     // The bounded recovery swap restores the migration price through the empty pool, so the
@@ -105,7 +105,7 @@ describe('Audit regressions and remaining design risks', function () {
     expect(event.args.quoteIn).to.be.gte((raised * 9999n) / 10000n);
     expect(await s.npm.ownerOf(event.args.tokenId)).to.equal(s.locker.target);
   });
-  it('drops the virtual reserve when setting the graduation price', async function () {
+  it('preserves marginal curve price at PF graduation', async function () {
     const s = await stack();
     const c = await s.curve.curves(s.token.target);
     const rc = await (await s.curve.graduate(s.token.target)).wait();
@@ -114,8 +114,8 @@ describe('Audit regressions and remaining design risks', function () {
     const sqrt = (await pool.slot0())[0];
     const poolPrice = BigInt(s.token.target) < BigInt(s.weth.target)
       ? Number(sqrt) ** 2 / 2 ** 192 : 2 ** 192 / Number(sqrt) ** 2;
-    const curvePrice = Number(c.virtualQuote) / Number(c.tokenReserve);
-    expect(poolPrice / curvePrice).to.be.closeTo(4.9 / 6.4, 0.000001);
+    const curvePrice = Number(c.virtualQuote) / Number(c.tokenReserve + await s.curve.virtualTokenOffset(s.token.target));
+    expect(poolPrice / curvePrice).to.be.closeTo(1, 1e-12);
     console.log('      pool/curve exit price:', poolPrice / curvePrice);
   });
   it('preserves platform and 100%-holder allocations after Maxima graduation', async function () {

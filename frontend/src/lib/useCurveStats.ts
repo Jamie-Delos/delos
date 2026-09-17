@@ -43,13 +43,14 @@ export function useCurveStats(addresses: string[]): Record<string, CurveStat> {
             })) as readonly [Address, Address, Address, number, number, bigint, bigint, bigint, bigint, boolean, boolean];
             if (!cv[10]) return [lc, EMPTY]; // not registered on the curve
             const quote = cv[0], virtualQuote = cv[5], tokenReserve = cv[6], realQuote = cv[7], graduationQuote = cv[8], graduated = cv[9];
+            const offset = await pc.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "virtualTokenOffset", args: [addr as Address] }) as bigint;
             const isWeth = quote.toLowerCase() === CONTRACTS.weth.toLowerCase();
             const quoteDec = ANCHORS.find((a) => a.quote.toLowerCase() === quote.toLowerCase())?.quoteDecimals ?? 18;
 
             let priceUsd: number | null = null;
             let mcapUsd: number | null = null;
             if (isWeth && tokenReserve > 0n) {
-              const priceQuote = (Number(virtualQuote) / 10 ** quoteDec) / (Number(tokenReserve) / 1e18);
+              const priceQuote = (Number(virtualQuote) / 10 ** quoteDec) / (Number(tokenReserve + offset) / 1e18);
               priceUsd = priceQuote * ETH_USD;
               try {
                 const supply = (await pc.readContract({ address: addr as Address, abi: erc20Abi, functionName: "totalSupply" })) as bigint;

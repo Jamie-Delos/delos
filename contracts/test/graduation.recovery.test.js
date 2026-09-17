@@ -35,7 +35,7 @@ async function setup(threshold = '4', holderShare = 10000) {
 async function migrationTarget(s) {
   const c = await s.curve.curves(s.token.target);
   const first = BigInt(s.token.target) < BigInt(s.weth.target);
-  const [a0, a1] = first ? [c.tokenReserve, c.realQuote] : [c.realQuote, c.tokenReserve];
+  const [a0, a1] = first ? [c.tokenReserve + await s.curve.virtualTokenOffset(s.token.target), c.virtualQuote] : [c.virtualQuote, c.tokenReserve + await s.curve.virtualTokenOffset(s.token.target)];
   return { target: sqrt((a1 << 192n) / a0), tokenIsToken0: first, tokenAmt: c.tokenReserve, quoteAmt: c.realQuote };
 }
 
@@ -94,7 +94,7 @@ describe('Graduation recovery from adversarial pool initialization', function ()
   it('recovers at the attacker\'s expense when the mispriced pool holds real liquidity', async () => {
     const s = await setup();
     // Attacker acquires tokens on the curve, then seeds a mispriced pool with real liquidity.
-    await s.curve.connect(s.attacker).buyWithETH(s.token.target, 0, { value: E('1') });
+    await s.token.connect(s.buyer).transfer(s.attacker.address, (await s.token.balanceOf(s.buyer.address)) / 10n);
     const { target, tokenIsToken0 } = await migrationTarget(s);
     await initPoolAt(s, target / 2n);
     const attackerTokens = await s.token.balanceOf(s.attacker.address);
@@ -123,7 +123,7 @@ describe('Graduation recovery from adversarial pool initialization', function ()
   it('fails closed when liquidity is too deep for the bounded recovery, and the curve keeps trading', async () => {
     const s = await setup();
     // Attacker takes a very large token position and seeds deep liquidity far below the target price.
-    await s.curve.connect(s.attacker).buyWithETH(s.token.target, 0, { value: E('60') });
+    await s.token.connect(s.buyer).transfer(s.attacker.address, (await s.token.balanceOf(s.buyer.address)) * 9n / 10n);
     const { target } = await migrationTarget(s);
     await initPoolAt(s, target / 16n); // price at 1/256 of migration price
     const attackerTokens = await s.token.balanceOf(s.attacker.address);
@@ -135,12 +135,15 @@ describe('Graduation recovery from adversarial pool initialization', function ()
     expect(c.graduated).to.equal(false);
     expect(await s.weth.balanceOf(s.curve.target)).to.equal(c.realQuote);
     expect(await s.token.balanceOf(s.curve.target)).to.equal(c.tokenReserve);
-    await s.curve.connect(s.buyer).buyWithETH(s.token.target, 0, { value: E('0.1') });
+    const sell = (await s.token.balanceOf(s.buyer.address)) / 10n;
+    await s.token.connect(s.buyer).approve(s.curve.target, sell);
+    await s.curve.connect(s.buyer).sell(s.token.target, sell, 0);
+    expect((await s.curve.curves(s.token.target)).realQuote).to.be.lt(c.realQuote);
   });
 
   it('M3: the deployer can sweep a graduated coin recorded migration dust to the platform (once)', async () => {
     const s = await setup();
-    await s.curve.connect(s.attacker).buyWithETH(s.token.target, 0, { value: E('1') });
+    await s.token.connect(s.buyer).transfer(s.attacker.address, (await s.token.balanceOf(s.buyer.address)) / 10n);
     const { target } = await migrationTarget(s);
     await initPoolAt(s, target / 2n);
     await attackerLP(s, await s.token.balanceOf(s.attacker.address), E('1'));
@@ -162,9 +165,9 @@ describe('Graduation recovery from adversarial pool initialization', function ()
 
   it('H5: a griefed graduation can be unblocked by the deployer widening that coin recovery bound', async () => {
     const s = await setup();
-    // Parked liquidity deeper than the default 10% bound can absorb (needs ~25% of a leg to restore),
+    // Parked liquidity deeper than the default 10% bound can absorb (needs roughly 19-37% of a leg to restore),
     // parked below the target price. Sized so the outcome holds for either token0/token1 orientation.
-    await s.curve.connect(s.attacker).buyWithETH(s.token.target, 0, { value: E('40') });
+    await s.token.connect(s.buyer).transfer(s.attacker.address, (await s.token.balanceOf(s.buyer.address)) / 4n);
     const { target } = await migrationTarget(s);
     await initPoolAt(s, (target * 5n) / 7n);
     await attackerLP(s, await s.token.balanceOf(s.attacker.address), E('40'));

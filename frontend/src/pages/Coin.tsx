@@ -46,12 +46,12 @@ export function Coin() {
   const coinSym = cq.symbol ?? coin.symbol;
 
   // Live spot price + market cap, straight off the curve (no indexer needed): spot = virtualQuote /
-  // tokenReserve (quote per token). USD via the app's ETH_USD calibration for ETH-quoted coins; for a
+  // (tokenReserve + virtualTokenOffset) (quote per token). USD via the app's ETH_USD calibration for ETH-quoted coins; for a
   // non-ETH anchor we show the price in that anchor's units. Stays null (shows "new") until the coin is
   // registered on the curve with reserves. Richer stats (24h, holders, history) need the indexer.
-  const liveStats = onCurve && cq.virtualQuote != null && cq.tokenReserve != null && cq.tokenReserve > 0n;
+  const liveStats = onCurve && cq.virtualQuote != null && cq.tokenReserve != null && cq.virtualTokenOffset != null && cq.tokenReserve > 0n;
   const quoteDec = ANCHORS.find((a) => a.quote.toLowerCase() === quote.toLowerCase())?.quoteDecimals ?? 18;
-  const priceQuote = liveStats ? (Number(cq.virtualQuote) / 10 ** quoteDec) / (Number(cq.tokenReserve) / 1e18) : null;
+  const priceQuote = liveStats ? (Number(cq.virtualQuote) / 10 ** quoteDec) / (Number(cq.tokenReserve! + cq.virtualTokenOffset!) / 1e18) : null;
   const supply = cq.totalSupply != null ? Number(cq.totalSupply) / 1e18 : null;
   const priceUsd = priceQuote != null && isWethQuote ? priceQuote * ETH_USD : null;
   const mcapUsd = priceUsd != null && supply != null ? priceUsd * supply : null;

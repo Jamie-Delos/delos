@@ -30,9 +30,10 @@ interface IWETH {
 ///         tokens + the raised quote into a permanently-locked Uniswap V3 pool (the coin's home for
 ///         life) and stops.
 ///
-///         Pricing: a constant-product AMM with a *virtual* quote reserve V. The curve holds `realQuote`
-///         quote and `tokenReserve` tokens; k = V * tokenReserve is invariant (the 2% fee is taken
-///         outside the curve, so it never leaks k). Starting FDV (in quote) ≈ the initial V.
+///         Pricing: k = V * (tokenReserve + virtualTokenOffset). The offset is never minted.
+///         For supply S, initial virtual quote V0 and graduation reserve G, offset X is approximately
+///         S*V0^2 / (G*(G+2*V0)). At G, real reserves fit the exit price without burning/parking supply.
+///         Fees sit outside the curve; integer rounding can only increase k. Initial FDV is V0*S/(S+X).
 ///
 ///         Fee: flat 2% on every buy and sell, split exactly as the rest of Census — 25% platform,
 ///         and the 75% "creator side" split between the creator and the DividendVault (holders) by a
@@ -106,11 +107,14 @@ contract CensusCurve is ReentrancyGuard {
         bool exists;
     }
     mapping(address => Curve) public curves; // coin => curve
+    // Kept outside Curve to preserve the existing curves() return tuple used by keeper/metadata.
+    mapping(address => uint256) public virtualTokenOffset;
 
     event FactorySet(address indexed factory, bool allowed);
     event QuoteAllowed(address indexed quote, bool allowed);
     event ZapPathSet(address indexed quote, bytes pathIn, bytes pathOut);
-    event Registered(address indexed coin, address quote, address creator, address vault, uint16 holdersBps, uint256 virtualQuote, uint256 graduationQuote);
+    event Registered(address indexed coin, address quote, address creator, address vault, uint16 holdersBps, uint256 virtualQuote, uint256 graduationQuote, uint256 virtualTokenOffset);
+    event BuyRefunded(address indexed coin, address indexed buyer, address quote, uint256 amount, bool nativeRefund);
     event Traded(address indexed coin, address indexed trader, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 fee);
     event Graduated(address indexed coin, address pool, uint256 tokenId, uint256 tokensIn, uint256 quoteIn);
     event MigrationPriceRestored(address indexed coin, address pool, uint160 poolSqrtPriceX96, uint160 targetSqrtPriceX96, int256 amount0Delta, int256 amount1Delta);
@@ -138,6 +142,7 @@ contract CensusCurve is ReentrancyGuard {
     error RecoveryFailed();
     error EthTransferFailed();
     error NotGraduated();
+    error CurveFilled();
 
     constructor(address npm_, address platform_, address locker_, address weth_, address swapRouter_) {
         require(npm_ != address(0) && platform_ != address(0) && locker_ != address(0) && weth_ != address(0) && swapRouter_ != address(0), "zero");
@@ -234,7 +239,7 @@ contract CensusCurve is ReentrancyGuard {
     }
 
     /// @notice Called by a launch factory after it has minted the whole supply to this contract.
-    /// @param virtualQuote V0 — the virtual quote reserve; ≈ the starting FDV in quote terms.
+    /// @param virtualQuote V0 — initial virtual quote reserve; starting FDV = V0*S/(S+offset).
     /// @param tokenSupply the whole supply now held by this contract for `coin`.
     /// @param graduationQuote graduate once `realQuote` reaches this (e.g. 4 ETH).
     function register(
@@ -248,12 +253,20 @@ contract CensusCurve is ReentrancyGuard {
         if (poolFee != 100 && poolFee != 500 && poolFee != 3000 && poolFee != 10000) revert BadPoolFee();
         if (virtualQuote == 0 || tokenSupply == 0 || graduationQuote == 0) revert BadParams();
         if (IERC20(coin).balanceOf(address(this)) < tokenSupply) revert SupplyNotFunded();
+        // Two full-precision divisions avoid squaring quote units. This rounds X down by less than
+        // 1.5 token base units compared with the rational formula (V0/(G+2*V0) < 1/2).
+        uint256 offset = Math.mulDiv(Math.mulDiv(tokenSupply, virtualQuote, graduationQuote), virtualQuote, graduationQuote + 2 * virtualQuote);
+        if (offset == 0) revert BadParams();
+        // Check the initial virtual token reserve is representable before accepting registration.
+        uint256 initialTokenReserve = tokenSupply + offset;
+        if (initialTokenReserve <= tokenSupply) revert BadParams();
+        virtualTokenOffset[coin] = offset;
         curves[coin] = Curve({
             quote: quote, creator: creator, vault: vault, holdersBps: holdersBps, poolFee: poolFee,
             virtualQuote: virtualQuote, tokenReserve: tokenSupply, realQuote: 0,
             graduationQuote: graduationQuote, graduated: false, exists: true
         });
-        emit Registered(coin, quote, creator, vault, holdersBps, virtualQuote, graduationQuote);
+        emit Registered(coin, quote, creator, vault, holdersBps, virtualQuote, graduationQuote, offset);
     }
 
     function _distributeFee(Curve storage c, uint256 fee) internal {
@@ -288,7 +301,7 @@ contract CensusCurve is ReentrancyGuard {
         uint256 beforeQuote = IERC20(c.quote).balanceOf(address(this));
         IERC20(c.quote).safeTransferFrom(msg.sender, address(this), quoteIn);
         if (IERC20(c.quote).balanceOf(address(this)) - beforeQuote != quoteIn) revert UnsupportedQuote();
-        return _buy(c, coin, quoteIn, minTokensOut);
+        return _buy(c, coin, quoteIn, minTokensOut, false);
     }
 
     /// @notice One-tap buy with native ETH. For an ETH-quoted coin it just wraps msg.value to WETH. For a
@@ -304,7 +317,9 @@ contract CensusCurve is ReentrancyGuard {
         if (msg.value == 0) revert ZeroAmount();
         IWETH(weth).deposit{value: msg.value}(); // this contract now holds msg.value WETH
         uint256 quoteIn = c.quote == weth ? msg.value : _swap(weth, zapPathIn[c.quote], msg.value);
-        return _buy(c, coin, quoteIn, minTokensOut);
+        // A WETH launch returns excess as native ETH. A zap returns excess in the quote asset:
+        // the upstream swap already happened, and reversing it would incur another swap fee.
+        return _buy(c, coin, quoteIn, minTokensOut, c.quote == weth);
     }
 
     /// @dev Swap `amountIn` of `tokenIn` along a Uniswap V3 multi-hop `path`, paid to this contract.
@@ -319,12 +334,15 @@ contract CensusCurve is ReentrancyGuard {
     }
 
     /// @dev Shared buy core. Assumes `quoteIn` of `c.quote` is already held by this contract.
-    function _buy(Curve storage c, address coin, uint256 quoteIn, uint256 minTokensOut) internal returns (uint256 tokensOut) {
+    function _buy(Curve storage c, address coin, uint256 quoteIn, uint256 minTokensOut, bool nativeRefund) internal returns (uint256 tokensOut) {
+        uint256 maximum = _maxBuy(c);
+        if (maximum == 0) revert CurveFilled();
+        uint256 refund = quoteIn > maximum ? quoteIn - maximum : 0;
+        quoteIn -= refund;
         uint256 fee = (quoteIn * FEE_BPS) / BPS;
         uint256 netIn = quoteIn - fee;
 
-        // constant product: tokensOut = tokenReserve * netIn / (V + netIn)
-        tokensOut = Math.mulDiv(c.tokenReserve, netIn, c.virtualQuote + netIn);
+        tokensOut = Math.mulDiv(c.tokenReserve + virtualTokenOffset[coin], netIn, c.virtualQuote + netIn);
         if (tokensOut == 0 || tokensOut >= c.tokenReserve) revert CurveLimit(); // never drain the curve dry
         if (tokensOut < minTokensOut) revert Slippage();
 
@@ -338,6 +356,16 @@ contract CensusCurve is ReentrancyGuard {
         _distributeFee(c, fee);
         IERC20(coin).safeTransfer(msg.sender, tokensOut);
         emit Traded(coin, msg.sender, true, quoteIn, tokensOut, fee);
+        if (refund > 0) {
+            if (nativeRefund) {
+                IWETH(weth).withdraw(refund);
+                (bool ok, ) = payable(msg.sender).call{value: refund}("");
+                if (!ok) revert EthTransferFailed();
+            } else {
+                IERC20(c.quote).safeTransfer(msg.sender, refund);
+            }
+            emit BuyRefunded(coin, msg.sender, c.quote, refund, nativeRefund);
+        }
     }
 
     /// @notice Sell `tokensIn` of `coin` back to the curve for the quote asset. Fee is 2% of proceeds.
@@ -376,8 +404,7 @@ contract CensusCurve is ReentrancyGuard {
     /// @dev Shared sell core: pulls the coin in via the caller, updates reserves, pays the fee, and
     ///      returns the net quote owed to the seller (still held by this contract as the quote asset).
     function _sell(Curve storage c, address coin, uint256 tokensIn, uint256 minQuoteOut) internal returns (uint256 quoteOut) {
-        // constant product: quoteGross = V * tokensIn / (tokenReserve + tokensIn)
-        uint256 quoteGross = Math.mulDiv(c.virtualQuote, tokensIn, c.tokenReserve + tokensIn);
+        uint256 quoteGross = Math.mulDiv(c.virtualQuote, tokensIn, c.tokenReserve + virtualTokenOffset[coin] + tokensIn);
         if (quoteGross == 0 || quoteGross > c.realQuote) revert CurveLimit();
 
         c.tokenReserve += tokensIn;
@@ -415,9 +442,18 @@ contract CensusCurve is ReentrancyGuard {
         bool tokenIsToken0 = coin == token0;
         (uint256 amount0, uint256 amount1) = tokenIsToken0 ? (tokenAmt, quoteAmt) : (quoteAmt, tokenAmt);
 
-        // Start price for the pool = the curve's exit price = amount1 / amount0.
-        // sqrtPriceX96 = sqrt(amount1/amount0) * 2^96, computed overflow-safe via 512-bit mulDiv.
-        uint160 sqrtPriceX96 = uint160(Math.sqrt(Math.mulDiv(amount1, 1 << 192, amount0)));
+        // Price the pool from BOTH virtual reserves, never from just the real quote reserve.
+        // At the capped threshold the real assets match this ratio up to integer rounding.
+        uint256 virtualTokens = tokenAmt + virtualTokenOffset[coin];
+        uint256 priceNumerator = tokenIsToken0 ? c.virtualQuote : virtualTokens;
+        uint256 priceDenominator = tokenIsToken0 ? virtualTokens : c.virtualQuote;
+        // For a high token1/token0 ratio (e.g. an 18/6 decimal pair in reverse orientation),
+        // Q192 can overflow even though the final uint160 sqrt price is valid. Use Q128 there.
+        uint256 sqrtRatio = priceNumerator / priceDenominator > type(uint64).max
+            ? Math.sqrt(Math.mulDiv(priceNumerator, 1 << 128, priceDenominator)) << 32
+            : Math.sqrt(Math.mulDiv(priceNumerator, 1 << 192, priceDenominator));
+        if (sqrtRatio > type(uint160).max) revert BadParams();
+        uint160 sqrtPriceX96 = uint160(sqrtRatio);
         pool = npm.createAndInitializePoolIfNecessary(token0, token1, c.poolFee, sqrtPriceX96);
 
         // If the pool pre-existed at a manipulated price, swap it back to the migration price before
@@ -530,19 +566,32 @@ contract CensusCurve is ReentrancyGuard {
 
     // ----------------------------- views (for the UI/keepers) -----------------------------
 
+    /// @notice Maximum gross quote accepted before graduation. Larger buys are partially filled.
+    function maxQuoteIn(address coin) external view returns (uint256) {
+        return _maxBuy(curves[coin]);
+    }
+
+    function _maxBuy(Curve memory c) internal pure returns (uint256) {
+        if (!c.exists || c.graduated || c.realQuote >= c.graduationQuote) return 0;
+        // With fee=floor(gross*FEE/BPS), this gross amount nets exactly the remaining reserve.
+        return Math.mulDiv(c.graduationQuote - c.realQuote, BPS, BPS - FEE_BPS);
+    }
+
     /// @notice Tokens a buyer would receive for `quoteIn` right now (net of the 2% fee).
     function quoteBuy(address coin, uint256 quoteIn) external view returns (uint256 tokensOut) {
         Curve memory c = curves[coin];
         if (!c.exists || c.graduated || quoteIn == 0) return 0;
+        quoteIn = Math.min(quoteIn, _maxBuy(c));
         uint256 netIn = quoteIn - (quoteIn * FEE_BPS) / BPS;
-        tokensOut = Math.mulDiv(c.tokenReserve, netIn, c.virtualQuote + netIn);
+        tokensOut = Math.mulDiv(c.tokenReserve + virtualTokenOffset[coin], netIn, c.virtualQuote + netIn);
     }
 
     /// @notice Quote a seller would receive for `tokensIn` right now (net of the 2% fee).
     function quoteSell(address coin, uint256 tokensIn) external view returns (uint256 quoteOut) {
         Curve memory c = curves[coin];
         if (!c.exists || c.graduated || tokensIn == 0) return 0;
-        uint256 gross = Math.mulDiv(c.virtualQuote, tokensIn, c.tokenReserve + tokensIn);
+        uint256 gross = Math.mulDiv(c.virtualQuote, tokensIn, c.tokenReserve + virtualTokenOffset[coin] + tokensIn);
+        if (gross > c.realQuote) return 0;
         quoteOut = gross - (gross * FEE_BPS) / BPS;
     }
 

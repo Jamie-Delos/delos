@@ -220,7 +220,8 @@ export function Launch() {
       }
 
       // CensusCurve launch params: the coin's whole supply seeds a bonding curve priced in `quote`.
-      // virtualQuote = starting FDV, graduationQuote = the reserve to raise before graduating to a pool.
+      // virtualQuote is the initial virtual quote; PF offset makes initial FDV slightly lower.
+      // graduationQuote is the net reserve at which buys stop and the pool can be seeded.
       setStatus("pricing the curve…");
       setLaunchPct(72);
       let cp;

@@ -23,7 +23,9 @@ const TRADED = parseAbiItem(
 const GRADUATED = parseAbiItem(
   "event Graduated(address indexed coin, address pool, uint256 tokenId, uint256 tokensIn, uint256 quoteIn)",
 );
-const EVENTS = [REGISTERED, TRADED, GRADUATED] as const;
+const REGISTERED_LEGACY = REGISTERED;
+const REGISTERED_PF = parseAbiItem("event Registered(address indexed coin, address quote, address creator, address vault, uint16 holdersBps, uint256 virtualQuote, uint256 graduationQuote, uint256 virtualTokenOffset)");
+const EVENTS = [REGISTERED_LEGACY, REGISTERED_PF, TRADED, GRADUATED] as const;
 
 // Post-graduation coverage: the coin's own locked pool (swaps) and its DividendVault (rewards).
 const POOL_SWAP = parseAbiItem(
@@ -70,11 +72,11 @@ async function blockTime(blockNumber: bigint, ctx?: PageContext): Promise<Date> 
 
 // ---- derived fields ----
 function derive(coin: {
-  virtualQuote: string; tokenReserve: string; realQuote: string; graduationQuote: string;
+  virtualQuote: string; tokenReserve: string; virtualTokenOffset?: string; realQuote: string; graduationQuote: string;
   decimals: number; quote: string; totalSupply: string; quoteDecimals?: number;
 }) {
   const vq = Number(coin.virtualQuote);
-  const tr = Number(coin.tokenReserve);
+  const tr = Number(BigInt(coin.tokenReserve) + BigInt(coin.virtualTokenOffset ?? "0"));
   const qd = coin.quoteDecimals ?? 18;
   const decFactor = 10 ** (coin.decimals - qd); // human quote per human token
   const priceQuote = tr > 0 ? (vq / tr) * decFactor : 0; // quote per token (human)
@@ -112,7 +114,8 @@ async function onRegistered(log: any, db: Db, notify: Notify, ctx?: PageContext)
     holdersBps: Number(log.args.holdersBps),
     isV2,
     virtualQuote: (log.args.virtualQuote as bigint).toString(),
-    tokenReserve: totalSupply, // whole supply seeds the curve
+    tokenReserve: totalSupply, // only real tokens seed the curve
+    virtualTokenOffset: (log.args.virtualTokenOffset ?? 0n).toString(), // legacy event => original math
     realQuote: "0",
     graduationQuote: (log.args.graduationQuote as bigint).toString(),
     graduated: false,
@@ -438,7 +441,7 @@ export function serializeCoin(c: any) {
     address: c.address, name: c.name, symbol: c.symbol, decimals: c.decimals,
     totalSupply: c.totalSupply, creator: c.creator, quote: c.quote, quoteSymbol: c.quoteSymbol, quoteDecimals: c.quoteDecimals ?? 18, quoteIsCoin: c.quoteIsCoin ?? false,
     vault: c.vault, holdersBps: c.holdersBps, isV2: c.isV2,
-    virtualQuote: c.virtualQuote, tokenReserve: c.tokenReserve, realQuote: c.realQuote,
+    virtualQuote: c.virtualQuote, tokenReserve: c.tokenReserve, virtualTokenOffset: c.virtualTokenOffset ?? "0", realQuote: c.realQuote,
     graduationQuote: c.graduationQuote, graduated: c.graduated, pool: c.pool, progressBps: c.progressBps,
     priceQuote: c.priceQuote, priceUsd: c.priceUsd, marketCapUsd: c.marketCapUsd,
     volumeQuote: c.volumeQuote, volumeUsd: c.volumeUsd, tradeCount: c.tradeCount,

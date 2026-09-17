@@ -21,7 +21,8 @@ export type CoinQuote = {
   graduated?: boolean; // curve filled + migrated to a real, permanently-locked Uniswap pool
   routerPoolFee?: number; // the coin's (graduated) pool fee tier, from the curve registry
   creator?: Address; // the coin's creator (creator-side fee recipient), from the curve registry
-  virtualQuote?: bigint; // V — current virtual quote reserve (spot price = virtualQuote / tokenReserve)
+  virtualQuote?: bigint; // V — current virtual quote reserve (spot price = virtualQuote / (tokenReserve + virtualTokenOffset))
+  virtualTokenOffset?: bigint; // pricing only, not part of totalSupply
   tokenReserve?: bigint; // tokens still in the curve
   realQuote?: bigint; // quote raised so far (for the graduation reserve caption)
   graduationQuote?: bigint; // quote needed to graduate
@@ -57,6 +58,9 @@ export function useCoinQuote(coin?: string): CoinQuote {
           const cv = (await pc.readContract({
             address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "curves", args: [coin as Address],
           })) as readonly [Address, Address, Address, number, number, bigint, bigint, bigint, bigint, boolean, boolean];
+          const offset = cv[10] ? await pc.readContract({
+            address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "virtualTokenOffset", args: [coin as Address],
+          }).catch(() => undefined) as bigint | undefined : 0n; // hide spot price if offset unavailable; retain routing state
           if (!cancelled && cv[10]) {
             setInfo((prev) => ({
               ...prev,
@@ -66,6 +70,7 @@ export function useCoinQuote(coin?: string): CoinQuote {
               routerPoolFee: Number(cv[4]),
               virtualQuote: cv[5],
               tokenReserve: cv[6],
+              virtualTokenOffset: offset,
               realQuote: cv[7],
               graduationQuote: cv[8],
               graduated: cv[9],

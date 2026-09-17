@@ -1,4 +1,26 @@
-# Reconciliation with the independent review — 2026-09-16 (evening, updated)
+# PF graduation update — 2026-09-17
+
+The team approved PF-style virtual token reserves. Implemented on top of `dda7794`; see
+[PF-GRADUATION.md](PF-GRADUATION.md) for math, refunds, event/schema changes and deployment requirements.
+The earlier B15 accept-versus-redesign decision below is superseded. Standard 1B supply is preserved;
+there is no permanently parked economic surplus. Initial virtual quote stays 1.5 ETH, graduation 4 ETH;
+the resulting starting FDV is about 1.38843 ETH. The last buy is capped with excess refunded.
+
+Validation: 78 local contract tests passed; 3 opt-in/legacy cases pending. The explicit local mainnet-fork
+lifecycle passed at block 65,273,142. Real contract/indexer parity passed for 121 trades. Keeper,
+in-memory indexer, bytecode parity and contract-size checks passed. Frontend and indexer typechecks passed.
+Real PostgreSQL passed: clean migrations, PF offset persistence/pricing, duplicate replay, two concurrent
+workers, hard-kill/WAL recovery, logical restore, 10,000 unique + 1,000 duplicate events, and 1,000 API
+requests at concurrency 50. The load run took 48.6 seconds on the local single-node test environment;
+it is not a production capacity measurement. Production pg_dump/restore remains a separate gate.
+
+**Release status:** implementation candidate for Jamie's review. No public deployment or push. Existing
+contracts remain unchanged. External validation, custody, existing-funds inventory and production
+operations gates below remain open. The hostile-pool recovery bound can still fail closed.
+
+---
+
+# Reconciliation with the independent review — 2026-09-16 (historical)
 
 Jamie's review (`INDEPENDENT-REVIEW.md`, branch `BACKEND-NEIL` @ `945dfe2`) confirmed every test claim
 below and found no fund-loss bug in the contracts; its findings were operational (keeper/indexer/metadata)

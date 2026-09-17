@@ -57,11 +57,14 @@ describe('Meme pairing against graduated company coins', function () {
 
     // The buyer pays with XYZ (bought earlier on the company curve); the 2% fee splits in XYZ.
     const spend = E('1000000');
+    const accepted = await s.curve.maxQuoteIn(meme.target); // oversized buy refunds unused XYZ
+    const buyerBefore = await s.company.balanceOf(s.buyer.address);
     await s.company.connect(s.buyer).approve(s.curve.target, spend);
     const [platformBefore, creatorBefore] = await Promise.all([s.company.balanceOf(s.platform.address), s.company.balanceOf(s.memer.address)]);
     await s.curve.connect(s.buyer).buy(meme.target, spend, 0);
     expect(await meme.balanceOf(s.buyer.address)).to.be.gt(0);
-    const fee = (spend * 200n) / 10000n;
+    expect(buyerBefore - await s.company.balanceOf(s.buyer.address)).to.equal(accepted);
+    const fee = (accepted * 200n) / 10000n;
     expect(await s.company.balanceOf(s.platform.address) - platformBefore).to.equal((fee * 2500n) / 10000n);
     expect(await s.company.balanceOf(s.memer.address) - creatorBefore).to.equal(fee - (fee * 2500n) / 10000n); // Prima: creator keeps the 75% side
 

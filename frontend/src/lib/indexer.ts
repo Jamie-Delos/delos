@@ -7,7 +7,7 @@ import { INDEXER_URL } from "../config";
 export type IndexerCoin = {
   address: string; name: string; symbol: string; decimals: number; totalSupply: string;
   creator: string; quote: string; quoteSymbol: string; vault: string | null; holdersBps: number; isV2: boolean;
-  virtualQuote: string; tokenReserve: string; realQuote: string; graduationQuote: string;
+  virtualQuote: string; tokenReserve: string; virtualTokenOffset: string; realQuote: string; graduationQuote: string;
   graduated: boolean; pool: string | null; progressBps: number;
   priceQuote: number; priceUsd: number; marketCapUsd: number; volumeQuote: number; volumeUsd: number;
   tradeCount: number; createdBlock: string; createdAt: string; updatedAt: string;

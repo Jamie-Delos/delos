@@ -46,8 +46,8 @@ export const DEFAULT_FEE = 10000; // 1% tier — the graduated pool standard
 // indexer is live on the company server + Postgres.
 export const INDEXER_URL = (import.meta.env.VITE_INDEXER_URL ?? "").replace(/\/$/, "");
 
-// Starting FDV (in ETH terms) baked into a new coin's curve. The curve's virtual quote reserve V0 is
-// this, converted to the quote asset (see lib/anchors.ts curveLaunchParams).
+// Initial virtual quote reserve in ETH terms (historical constant name retained). PF pricing
+// starts at FDV = V0*S/(S+virtualTokenOffset), about 1.38843 ETH for V0=1.5 and G=4.
 export const START_FDV_ETH = 1.5;
 
 // Quote symbol for UI unit labels, and whether the DEX router's exactInputSingle takes a deadline

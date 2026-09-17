@@ -81,6 +81,7 @@ function makeStream(nTrades, nDupes) {
       coin: COINS[i], quote: QUOTE, creator: '0x' + 'aa'.repeat(20),
       vault: i === 0 ? VAULT0 : '0x0000000000000000000000000000000000000000',
       holdersBps: i === 0 ? 10000 : 0, virtualQuote: 10n ** 18n, graduationQuote: 4n * 10n ** 18n,
+      ...(i === 1 ? { virtualTokenOffset: 10n ** 24n } : {}), // mix PF + historical registrations
     }));
   }
   const perBlock = 10;
@@ -195,6 +196,11 @@ async function main() {
     assert.equal(refDigest.counts.rewards, 3); // converted + distributed + claimed
     assert.equal(refDigest.counts.coins, 3);
     assert.equal(refDigest.counts.cursor, stream.endBlock);
+    const pfCoin = await ref.coin.findUnique({ where: { address: COINS[1] } });
+    assert.equal(pfCoin.virtualTokenOffset, (10n ** 24n).toString());
+    const expectedPfPrice = Number(pfCoin.virtualQuote) / Number(BigInt(pfCoin.tokenReserve) + BigInt(pfCoin.virtualTokenOffset));
+    assert.ok(Math.abs(pfCoin.priceQuote / expectedPfPrice - 1) < 1e-14); // PostgreSQL float round-trip
+    assert.equal((await ref.coin.findUnique({ where: { address: COINS[2] } })).virtualTokenOffset, '0');
     assert.ok(refPublished.length >= 2004, 'updates published after commit');
     // Post-graduation swaps landed as venue=pool trades and moved the coin's spot price.
     const poolTrades = await ref.trade.findMany({ where: { venue: 'pool' } });
@@ -347,7 +353,13 @@ async function main() {
     for (const c of clients) await c.$disconnect().catch(() => {});
     if (server) await server.stop().catch(() => {});
     if (crashServer) await crashServer.stop().catch(() => {});
-    try { fs.rmSync(base, { recursive: true, force: true }); } catch { /* Windows file locks; temp dir */ }
+    // Only remove the temporary directory created by this harness, including on Windows.
+    try {
+      const resolved = fs.realpathSync(base);
+      assert.equal(path.dirname(resolved), fs.realpathSync(os.tmpdir()));
+      assert.ok(path.basename(resolved).startsWith('census-pg-'));
+      fs.rmSync(resolved, { recursive: true, force: true });
+    } catch { /* Windows file locks; retain the temp dir if cleanup cannot be verified */ }
   }
 }
 

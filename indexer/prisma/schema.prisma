@@ -29,6 +29,7 @@ model Coin {
   // Live curve state (refreshed from the chain each reconcile).
   virtualQuote    String   @default("0")
   tokenReserve    String   @default("0")
+  virtualTokenOffset String @default("0") // pricing-only, never minted; zero for legacy curves
   realQuote       String   @default("0")
   graduationQuote String   @default("0")
   graduated       Boolean  @default(false)

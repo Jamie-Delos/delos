@@ -242,4 +242,16 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     await expect(curve.connect(trader).buy(await coin.getAddress(), 0, 0)).to.be.reverted; // zero
     await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), E(1_000_000_000))).to.be.reverted; // slippage
   });
+  it("PF zap caps the curve fill and refunds excess in quote tokens without a reverse swap", async () => {
+    const {trader,hood,curve,coin}=await setupZap();
+    await mine(101);
+    const input=E(10), limit=await curve.maxQuoteIn(coin.target);
+    const output=await curve.quoteBuy(coin.target,input);
+    await curve.connect(trader).buyWithETH(coin.target,output,{value:input});
+    expect((await curve.curves(coin.target)).realQuote).to.equal(E(4));
+    expect(await hood.balanceOf(trader.address)).to.equal(input-limit);
+    expect(await coin.balanceOf(trader.address)).to.equal(output);
+    expect(await hood.balanceOf(curve.target)).to.equal(E(4));
+  });
+
 });

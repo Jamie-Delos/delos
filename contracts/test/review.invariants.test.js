@@ -151,11 +151,11 @@ describe('Review invariants — deferred fees, payout isolation, recovery permis
     const s = await stack();
     const { token } = await launchMaxima(s, 10000);
     await s.curve.connect(s.buyer).buy(token.target, E('5'), 0);
-    await s.curve.connect(s.attacker).buy(token.target, E('40'), 0);
+    await token.connect(s.buyer).transfer(s.attacker.address, (await token.balanceOf(s.buyer.address)) / 4n);
     // Migration target exactly as graduate() computes it.
     const c = await s.curve.curves(token.target);
     const tokenIsToken0 = BigInt(token.target) < BigInt(s.aq.target);
-    const [a0, a1] = tokenIsToken0 ? [c.tokenReserve, c.realQuote] : [c.realQuote, c.tokenReserve];
+    const [a0, a1] = tokenIsToken0 ? [c.tokenReserve + await s.curve.virtualTokenOffset(token.target), c.virtualQuote] : [c.virtualQuote, c.tokenReserve + await s.curve.virtualTokenOffset(token.target)];
     const target = sqrt((a1 << 192n) / a0);
     const [t0, t1] = tokenIsToken0 ? [token.target, s.aq.target] : [s.aq.target, token.target];
     // Attacker parks deep full-range liquidity at 5/7 of the target sqrt price.
