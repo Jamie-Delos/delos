@@ -18,8 +18,10 @@ model Coin {
   decimals        Int      @default(18)
   totalSupply     String   @default("0") // base units (string)
   creator         String   @default("")
-  quote           String   @default("") // quote asset address (WETH / HOOD)
+  quote           String   @default("") // quote asset address (WETH / HOOD / a graduated company coin)
   quoteSymbol     String   @default("ETH")
+  quoteDecimals   Int      @default(18) // the quote asset's own decimals (company-coin quotes may differ)
+  quoteIsCoin     Boolean  @default(false) // meme pair: quoted in a Census company coin (UI highlights these)
   vault           String? // DividendVault (Maxima); null => Prima
   holdersBps      Int      @default(0)
   isV2            Boolean  @default(false)
@@ -27,6 +29,7 @@ model Coin {
   // Live curve state (refreshed from the chain each reconcile).
   virtualQuote    String   @default("0")
   tokenReserve    String   @default("0")
+  virtualTokenOffset String @default("0") // pricing-only, never minted; zero for legacy curves
   realQuote       String   @default("0")
   graduationQuote String   @default("0")
   graduated       Boolean  @default(false)
@@ -62,8 +65,9 @@ model Trade {
   isBuy       Boolean
   amountIn    String // buy: quote in (incl. fee); sell: tokens in
   amountOut   String // buy: tokens out; sell: quote out (net)
-  fee         String // in quote
+  fee         String // in quote (curve trades; pool swaps record "0" — LP fees accrue in the position)
   priceQuote  Float // quote per token at this trade
+  venue       String   @default("curve") // curve | pool (the coin's own graduated pool)
   block       BigInt
   txHash      String
   logIndex    Int
@@ -72,6 +76,26 @@ model Trade {
   @@unique([txHash, logIndex])
   @@index([coinAddress, ts])
   @@index([ts])
+}
+
+// Holder-reward ledger: vault distributions, claims and launch-token fee conversions, indexed from
+// finalized events so payouts are auditable next to trading volume.
+model RewardEvent {
+  id          String   @id @default(cuid())
+  coinAddress String
+  kind        String // distributed | claimed | converted
+  holder      String? // claimed: the holder paid
+  asset       String? // claimed: the payout asset; converted/distributed: the quote asset
+  amount      String   @default("0") // distributed: quote spent; claimed: amount paid; converted: launch tokens sold
+  amountB     String   @default("0") // converted: quote received
+  block       BigInt
+  txHash      String
+  logIndex    Int
+  ts          DateTime @default(now())
+
+  @@unique([txHash, logIndex])
+  @@index([coinAddress, ts])
+  @@index([holder])
 }
 
 model PricePoint {
@@ -90,4 +114,18 @@ model PricePoint {
 model Cursor {
   id        String @id // e.g. "curve"
   lastBlock BigInt @default(0)
+  lastHash  String?
+  chainId   Int?
+  curve     String?
+}
+
+model IndexedEvent {
+  chainId   Int
+  txHash    String
+  logIndex  Int
+  block     BigInt
+  blockHash String
+
+  @@id([chainId, txHash, logIndex])
+  @@index([block])
 }

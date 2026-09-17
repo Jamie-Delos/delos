@@ -1,0 +1,1 @@
+ALTER TABLE "Coin" ADD COLUMN "virtualTokenOffset" TEXT NOT NULL DEFAULT '0';

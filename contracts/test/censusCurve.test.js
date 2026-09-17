@@ -70,6 +70,7 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     const pathOut = hre.ethers.solidityPacked(["address", "uint24", "address"], [hoodAddr, 3000, wethAddr]);
     await (await coin.mint(curveAddr, PARAMS.totalSupply)).wait();
     await (await curve.setFactory(deployer.address, true)).wait();
+    await (await curve.setQuoteAllowed(hoodAddr, true)).wait(); // HOOD must be an approved collateral
     await (await curve.register(coinAddr, hoodAddr, creator.address, ZERO, 0, PARAMS.poolFee, PARAMS.virtualQuote, PARAMS.totalSupply, PARAMS.graduationQuote)).wait();
     await (await curve.setZapPath(hoodAddr, pathIn, pathOut)).wait();
     return { deployer, platform, creator, trader, quote, hood, curve, coin, router };
@@ -129,6 +130,8 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
   it("ZAP buyWithETH: HOOD-quoted coin — ETH in wraps + swaps to HOOD, buys, fees paid in HOOD", async () => {
     const { platform, creator, trader, hood, curve, coin } = await setupZap();
     const coinAddr = await coin.getAddress();
+    await hre.network.provider.send("evm_increaseTime", [3]);
+    await hre.network.provider.send("evm_mine");
 
     // At the router's 1:1 rate, E(1) ETH -> E(1) HOOD into the curve, so tokens out match a 1-HOOD buy.
     const expTokens = await curve.quoteBuy(coinAddr, E(1));
@@ -140,6 +143,19 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     expect(await hood.balanceOf(creator.address)).to.equal(E(0.015));  // 75% creator side (Prima: holdersBps 0)
     const c = await curve.curves(coinAddr);
     expect(c.realQuote).to.equal(E(0.98)); // net HOOD held by the curve
+  });
+
+  it("ZAP launch buy takes the decayed tax in the quote asset", async () => {
+    const { platform, creator, trader, hood, curve, coin } = await setupZap();
+    const coinAddr = await coin.getAddress();
+    await hre.network.provider.send("evm_setNextBlockTimestamp", [Number(await curve.launchedAt(coinAddr)) + 2]);
+    const rc = await (await curve.connect(trader).buyWithETH(coinAddr, 0, { value: E('0.1') })).wait();
+    const trade = rc.logs.map(l => { try { return curve.interface.parseLog(l); } catch { return null; } }).find(l => l?.name === 'Traded');
+    const fee = E('0.1') * 219n / 10000n;
+    expect(trade.args.fee).to.equal(fee);
+    expect(await hood.balanceOf(platform.address)).to.equal(fee / 4n);
+    expect(await hood.balanceOf(creator.address)).to.equal(fee - fee / 4n);
+    expect((await curve.curves(coinAddr)).realQuote).to.equal(E('0.1') - fee);
   });
 
   it("ZAP sellForETH: HOOD-quoted coin — sell gives HOOD, swaps to WETH, unwraps to native ETH", async () => {
@@ -172,6 +188,7 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     const hood2 = await MockERC20.deploy("Hood2", "HOOD2"); await hood2.waitForDeployment();
     const coin2 = await MockERC20.deploy("NoZap", "NOZAP"); await coin2.waitForDeployment();
     await (await coin2.mint(await curve.getAddress(), PARAMS.totalSupply)).wait();
+    await (await curve.setQuoteAllowed(await hood2.getAddress(), true)).wait();
     await (await curve.register(await coin2.getAddress(), await hood2.getAddress(), creator.address, ZERO, 0, PARAMS.poolFee, PARAMS.virtualQuote, PARAMS.totalSupply, PARAMS.graduationQuote)).wait();
     await expect(curve.buyWithETH(await coin2.getAddress(), 0, { value: E(1) })).to.be.reverted; // NotZappable
     void deployer; void router;
@@ -203,17 +220,19 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     expect(c.tokenReserve).to.be.gt(PARAMS.totalSupply - E(1)); // ~whole supply back in the curve
   });
 
-  it("anti-snipe: over-cap buy in the window reverts; the exempt creator bypasses it; free after ~10s", async () => {
+  it("launch tax: ordinary wallets can buy without caps and creator buys keep the base fee", async () => {
     const { creator, trader, quote, curve, coin } = await setup();
-    // In-window over-cap buy by a normal wallet reverts (E(1) would buy ~40% of supply, way over the 1% cap).
+    // Funding/approval transactions advance beyond the three-second launch window.
     await quote.mint(trader.address, E(1));
     await quote.connect(trader).approve(await curve.getAddress(), E(1));
-    await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), 0)).to.be.reverted;
+    await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), 0)).to.not.be.reverted;
     // The creator is exempt -> can buy in the window.
     await quote.mint(creator.address, E(1));
     await quote.connect(creator).approve(await curve.getAddress(), E(1));
     await expect(curve.connect(creator).buy(await coin.getAddress(), E(1), 0)).to.not.be.reverted;
-    // After the window, the normal wallet is free.
+    // A second purchase is also unrestricted (fund and approve it separately).
+    await quote.mint(trader.address, E(1));
+    await quote.connect(trader).approve(await curve.getAddress(), E(1));
     await mine(101);
     await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), 0)).to.not.be.reverted;
   });
@@ -240,4 +259,16 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     await expect(curve.connect(trader).buy(await coin.getAddress(), 0, 0)).to.be.reverted; // zero
     await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), E(1_000_000_000))).to.be.reverted; // slippage
   });
+  it("PF zap caps the curve fill and refunds excess in quote tokens without a reverse swap", async () => {
+    const {trader,hood,curve,coin}=await setupZap();
+    await mine(101);
+    const input=E(10), limit=await curve.maxQuoteIn(coin.target);
+    const output=await curve.quoteBuy(coin.target,input);
+    await curve.connect(trader).buyWithETH(coin.target,output,{value:input});
+    expect((await curve.curves(coin.target)).realQuote).to.equal(E(4));
+    expect(await hood.balanceOf(trader.address)).to.equal(input-limit);
+    expect(await coin.balanceOf(trader.address)).to.equal(output);
+    expect(await hood.balanceOf(curve.target)).to.equal(E(4));
+  });
+
 });

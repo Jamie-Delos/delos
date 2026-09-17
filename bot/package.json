@@ -5,6 +5,8 @@
   "type": "commonjs",
   "description": "Reward loop: claim creator fees -> buy reward token -> airdrop to holders",
   "scripts": {
+    "test": "node backend.readiness.cjs && node keeperd.readiness.cjs",
+    "keeperd": "node src/keeperd.js",
     "start": "node src/index.js",
     "dry": "DRY_RUN=true node src/index.js",
     "buyback": "node src/buyback.js",

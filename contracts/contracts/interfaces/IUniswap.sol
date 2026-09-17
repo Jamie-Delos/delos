@@ -104,4 +104,14 @@ interface IUniswapV3Pool {
             uint8 feeProtocol,
             bool unlocked
         );
+
+    /// @dev Direct pool swap (exact-input when amountSpecified > 0). Stops at sqrtPriceLimitX96.
+    ///      The caller must implement uniswapV3SwapCallback and pay the positive delta.
+    function swap(
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        bytes calldata data
+    ) external returns (int256 amount0, int256 amount1);
 }

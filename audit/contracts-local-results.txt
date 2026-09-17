@@ -1,0 +1,67 @@
+
+
+  Audit reproductions (assert current vulnerable behavior)
+    √ rejects a vanity salt grinded from the committed frontend bytecode on a fresh deployment (28879ms)
+    √ re-credits unpaid quote dividends and lets the first of two equal holders take the entire pot (64ms)
+      raised/refunded WETH: 4.9 4.899765625000000012
+    √ accepts a poisoned preinitialized pool and refunds over 99% of raised reserves to the creator (84ms)
+      pool/curve exit price: 0.7656250000000001
+    √ drops the virtual reserve when setting the graduation price (103ms)
+      creator/platform/holders WETH: 0.0075/0.0/0.002499999999999999
+    √ pays creator 75% and platform 0 after a 100%-holders Maxima graduation (113ms)
+
+  Local fork lifecycle against configured mainnet Uniswap dependencies
+    - launches, trades, claims a dividend, graduates and trades the migrated pool locally
+
+  Backend adversarial readiness (defect assertions, not safety certification)
+    √ external pool trades bypass Census fees BEFORE graduation (140ms)
+    √ external pool trades bypass locked-position revenue AFTER graduation (91ms)
+      externally owned same-pool NFT collects nonzero LP fees
+    √ third-party LP in the SAME official pool captures fees outside Census locker (111ms)
+    √ unrecognized external pools accrue dividends they cannot claim (125ms)
+    √ selling before first collection can suppress protocol split on an already migrated position (96ms)
+      shared reserve deficit: 10.0
+    √ taxed quote assets create a deficit against the shared curve reserve ledger (64ms)
+    √ blocked fee recipient halts trading despite a valid curve and funded buyer (52ms)
+    √ a privileged 0x operator can spend all quote for zero payout with minOut=0 (60ms)
+    √ duplicate basket assets inflate entitlement when a holder transfers (58ms)
+    √ wrong route output credits a basket asset the vault never received (60ms)
+
+  Bounded local workload (not mainnet throughput certification)
+      operations=500 actors=10 elapsedMs=2893 maxTradeGas=122314
+    √ 500 deterministic mixed buy/sell operations preserve normal-asset curve reserves (2965ms)
+
+  CensusCurve — bonding curve, 2% fee, accounting, anti-snipe
+    √ seeds the whole supply into the curve and registers it (42ms)
+    √ buy: 2% fee splits 25% platform / 75% creator (Prima), rest walks the curve (44ms)
+    √ buyWithETH + sellForETH: one-tap native ETH in, native ETH out (ETH-quoted coin) (43ms)
+    √ ZAP buyWithETH: HOOD-quoted coin — ETH in wraps + swaps to HOOD, buys, fees paid in HOOD (59ms)
+    √ ZAP sellForETH: HOOD-quoted coin — sell gives HOOD, swaps to WETH, unwraps to native ETH (65ms)
+    √ ZAP slippage: a worse router rate than minTokensOut expects reverts (58ms)
+    √ ZAP guard: buyWithETH on a non-zap-enabled non-ETH quote reverts NotZappable (74ms)
+    √ buyWithETH rejects a zero-value call
+    √ round-trip conserves value (no free money): buy then sell-all returns < input, curve resets (40ms)
+    √ anti-snipe: over-cap buy in the window reverts; the exempt creator bypasses it; free after ~10s (55ms)
+    √ graduation readiness: progress tracks realQuote; graduate() reverts NotReady before the threshold (40ms)
+    √ guards: unknown coin, zero amount, and slippage all revert (48ms)
+
+  DividendVault — HOOD-quoted coin pays a stock basket (unified model)
+    √ swaps the HOOD fee into the basket and pays holders pro-rata (41ms)
+    √ still supports 'holders earn HOOD' — a basket member equal to the quote is a passthrough
+
+  launch -> buy -> collect fees, with graduation split (Base fork)
+      (no fork detected — set BASE_FORK_RPC_URL to run this suite)
+    - pre-graduation: creator keeps 100%, vault gets nothing
+    - post-graduation: fees split 80% creator / 20% vault
+
+  launchParams (off-chain tick math)
+    √ isqrt matches known values
+    √ token sorting below WETH => token0 => range above start price
+    √ token sorting above WETH => token1 => range below start price
+    √ ticks are aligned to the fee tier spacing
+    √ Arc standard (USDC quote) produces valid single-sided params
+    √ quoteDecimals actually changes the encoded price (18 vs 6)
+
+
+  36 passing (34s)
+  3 pending

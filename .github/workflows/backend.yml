@@ -1,0 +1,63 @@
+# Runs every backend suite on every push / PR so a green branch is a tested branch:
+# contracts (hardhat), indexer (in-memory + REAL embedded PostgreSQL), keeper daemon, metadata auth.
+name: backend
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: contracts } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm, cache-dependency-path: contracts/package-lock.json }
+      - run: npm ci
+      - run: npx hardhat compile
+      - run: node scripts/exportTokenBytecode.js --check   # client bytecode parity + EIP-170 sizes
+      - run: npx hardhat test --network hardhat
+      - run: npm run rehearse:bonding
+      - run: npm ci --prefix ../indexer
+      - run: node ../indexer/pf.parity.cjs # real contract events must reproduce indexer reserves/prices
+      - run: node ../indexer/pf.parity.cjs .test-build/launch-tax-events-prima.json
+      - run: node ../indexer/pf.parity.cjs .test-build/launch-tax-events-maxima.json
+
+  indexer:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: indexer } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm, cache-dependency-path: indexer/package-lock.json }
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:pg   # embedded PostgreSQL: migrations, exactly-once, crash/WAL recovery, load
+        timeout-minutes: 15
+
+  bot:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: bot } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm, cache-dependency-path: bot/package-lock.json }
+      - run: npm ci
+      - run: npm test
+
+  metadata:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx esbuild api/metadata.ts --bundle --platform=node --format=cjs --outfile=.test-build/metadata.cjs --external:viem
+      - run: node api.metadata.test.cjs
+      - run: npx esbuild api/upload.ts --bundle --platform=node --format=cjs --outfile=.test-build/upload.cjs --external:viem --external:@vercel/blob
+      - run: node api.upload.test.cjs

@@ -1,0 +1,75 @@
+
+
+  Audit regressions and remaining design risks
+    √ accepts a vanity salt grinded from the generated client bytecode on a fresh deployment (2444ms)
+    √ never re-credits reserved quote dividends and pays both holders their shares (50ms)
+    √ rejects a poisoned graduation without refunding or losing curve reserves (96ms)
+      pool/curve exit price: 0.7656250000000001
+    √ drops the virtual reserve when setting the graduation price (84ms)
+      creator/platform/holders WETH: 0.0/0.002499999999999999/0.0075
+    √ preserves platform and 100%-holder allocations after Maxima graduation (92ms)
+
+  Local fork lifecycle against configured mainnet Uniswap dependencies
+    - launches, trades, claims a dividend, graduates and trades the migrated pool locally
+
+  Backend regressions and remaining external risks
+    √ splits both LP fee assets with holder allocation 0 bps (107ms)
+    √ splits both LP fee assets with holder allocation 4000 bps (93ms)
+    √ splits both LP fee assets with holder allocation 10000 bps (95ms)
+    √ external pool trades bypass Census fees BEFORE graduation (116ms)
+    √ external pool trades bypass locked-position revenue AFTER graduation (87ms)
+      externally owned same-pool NFT collects nonzero LP fees
+    √ third-party LP in the SAME official pool captures fees outside Census locker (91ms)
+    √ unrecognized external pools accrue dividends they cannot claim (86ms)
+    √ selling before first collection cannot suppress the migrated protocol split (79ms)
+    √ rejects a taxed quote deposit atomically without damaging shared reserves (43ms)
+    √ blocked fee recipient halts trading despite a valid curve and funded buyer
+    √ rejects zero-output 0x execution without spending payout funds (48ms)
+    √ rejects duplicate basket assets at creation (41ms)
+    √ rejects a route whose output differs from the configured payout asset
+
+  Bounded local workload (not mainnet throughput certification)
+      operations=500 actors=10 elapsedMs=1827 maxTradeGas=122358
+    √ 500 deterministic mixed buy/sell operations preserve normal-asset curve reserves (1893ms)
+
+  CensusCurve — bonding curve, 2% fee, accounting, anti-snipe
+    √ seeds the whole supply into the curve and registers it
+    √ buy: 2% fee splits 25% platform / 75% creator (Prima), rest walks the curve
+    √ buyWithETH + sellForETH: one-tap native ETH in, native ETH out (ETH-quoted coin)
+    √ ZAP buyWithETH: HOOD-quoted coin — ETH in wraps + swaps to HOOD, buys, fees paid in HOOD (47ms)
+    √ ZAP sellForETH: HOOD-quoted coin — sell gives HOOD, swaps to WETH, unwraps to native ETH (47ms)
+    √ ZAP slippage: a worse router rate than minTokensOut expects reverts (48ms)
+    √ ZAP guard: buyWithETH on a non-zap-enabled non-ETH quote reverts NotZappable (46ms)
+    √ buyWithETH rejects a zero-value call
+    √ round-trip conserves value (no free money): buy then sell-all returns < input, curve resets
+    √ anti-snipe: over-cap buy in the window reverts; the exempt creator bypasses it; free after ~10s
+    √ graduation readiness: progress tracks realQuote; graduate() reverts NotReady before the threshold
+    √ guards: unknown coin, zero amount, and slippage all revert
+
+  DividendVault — HOOD-quoted coin pays a stock basket (unified model)
+    √ swaps the HOOD fee into the basket and pays holders pro-rata
+    √ still supports 'holders earn HOOD' — a basket member equal to the quote is a passthrough
+
+  Dividend backing and transfer accounting
+    √ 700 dust-sized distributions, transfers and claims match an independent entitlement ledger (3133ms)
+    √ mixed quote/stock baskets only distribute new funds and release router approvals (47ms)
+    √ 0x supports a same-asset leg, enforces full weights and cannot spend old quote entitlements (42ms)
+    √ rejects a corrupted route payload that delivers no requested payout even with a positive floor (40ms)
+    √ retains a usable distribution operator (38ms)
+
+  launch -> buy -> collect fees, with graduation split (Base fork)
+      (no fork detected — set BASE_FORK_RPC_URL to run this suite)
+    - pre-graduation: creator keeps 100%, vault gets nothing
+    - post-graduation: fees split 80% creator / 20% vault
+
+  launchParams (off-chain tick math)
+    √ isqrt matches known values
+    √ token sorting below WETH => token0 => range above start price
+    √ token sorting above WETH => token1 => range below start price
+    √ ticks are aligned to the fee tier spacing
+    √ Arc standard (USDC quote) produces valid single-sided params
+    √ quoteDecimals actually changes the encoded price (18 vs 6)
+
+
+  44 passing (9s)
+  3 pending

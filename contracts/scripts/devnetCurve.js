@@ -74,11 +74,10 @@ async function main() {
   const curveBuyer = curve.connect(buyer);
   const buy = (amt) => curveBuyer.buy(token, E(amt), 0);
 
-  // 3b. anti-snipe: an oversized in-window buy is rejected
-  let sniped = false; try { await buy("1"); } catch { sniped = true; }
-  console.log("[3b] anti-snipe blocks the oversized in-window buy?", sniped);
-  if (!sniped) throw new Error("anti-snipe FAILED");
-  await ethers.provider.send("hardhat_mine", ["0x65"]); // past the window
+  // 3b. The launch tax expires by timestamp; normal buys have no wallet cap.
+  await ethers.provider.send("evm_increaseTime", [3]);
+  await ethers.provider.send("evm_mine");
+  if (await curve.buyFeeBps(token, buyer.address) !== 200n) throw new Error("launch tax did not expire");
 
   // 4. Fill the curve past its 4-ETH graduation reserve, checking the 2% fee lands each buy
   const p0 = await weth.balanceOf(platform.address);

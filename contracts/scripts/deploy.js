@@ -77,6 +77,29 @@ async function main() {
   await (await curve.setFactory(factoryAddr, true)).wait();
   await (await curve.setFactory(factoryV2Addr, true)).wait();
   console.log("Curve authorised both factories.");
+  const vaultDeployerAddr = await factoryV2.vaultDeployer();
+  console.log("DividendVaultDeployer:", vaultDeployerAddr, "(created by LaunchFactoryV2)");
+
+  // Supported quote collateral. WETH is enabled at construction; every other anchor the frontend
+  // offers (e.g. HOOD) MUST be enabled here or `createLaunch` with that anchor reverts
+  // (QuoteNotSupported). Review the token's transfer/rebase/freeze behavior before listing it.
+  //   ALLOWED_QUOTES=0x32ac8c1d7672667d5ebdea22935f7b06fc8d496f   (HOOD; comma-separate for more)
+  const allowedQuotes = (process.env.ALLOWED_QUOTES || "").split(",").map((s) => s.trim()).filter(Boolean);
+  for (const q of allowedQuotes) {
+    await (await curve.setQuoteAllowed(q, true)).wait();
+    console.log(`Quote collateral enabled: ${q}`);
+  }
+  if (!allowedQuotes.length) console.log("No extra quote collateral enabled (set ALLOWED_QUOTES to enable e.g. HOOD).");
+
+  // Platform keeper: the address every Maxima vault accepts for convertLaunchFees/distribute in
+  // addition to the coin's creator, so bot/src/keeperd.js can auto-distribute rewards without each
+  // creator delegating first. Rotate later with `curve.setKeeper(addr)` (deployer-only).
+  if (process.env.KEEPER_ADDRESS) {
+    await (await curve.setKeeper(process.env.KEEPER_ADDRESS)).wait();
+    console.log(`Keeper registered: ${process.env.KEEPER_ADDRESS}`);
+  } else {
+    console.log("WARNING: KEEPER_ADDRESS unset — automatic reward distribution needs `curve.setKeeper(<keeperd signer>)` before launch.");
+  }
 
   // Optional: enable the one-tap ETH zap for a non-ETH quote (e.g. HOOD) via a Uniswap V3 multi-hop path.
   // Env-gated so we never guess the route — set on the mainnet deploy once the pools/tiers are confirmed.
@@ -113,6 +136,9 @@ async function main() {
     CensusCurve: curveAddr,
     LaunchFactory: factoryAddr,
     LaunchFactoryV2: factoryV2Addr,
+    DividendVaultDeployer: vaultDeployerAddr,
+    allowedQuotes: [uni.WETH, ...allowedQuotes],
+    keeper: process.env.KEEPER_ADDRESS || null,
     uniswap: uni,
     verify: {
       ...(feeVaultAddr ? { FeeVault: [deployer.address] } : {}),
@@ -121,6 +147,7 @@ async function main() {
       CensusCurve: [uni.NonfungiblePositionManager, treasuryAddr, lockerAddr, uni.WETH, uni.SwapRouter02],
       LaunchFactory: [uni.WETH, curveAddr],
       LaunchFactoryV2: [uni.WETH, curveAddr, uni.SwapRouter02, STOCK_SWAP_FEE, ALLOWANCE_HOLDER],
+      DividendVaultDeployer: [],
     },
   };
   const file = path.join(__dirname, "..", `deployments.${netName}.json`);
