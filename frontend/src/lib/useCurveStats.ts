@@ -8,6 +8,7 @@ import { zeroAddress, type Address } from "viem";
 import { CONTRACTS } from "../config";
 import { censusCurveAbi, erc20Abi } from "../abis";
 import { cachedQuoteUsd, quoteInfo } from "./anchors";
+import { readTokenOffset, curveSpot } from "./curveOffset";
 
 export type CurveStat = {
   priceUsd: number | null;
@@ -48,9 +49,9 @@ export function useCurveStats(addresses: string[]): Record<string, CurveStat> {
             let priceUsd: number | null = null;
             let mcapUsd: number | null = null;
             if (!graduated && tokenReserve > 0n) {
-              const quoteUsd = await cachedQuoteUsd(pc, quote);
-              if (quoteUsd != null) {
-                const priceQuote = (Number(virtualQuote) / 10 ** quoteDec) / (Number(tokenReserve) / 1e18);
+              const [quoteUsd, offset] = await Promise.all([cachedQuoteUsd(pc, quote), readTokenOffset(pc, addr as Address)]);
+              const priceQuote = curveSpot(virtualQuote, tokenReserve, offset, quoteDec);
+              if (quoteUsd != null && priceQuote != null) {
                 priceUsd = priceQuote * quoteUsd;
                 try {
                   const supply = await pc.readContract({ address: addr as Address, abi: erc20Abi, functionName: "totalSupply" });

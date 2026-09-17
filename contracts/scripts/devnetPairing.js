@@ -104,7 +104,10 @@ async function main() {
   await ethers.provider.send("hardhat_mine", ["0x65"]); // past the anti-snipe window
   await (await curve.connect(buyer1).buy(IRON, E(2), 0)).wait();
   await (await curve.connect(buyer2).buy(IRON, E(1), 0)).wait();
-  await (await vault.connect(creator).distribute([0, 0])).wait(); // first round: swapped into the basket
+  // The vault refuses a zero minimum-out for swapped assets; local pools are deep and seeded 1:1, so
+  // half the available quote less 2% (fees + impact) per basket leg is a safe floor.
+  const floor = async () => { const half = (await vault.availableQuote()) / 2n; return [half * 98n / 100n, half * 98n / 100n]; };
+  await (await vault.connect(creator).distribute(await floor())).wait(); // first round: swapped into the basket
   await (await vault.connect(buyer1).claim()).wait();
   await (await vault.connect(buyer2).claim()).wait();
   console.log("[4] curve buys + first distribution claimed");
@@ -122,7 +125,7 @@ async function main() {
   await (await uni.exactInputSingle([WETH, IRON, 10000, deployer.address, E(1), 0, 0])).wait();
   const tid = (await curve.queryFilter(curve.filters.Graduated(IRON)))[0].args.tokenId;
   await (await locker.collectFees(tid)).wait();
-  await (await vault.connect(creator).distribute([0, 0])).wait();
+  await (await vault.connect(creator).distribute(await floor())).wait();
   const owedT = await vault.withdrawableOf(buyer1.address, TSLA), owedC = await vault.withdrawableOf(buyer1.address, COST);
   if (owedT === 0n && owedC === 0n) throw new Error("post-grad distribution left nothing claimable");
   console.log(`[6] ✓ post-grad distribution unclaimed — buyer1 can withdraw TSLA ${f(owedT)} / COST ${f(owedC)}`);

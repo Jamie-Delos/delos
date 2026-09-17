@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { isAddress, parseUnits, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { CONTRACTS, STANDARD, CHAIN, DEFAULT_FEE, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS } from "../config";
 import { factoryAbi, factoryV2Abi } from "../abis";
@@ -11,7 +11,7 @@ import { useCurveStats } from "../lib/useCurveStats";
 import { STOCK_CATEGORIES } from "../lib/stocks";
 import { grindC0de } from "../lib/c0de";
 import { ANCHORS, anchorByKey, anchorAvailable, isCoinKey, curveLaunchParams, ethUsdPrice, graduationFdvEth, ETH_USD_FALLBACK, type Anchor } from "../lib/anchors";
-import { putMetadata } from "../lib/metadata";
+import { putMetadata, type CoinMetadata } from "../lib/metadata";
 import { prepareImage, uploadImage, isHostedUrl } from "../lib/upload";
 import { useWalletConnect, CxAvatar, fmtUsd } from "../census";
 import { AssetLogo, StockLogo } from "../components/StockLogo";
@@ -72,8 +72,12 @@ export function Launch() {
   const { connect, connecting, error: connectError, ensureChain } = useWalletConnect();
   const publicClient = usePublicClient();
   const { writeContractAsync, isPending } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
 
   const [draft, setDraft] = useState<Draft>(loadDraft);
+  // A launch whose signed details write failed: the coin exists, the details don't yet. Offer a retry
+  // (or go to the coin and save later) instead of dropping them.
+  const [pendingMeta, setPendingMeta] = useState<{ token: Address; meta: CoinMetadata } | null>(null);
   const [status, setStatus] = useState("");
   const [launchPct, setLaunchPct] = useState<number | null>(null); // 0..100 while launching; null when idle
   const [reserved, setReserved] = useState<{ salt: Hex; address: Address } | null>(null);
@@ -280,15 +284,23 @@ export function Launch() {
         setStatus(`The transaction went through but the launch event wasn't found in its receipt.${EXPLORER ? ` Check it on the explorer: ${EXPLORER}/tx/${hash}` : ""}`);
         return;
       }
-      setStatus("publishing details…");
+      setStatus("sign to publish the details…");
       setLaunchPct(97);
-      // Persist a hosted logo URL only; a local-only data-URL preview would overflow the store's URL
-      // field, so it's skipped (the logo isn't saved until blob hosting is provisioned).
-      const savedImage = isHostedUrl(draft.image.trim()) ? draft.image.trim() : "";
-      const metaSaved = await putMetadata(token, { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: savedImage });
-      setLaunchPct(100);
       try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
-      nav(`/coin/${token}`, { state: { metaSaved } });
+      // The store only accepts creator-signed writes. Persist a hosted logo URL only (a data-URL preview
+      // would overflow the store's URL field). A failed or declined save is surfaced with a retry, and
+      // the payload is kept locally so the coin page can save it later — the launch itself is done.
+      const savedImage = isHostedUrl(draft.image.trim()) ? draft.image.trim() : "";
+      const meta: CoinMetadata = { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: savedImage };
+      const saved = await putMetadata(token, CHAIN.id, meta, signMessageAsync);
+      if (!saved.ok) {
+        setStatus(`Launched! The details weren't saved (${saved.reason}).${saved.retryable ? " Retry, or open the coin and save them later." : ""}`);
+        setPendingMeta({ token, meta });
+        setLaunchPct(null);
+        return;
+      }
+      setLaunchPct(100);
+      nav(`/coin/${token}`, { state: { metaSaved: true } });
     } catch (e: any) {
       const raw = String(e?.shortMessage ?? e?.message ?? e);
       setStatus(/reject|denied|cancel/i.test(raw) ? "Cancelled in your wallet." : raw.slice(0, 160));
@@ -361,9 +373,20 @@ export function Launch() {
           ) : (
             <div className={"census-dock__hint" + (!valid[step] ? " census-dock__hint--blocking" : "")}>{status || hint}</div>
           )}
-          <button className="census-btn" disabled={!valid[step] || launching} onClick={onContinue}>
-            {launching ? "launching…" : ctaLabel} <span aria-hidden="true">→</span>
-          </button>
+          {pendingMeta ? (
+            <span style={{ display: "inline-flex", gap: 10, flexWrap: "wrap" }}>
+              <button className="census-btn" onClick={async () => {
+                const r = await putMetadata(pendingMeta.token, CHAIN.id, pendingMeta.meta, signMessageAsync);
+                if (r.ok) { setPendingMeta(null); nav(`/coin/${pendingMeta.token}`, { state: { metaSaved: true } }); }
+                else setStatus(`Still not saved (${r.reason}).`);
+              }}>Retry saving details</button>
+              <button className="census-btn-ghost" onClick={() => nav(`/coin/${pendingMeta.token}`, { state: { metaSaved: false } })}>Open the coin <span aria-hidden="true">→</span></button>
+            </span>
+          ) : (
+            <button className="census-btn" disabled={!valid[step] || launching} onClick={onContinue}>
+              {launching ? "launching…" : ctaLabel} <span aria-hidden="true">→</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -672,10 +695,13 @@ function EconomicsStep({ draft, set, isV2, usesBasket, ethUsd, anchorKey }: Econ
 }
 
 // Drag-and-drop (or click / paste) logo field. Shows the image the instant it's dropped (downscaled
-// data URL), then best-effort uploads it for a persistent hosted URL. If the image store isn't
-// provisioned the upload no-ops and we keep the local preview — the coin still launches.
+// data URL), then uploads it for a persistent hosted URL. Uploads are signed by the connected wallet
+// (the store is wallet-gated and quota-limited); with no wallet, a declined signature or no store yet,
+// the local preview stays and the coin still launches — the logo just isn't hosted.
 function LogoDrop({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { address: wallet } = useAccount();
+  const { signMessageAsync: signUpload } = useSignMessage();
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
@@ -687,9 +713,9 @@ function LogoDrop({ value, onChange }: { value: string; onChange: (v: string) =>
     try {
       const dataUrl = await prepareImage(file);
       onChange(dataUrl); // instant preview
-      const hosted = await uploadImage(dataUrl);
-      if (hosted) { onChange(hosted); setNote(""); }
-      else setNote("Shown here now — logo hosting turns on when the store is connected.");
+      const hosted = await uploadImage(dataUrl, wallet ? { address: wallet, chainId: CHAIN.id, signMessage: signUpload } : null);
+      if (hosted.url) { onChange(hosted.url); setNote(""); }
+      else setNote(wallet ? `Shown here now — not hosted yet (${"reason" in hosted ? hosted.reason : "unknown"}).` : "Shown here now. Connect your wallet to host it with the coin.");
     } catch {
       setNote("Couldn't read that image — try a PNG or JPG.");
     } finally {

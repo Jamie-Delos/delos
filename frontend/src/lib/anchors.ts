@@ -13,6 +13,7 @@ import { isAddress, parseUnits, zeroAddress, type Address, type PublicClient } f
 import { CONTRACTS, DEFAULT_FEE, IS_MAINNET, START_FDV_ETH } from "../config";
 import { censusCurveAbi, erc20Abi, poolAbi } from "../abis";
 import { poolSpotOut } from "./pool";
+import { readTokenOffset, curveSpot } from "./curveOffset";
 
 // ETH price used only when no WETH/USDG pool is configured (testnet). On mainnet ETH is read live from
 // CONTRACTS.ethPricePool exactly like any other anchor.
@@ -102,8 +103,9 @@ async function coinUsdPrice(pc: PublicClient, coin: Address, depth: number): Pro
     if (out == null || out <= 0n) throw new Error("no pool price");
     priceInA = 1 / (Number(out) / 1e18);
   } else {
-    if (tokenReserve <= 0n) throw new Error("no curve price");
-    priceInA = (Number(virtualQuote) / 10 ** decA) / (Number(tokenReserve) / 1e18);
+    const spot = curveSpot(virtualQuote, tokenReserve, await readTokenOffset(pc, coin), decA);
+    if (spot == null) throw new Error("no curve price");
+    priceInA = spot;
   }
   return priceInA * usdA;
 }
@@ -149,9 +151,10 @@ export function quoteInfo(pc: PublicClient, quote: string): Promise<QuoteInfo> {
   return p;
 }
 
-// Fully-diluted market cap (in ETH terms) the curve reaches when it graduates after raising `g` ETH:
-// constant product with virtual reserve V0 => price = (V0+g)² / (V0·S), FDV = (V0+g)² / V0.
-export const graduationFdvEth = (g: number) => ((START_FDV_ETH + g) ** 2) / START_FDV_ETH;
+// Fully-diluted market cap (in ETH terms) at graduation after raising `g` ETH net. PF-style curve:
+// unminted offset X = S·V0²/(g·(g+2V0)), so the exit price is g·(g+2V0)/(V0·S) and FDV = g·(2V0+g)/V0
+// (6.67 / 18.67 / 58.67 ETH for 2 / 4 / 8 ETH with V0 = 1.5). The pool opens at exactly this price.
+export const graduationFdvEth = (g: number) => (g * (2 * START_FDV_ETH + g)) / START_FDV_ETH;
 
 // CensusCurve launch params for an anchor + graduation target. The curve is priced in the anchor's own
 // asset, so the ETH-denominated targets (start FDV, graduation reserve) are converted to quote-wei via

@@ -7,6 +7,7 @@ import { usePublicClient } from "wagmi";
 import { zeroAddress, type Address } from "viem";
 import { CONTRACTS } from "../config";
 import { erc20Abi, censusCurveAbi } from "../abis";
+import { readTokenOffset } from "./curveOffset";
 
 export type CoinQuote = {
   quote: Address; // the anchor/quote token the coin trades against
@@ -20,8 +21,9 @@ export type CoinQuote = {
   creator?: Address; // the coin's creator (creator-side fee recipient), from the curve registry
   vault?: Address; // Maxima rewards vault (zero for Prima)
   holdersBps?: number; // holders' share of the creator side (Maxima)
-  virtualQuote?: bigint; // V — current virtual quote reserve (spot price = virtualQuote / tokenReserve)
-  tokenReserve?: bigint; // tokens still in the curve
+  virtualQuote?: bigint; // V — current virtual quote reserve (spot price = virtualQuote / (tokenReserve + virtualTokenOffset))
+  tokenReserve?: bigint; // real tokens still in the curve
+  virtualTokenOffset?: bigint | null; // PF pricing offset (unminted); null = couldn't be read, so no price is shown
   realQuote?: bigint; // quote raised so far (for the graduation reserve caption)
   graduationQuote?: bigint; // quote needed to graduate
   totalSupply?: bigint; // the coin's ERC-20 total supply (for market cap / FDV)
@@ -57,6 +59,8 @@ export function useCoinQuote(coin?: string): CoinQuote {
         const cv = await pc.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "curves", args: [coin as Address] });
         if (cancelled) return;
         if (!cv[10]) { setInfo((prev) => ({ ...prev, resolved: true, routed: false })); return; }
+        const offset = await readTokenOffset(pc, coin as Address);
+        if (cancelled) return;
         setInfo((prev) => ({
           ...prev,
           quote: cv[0],
@@ -67,6 +71,7 @@ export function useCoinQuote(coin?: string): CoinQuote {
           routerPoolFee: Number(cv[4]),
           virtualQuote: cv[5],
           tokenReserve: cv[6],
+          virtualTokenOffset: offset,
           realQuote: cv[7],
           graduationQuote: cv[8],
           graduated: cv[9],

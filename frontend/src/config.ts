@@ -43,8 +43,9 @@ export const DEFAULT_FEE = 10000; // 1% tier — the pool every coin graduates i
 // instead of scanning the chain in the browser. Empty => on-chain fallback.
 export const INDEXER_URL = (import.meta.env.VITE_INDEXER_URL ?? "").replace(/\/$/, "");
 
-// Starting FDV (in ETH terms) baked into a new coin's curve: the curve's virtual quote reserve V0 is this,
-// converted to the anchor asset (see lib/anchors.ts curveLaunchParams).
+// Initial virtual quote reserve V0 (in ETH terms) for a new coin's curve, converted to the anchor asset
+// at launch (lib/anchors.ts curveLaunchParams). With the PF-style offset the starting FDV is a little
+// below V0: V0·S/(S+X), about 1.39 ETH for the standard 4 ETH target. Name kept for history.
 export const START_FDV_ETH = 1.5;
 
 // Trade fee, mirrored from CensusCurve.FEE_BPS for labels and estimates — the contract is the source of
