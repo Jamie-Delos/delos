@@ -12,7 +12,7 @@
 import { isAddress, parseUnits, zeroAddress, type Address, type PublicClient } from "viem";
 import { CONTRACTS, DEFAULT_FEE, IS_MAINNET, START_FDV_ETH } from "../config";
 import { censusCurveAbi, erc20Abi, poolAbi } from "../abis";
-import { poolSpotOut } from "./pool";
+import { poolSpotOut, poolRawPrice } from "./pool";
 import { readTokenOffset, curveSpot } from "./curveOffset";
 
 // ETH price used only when no WETH/USDG pool is configured (testnet). On mainnet ETH is read live from
@@ -71,15 +71,16 @@ async function poolUsdPrice(pc: PublicClient, a: Anchor): Promise<number> {
     if (isDefaultAnchor(a)) return ETH_USD_FALLBACK;
     throw new Error(`${a.key} has no price pool on this network`);
   }
-  const [slot0, t0, t1] = await Promise.all([
-    pc.readContract({ address: a.pricePool, abi: poolAbi, functionName: "slot0" }),
+  const [priced, t0, t1] = await Promise.all([
+    poolRawPrice(pc, a.pricePool), // TWAP-first (spot fallback for a warming pool) — CX-H1
     pc.readContract({ address: a.pricePool, abi: poolAbi, functionName: "token0" }),
     pc.readContract({ address: a.pricePool, abi: poolAbi, functionName: "token1" }),
   ]);
   const USDG_DECIMALS = 6;
   const quoteIsToken0 = t0.toLowerCase() === a.quote.toLowerCase();
   if (!quoteIsToken0 && t1.toLowerCase() !== a.quote.toLowerCase()) throw new Error(`${a.key} price pool doesn't contain ${a.key}`);
-  const rawP = (Number(slot0[0]) / 2 ** 96) ** 2; // token1 per token0, raw units
+  if (priced == null) throw new Error(`couldn't read ${a.key} price on-chain`);
+  const rawP = priced.raw; // token1 per token0, raw units
   const [d0, d1] = quoteIsToken0 ? [a.quoteDecimals, USDG_DECIMALS] : [USDG_DECIMALS, a.quoteDecimals];
   const human = rawP * 10 ** (d0 - d1); // token1 per token0, human units
   const usd = quoteIsToken0 ? human : human > 0 ? 1 / human : 0;

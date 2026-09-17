@@ -6,7 +6,7 @@ V3. What blocks mainnet is not a core exploit — it is economics, law, and oper
 exempt "fair" launch, a manipulable price feed, no kill switch, no monitoring, a securities-shaped
 pitch with no terms, and a build only one laptop can reproduce.** Testnet is fine to keep running.
 
-One thing was fixed during the audit: **CX-F1 (launch front-running) — committed `c57156f`, repro passing.**
+Two things were fixed during/after the audit: **CX-F1 (launch front-running) — committed `c57156f`.** **CX-H1 (manipulable spot price feed) — TWAP feed added 2026-09-17, `test/audit.twap.test.js` passing.**
 
 Scope: every Solidity contract + deploy wiring (A–G, read line-by-line, suite run, maths re-derived);
 the serverless API, frontend, wallets, bundle, chain, indexer, integrations, build/ops, legal, and
@@ -18,7 +18,7 @@ lives in the track files listed at the bottom; this page is the verdict.
 | ID | Track | The defect |
 |----|-------|-----------|
 | CX-C1 | C | Creator + 32-wallet bundle are **tax-exempt and uncapped** on the curve — every launch is structurally an insider position; the "fair launch" story is false. |
-| CX-H1 | H | Price, market cap **and** the on-chain trade `minOut` all come from a manipulable Uniswap `slot0` spot (no TWAP), on every graduated / non-ETH coin. Thin company-coin pools → fake mcaps + real execution loss. |
+| CX-H1 | H | Price, market cap **and** the on-chain trade `minOut` all come from a manipulable Uniswap `slot0` spot (no TWAP), on every graduated / non-ETH coin. Thin company-coin pools → fake mcaps + real execution loss. — **FIXED 2026-09-17** (graduation grows the oracle buffer; display/mcap read a TWAP; trades blocked when spot deviates >10% from the TWAP). |
 | CX-M1 | M | The indexer hardcodes ETH = **$3000** and other anchors = **$0**; the day it's switched on, every USD price is wrong. |
 | CX-X1 | X | Securities-shaped pitch — "taking companies public on-chain", "a coin that pays a **dividend in real stocks**" — with no terms, disclosure, or counsel. Existential legal risk. |
 

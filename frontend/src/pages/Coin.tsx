@@ -6,7 +6,7 @@ import { CONTRACTS, DEFAULT_FEE, CHAIN, TRADE_FEE_BPS, TRADE_FEE_LABEL } from ".
 import { wethAbi, erc20Abi, swapRouterAbi, censusCurveAbi, vaultAbi } from "../abis";
 import { zeroExPrice, zeroExQuote, allowanceSpender, routeSummary } from "../lib/zeroex";
 import { cachedQuoteUsd, quoteInfo, type QuoteInfo } from "../lib/anchors";
-import { poolSpotOut } from "../lib/pool";
+import { poolSpotOut, poolTwapDeviationBps } from "../lib/pool";
 import { useCoinQuote } from "../lib/useCoinQuote";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
@@ -16,6 +16,10 @@ import { readRewards, type Rewards } from "../lib/rewards";
 import { CxAvatar, AnchorMark, HomeRow, Num, StatBand, PendingPanel, GraduationBar, Icon, fmtUsd, fmtPrice, fmtAmount, shortAddr, reserveCaption, useWalletConnect, type DisplayCoin } from "../census";
 
 const SLIPPAGE_BPS = 200; // 2% — the minimum-out on every trade path
+// CX-H1: a graduated pool's minimum-out is derived from the live spot; refuse to trade when the spot has
+// moved more than this from the pool TWAP (manipulation, or a violent move) rather than execute against a
+// number an attacker could have set one block earlier. A warming pool with no TWAP yet is allowed on spot.
+const MAX_POOL_DEVIATION_BPS = 1000; // 10%
 const BUY_PRESETS = ["0.01", "0.1", "0.5", "1"];
 const SELL_PRESETS = [25, 50, 75, 100]; // % of the coins you hold
 
@@ -223,7 +227,10 @@ export function Coin() {
             if (q.liquidityAvailable !== false && q.buyAmount) { setQuoteOut(BigInt(q.buyAmount)); setVia(routeSummary(q)); return; }
           } catch { /* fall through to the pool */ }
         }
-        const out = await poolSpotOut(publicClient, sellToken, buyToken, amt, poolFee);
+        // The "you receive ~" for the actual trade is the executable spot (accurate to what fills now);
+        // the headline price/mcap use the TWAP. Manipulation of the spot is caught by the deviation guard
+        // in trade(), not by pricing the estimate off a stale average.
+        const out = await poolSpotOut(publicClient, sellToken, buyToken, amt, poolFee, true);
         if (!cancelled) { setQuoteOut(out); setVia(out ? "pool" : ""); }
       } catch { if (!cancelled) { setQuoteOut(null); setVia(""); } }
     }, 350);
@@ -310,6 +317,11 @@ export function Coin() {
           return;
         }
       }
+      // CX-H1: the pool path's minOut came from the live spot. Before trading against it, refuse if the
+      // spot has swung far from the pool TWAP — an attacker who moved the pool one block earlier can't
+      // set the reference our own minOut is measured against. A warming pool (no TWAP) is allowed on spot.
+      const dev = await poolTwapDeviationBps(publicClient, sellToken, buyToken, poolFee);
+      if (dev != null && dev > MAX_POOL_DEVIATION_BPS) { setStatus("This coin's pool price is swinging right now — wait a moment and try again."); return; }
       setStatus("Approving…");
       const a2 = await writeContractAsync({ chainId: CHAIN.id, address: sellToken, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.swapRouter, amountIn] });
       await publicClient.waitForTransactionReceipt({ hash: a2 });

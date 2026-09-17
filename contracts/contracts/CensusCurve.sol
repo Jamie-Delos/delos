@@ -55,6 +55,11 @@ contract CensusCurve is ReentrancyGuard {
     uint16 public constant RECOVERY_MAX_SPEND_BPS = 1_000; // 10%
     /// @notice Hard ceiling for a per-coin recovery-bound override (see setRecoveryMaxSpendBps).
     uint16 public constant RECOVERY_MAX_SPEND_CAP_BPS = 5_000; // 50%
+    /// @notice Observation-buffer size grown on the graduated pool so it can serve a price TWAP (a fresh
+    ///         V3 pool has cardinality 1 = spot only). ~30 slots is a one-time ~0.6M gas at graduation and
+    ///         spans a multi-minute average for any normally-traded coin; the frontend adapts its window
+    ///         down when fewer observations exist and falls back to spot on a still-warming pool.
+    uint16 public constant GRAD_OBS_CARDINALITY = 30;
     /// @notice Deployer-raised recovery bound for one coin whose graduation is being griefed by
     ///         parked liquidity (0 = use RECOVERY_MAX_SPEND_BPS). Every unit swapped still executes
     ///         at better than the migration price, so a wider bound never gives value away; it only
@@ -523,6 +528,11 @@ contract CensusCurve is ReentrancyGuard {
         // Retain and identify bounded rounding dust; the creator has no reserve-refund entitlement.
         migrationTokenDust[coin] = leftToken;
         migrationQuoteDust[coin] = leftQuote;
+
+        // Grow the pool's price-oracle buffer so the frontend can read a TWAP (V3 pools start at
+        // cardinality 1 = spot only). Best-effort and last, after every fund-moving effect is done, so a
+        // revert here can never affect the graduation outcome. See GRAD_OBS_CARDINALITY.
+        try IUniswapV3Pool(pool).increaseObservationCardinalityNext(GRAD_OBS_CARDINALITY) {} catch {}
 
         emit Graduated(coin, pool, tokenId, tokenAmt - leftToken, quoteAmt - leftQuote);
     }

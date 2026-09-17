@@ -114,4 +114,9 @@ interface IUniswapV3Pool {
         uint160 sqrtPriceLimitX96,
         bytes calldata data
     ) external returns (int256 amount0, int256 amount1);
+
+    /// @dev Grow the price-oracle ring buffer so the pool can serve a TWAP via observe(). New V3 pools
+    ///      start at cardinality 1 (spot only); graduation grows it so the frontend can price/mcap and
+    ///      bound trades off a manipulation-resistant average instead of a one-block spot.
+    function increaseObservationCardinalityNext(uint16 observationCardinalityNext) external;
 }
