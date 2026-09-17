@@ -25,14 +25,15 @@ module.exports = {
     SwapRouter02: "0x509cF58CdA08C7aee83a2BdBb4A1Eac907343D01", // UNITFLOW SwapRouter (v1 exactInputSingle w/ deadline)
     WETH: "0x911b4000D3422F482F4062a913885f7b035382Df", // WUSDC = the quote asset
   },
-  // Robinhood Chain testnet (chainId 46630) — Uniswap V3 addresses NOT yet confirmed here.
-  // Fill these in once verified on the testnet; until then, testnet launches can't run.
+  // Robinhood Chain testnet (chainId 46630) — confirmed and in use by the live testnet frontend
+  // (these match uniswap.robinhoodTestnet.json and frontend/.env.example). uniswap.robinhoodTestnet.json
+  // is the authoritative source (deploy.js loadUni reads it first); this entry mirrors it as a fallback.
   robinhoodTestnet: {
     chainId: 46630,
-    UniswapV3Factory: "",
-    NonfungiblePositionManager: "",
-    SwapRouter02: "",
-    WETH: "",
+    UniswapV3Factory: "0x1e572f531c74f16B760e308DA684895B94A9D8E1",
+    NonfungiblePositionManager: "0x434ffD7eEbD28c0c7535532bcBb68dd092cA3eb5",
+    SwapRouter02: "0x0F134877161c8C3Ab9A87e9B4c0e0280BF0D1D82",
+    WETH: "0x823F4ef19CCE787C7D10483896eE0102F48A88eb",
   },
 
   // Base Sepolia (chainId 84532) — only used as a fork target for automated engine tests.

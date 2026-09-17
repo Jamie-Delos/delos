@@ -31,8 +31,11 @@ export const CONTRACTS = {
   factoryV2: addr(import.meta.env.VITE_FACTORY_V2_ADDRESS), // LaunchFactoryV2 — Maxima (curve + stock-basket vault)
   locker: addr(import.meta.env.VITE_LOCKER_ADDRESS), // LaunchLocker — holds every graduated pool position forever
   curve: addr(import.meta.env.VITE_CURVE_ADDRESS), // CensusCurve — the bonding-curve venue every coin trades on
-  weth: addr(import.meta.env.VITE_WETH, "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"),
-  swapRouter: addr(import.meta.env.VITE_SWAP_ROUTER, "0xCaf681a66D020601342297493863E78C959E5cb2"), // SwapRouter02
+  // Chain-gated like v3Factory/ethPricePool below (CX-H3): a non-mainnet build with these env vars unset
+  // must NOT silently fall back to mainnet WETH/router. Off-mainnet it's zeroAddress (a loud failure)
+  // until VITE_WETH/VITE_SWAP_ROUTER are set to that chain's addresses (see uniswap.<net>.json).
+  weth: addr(import.meta.env.VITE_WETH, IS_MAINNET ? "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" : zeroAddress),
+  swapRouter: addr(import.meta.env.VITE_SWAP_ROUTER, IS_MAINNET ? "0xCaf681a66D020601342297493863E78C959E5cb2" : zeroAddress), // SwapRouter02
   v3Factory: addr(import.meta.env.VITE_V3_FACTORY, IS_MAINNET ? "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA" : zeroAddress),
   ethPricePool: addr(import.meta.env.VITE_ETH_PRICE_POOL, IS_MAINNET ? "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca" : zeroAddress), // WETH/USDG 0.01%
   // Uniswap V3 QuoterV2 — gives a real, price-impact-aware output for a direct-pool trade so the trade

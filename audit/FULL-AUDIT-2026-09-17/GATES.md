@@ -26,7 +26,7 @@ Nothing here is vague enough to argue about later. Testnet is fine today; these 
 
 - **G15** Runbooks work if followed literally (CX-Z3): fix the broken scratchpad path, the CensusCurve verify arity, and the stale `launch.js`/`launchV2.js` (CX-V1) they invoke.
 - **G16** README describes the curve system, not the superseded Uniswap design (CX-Z1); `verifyAll.js` covers all contracts (CX-V6); TODO refreshed (CX-Z4).
-- **G17** ~~Unregistered-address coin *shell* → render the not-a-coin error (CX-N1)~~ **DONE 2026-09-17** (also added a distinct RPC-error retry state); still: dedup/impersonation warning + report path (CX-P2); fix the testnet Uniswap wiring 3-way mismatch + un-chain-gated mainnet fallback (CX-H3).
+- **G17** ~~Unregistered-address coin *shell* → not-a-coin error (CX-N1)~~ **DONE**; ~~dedup/impersonation warning + confusable stripping (CX-P2)~~ **DONE 2026-09-17** (report/takedown path with a named recipient still a product decision); ~~testnet Uniswap wiring 3-way mismatch + un-chain-gated mainnet fallback (CX-H3)~~ **DONE 2026-09-17** (config chain-gated, addresses.js reconciled, .env.example clarified).
 - **G18** Anchor recursion: add a cycle guard + "quote asset impaired" UI (CX-H2 / DOOM-2).
 - **G19** a11y: 44px tap targets (CX-Q1); jargon tooltips + custom-error → plain English (CX-Q2).
 - **G20** Bundle/TTI: measure gzipped TTI; split heavy eager chunks (CX-S1); swaps carry no client deadline (CX-H5).

@@ -27,6 +27,8 @@ committed alongside this report.
 | **CX-L3** | Upload quota per-wallet only → sybil fill of Blob | Global daily byte cap across all wallets (KV `INCRBY`) on top of the per-wallet quota | `frontend/api.upload.test.cjs` (18 checks) | `10aeb85` |
 | **CX-N1** | Unregistered address rendered a blank coin *shell* a phishing link could pass off as real | Honest "Not a Census coin" page for a confirmed miss; **distinct** "Couldn't reach the chain" retry for an RPC error (`useCoinQuote` now flags the error instead of conflating it with "not registered") | Live-verified on the dev server | `10aeb85` |
 | **CX-G1** (Neil #3) | Legacy `bot/src/index.js` + `buyback.js` swapped with `amountOutMinimum: 0` | Both refuse live execution (dry-run inspection still works) and point to the operator-`minOut` keeper | `DRY_RUN=false` run confirmed refused; `npm test` (keeperd) passes | `b30332a` |
+| **CX-H3** | Testnet vs mainnet Uniswap wiring contradicted itself; `config.ts` fell back to **mainnet** WETH/router off-mainnet (silent footgun) | `config.ts` chain-gates `weth`/`swapRouter` (zeroAddress off-mainnet → loud fail); `addresses.js` testnet reconciled with the confirmed JSON; `.env.example` marks the vars required off-mainnet | dev `.env` verified to set the vars (live testnet unaffected); board renders after the change | *(this commit)* |
+| **CX-P2** | No name/ticker dedup or impersonation guard; invisible/bidi chars could deceive | Launch wizard strips zero-width/bidi/control chars from the name and shows a non-blocking ⚠ warning on duplicate (existing coin) or impersonation (real company) | `lib.names.test.cjs` (10 checks); live-verified ("Robinhood"→impersonation, "Curve Test"→duplicate, novel→none) | *(this commit)* |
 
 ## Neil's independent cross-audit — how it changed this pass
 
@@ -74,7 +76,7 @@ Grouped by who owns it. Full detail + proof-of-closure in `GATES.md`.
 - **G1/G2** — treasury = FeeSplitter/multisig (fail the deploy otherwise); keeper key in HSM/multisig.
 - **G12/G13** — verify the real Robinhood Chain Uniswap addresses/tiers + the HOOD zap route, and **set `VITE_QUOTER`** to the verified Robinhood Chain QuoterV2 so the impact-aware trade path activates (until then it falls back to the estimate + user slippage).
 
-**Should-fix (soon):** runbooks/README drift (CX-Z1/Z3/V1/V6), anchor cycle guard (CX-H2), name/image impersonation + report path (CX-P2), testnet Uniswap wiring mismatch (CX-H3), a11y tap targets (CX-Q1), bundle TTI (CX-S1), and an external smart-contract audit + fuzz/invariant campaign before meaningful TVL.
+**Should-fix (soon):** runbooks/README drift (CX-Z1/Z3/V1/V6), anchor cycle guard (CX-H2), a11y tap targets (CX-Q1), bundle TTI (CX-S1), and an external smart-contract audit + fuzz/invariant campaign before meaningful TVL. *(CX-H3 and CX-P2 are now fixed — see the table above; CX-P2's report/takedown path with a named recipient remains a product/ops decision.)*
 
 ## Honest caveats on the fixes
 

@@ -7,6 +7,7 @@ import { factoryAbi, factoryV2Abi } from "../abis";
 import { STOCK_ROUTES } from "../lib/stockRoutes";
 import { basketPathFor } from "../lib/basket";
 import { useLaunches } from "../lib/useLaunches";
+import { stripConfusables, coinNameWarning, type NameWarning } from "../lib/names";
 import { useCurveStats } from "../lib/useCurveStats";
 import { STOCK_CATEGORIES } from "../lib/stocks";
 import { grindC0de } from "../lib/c0de";
@@ -105,6 +106,10 @@ export function Launch() {
   const usesBasket = isV2;
   const ticker = (draft.ticker || deriveTicker(draft.name)) || "—";
   const factoryAddr = isV2 ? CONTRACTS.factoryV2 : CONTRACTS.factory;
+  // CX-P2: warn (non-blocking) if the name/ticker duplicates an existing Census coin or impersonates a
+  // real company. useLaunches is module-cached, so this shares AnchorStep's scan.
+  const { coins: existingCoins } = useLaunches();
+  const nameWarning: NameWarning = coinNameWarning(draft.name, ticker === "—" ? "" : ticker, existingCoins);
   const hasFactory = factoryAddr !== zeroAddress;
 
   // Basket weights: raw stored, displayed as percentages that always sum to EXACTLY 100 (largest
@@ -361,7 +366,7 @@ export function Launch() {
 
       <div className="census-wizard__body">
         <main>
-          {step === 0 && <CompanyStep draft={draft} set={set} ticker={ticker} />}
+          {step === 0 && <CompanyStep draft={draft} set={set} ticker={ticker} warning={nameWarning} />}
           {step === 1 && <AnchorsStep draft={draft} set={set} anchor={anchor} usesBasket={usesBasket} picks={picks} pctOf={pctOf} setPct={setPct} toggleStock={toggleStock} />}
           {step === 2 && <EconomicsStep draft={draft} set={set} isV2={isV2} usesBasket={usesBasket} ethUsd={ethUsd} anchorKey={anchor.key} />}
           {step === 3 && <IdentityStep draft={draft} set={set} ticker={ticker} reserved={reserved} hasFactory={hasFactory} />}
@@ -410,7 +415,7 @@ export function Launch() {
 
 /* ---------------- steps ---------------- */
 
-function CompanyStep({ draft, set, ticker }: { draft: Draft; set: Setter; ticker: string }) {
+function CompanyStep({ draft, set, ticker, warning }: { draft: Draft; set: Setter; ticker: string; warning: NameWarning }) {
   return (
     <>
       <h1 className="census-wizard__title">Start a company.</h1>
@@ -429,11 +434,12 @@ function CompanyStep({ draft, set, ticker }: { draft: Draft; set: Setter; ticker
       </div>
 
       <div className="census-field-label">Company name</div>
-      <input className="census-input" value={draft.name} maxLength={42} onChange={(e) => set({ name: e.target.value })} placeholder="Iron Man Industries" />
+      <input className="census-input" value={draft.name} maxLength={42} onChange={(e) => set({ name: stripConfusables(e.target.value) })} placeholder="Iron Man Industries" />
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
         <span style={{ fontSize: 12, color: "var(--census-text-muted)" }}>Ticker auto-derives to <span className="census-mono" style={{ color: "var(--census-lime)" }}>${ticker}</span> — editable at Identity.</span>
         <span className="census-counter">{draft.name.length}/42</span>
       </div>
+      {warning && <div style={{ marginTop: 8, fontSize: 12.5, color: "#e0a33a", lineHeight: 1.5 }}>⚠ {warning.message}</div>}
 
       <div className="census-field-label" style={{ marginTop: 24 }}>One-line thesis</div>
       <input className="census-input" value={draft.thesis} maxLength={80} onChange={(e) => set({ thesis: e.target.value })} placeholder="The arc reactor of on-chain energy." />

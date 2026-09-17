@@ -61,7 +61,9 @@ Severity: S0 funds · S1 wrong economics/data-as-fact · S2 core journey broken 
 - **FIX** Chunk `eth_getLogs` by block range with backoff; batch coin reads via multicall; cap and paginate the board (indexer `?cursor=`/`?before=`); when the indexer is on, trust its list+numbers instead of re-reading every coin live.
 - **TEST** Load a 5,000-coin fixture and assert bounded RPC call count and a working "next page"; an integration test that `getContractEvents` is issued in ranges, not one call from block 0.
 
-### CX-H3 — Testnet vs mainnet Uniswap wiring contradicts itself across three files, and `config.ts` fallbacks aren't chain-gated (silent mainnet-address-on-testnet footgun)
+### CX-H3 — Testnet vs mainnet Uniswap wiring contradicts itself across three files, and `config.ts` fallbacks aren't chain-gated (silent mainnet-address-on-testnet footgun) — **FIXED 2026-09-17**
+**STATUS: FIXED.** (1) `config.ts` now chain-gates `weth` + `swapRouter` (mainnet default only when `IS_MAINNET`, else `zeroAddress`) — matching `v3Factory`/`ethPricePool`, so a non-mainnet build without the env vars fails loudly instead of silently using mainnet addresses. (2) `addresses.js` `robinhoodTestnet` filled from the confirmed `uniswap.robinhoodTestnet.json` values (they match the live `.env.example`), and the "can't run yet" contradiction removed; the JSON is noted as authoritative. (3) `.env.example` now states the testnet Uniswap vars (incl. `VITE_V3_FACTORY` for graduated pricing) are REQUIRED off-mainnet, not optional. Verified: dev `.env` sets these explicitly, so the live testnet build is unaffected; board renders fine after the change. Original finding below.
+
 - **SEVERITY** S3 (config/doc truth; testnet-only today; no funds at risk) · likelihood: *easy* for whoever next wires testnet graduation
 - **WHERE**
   - `contracts/uniswap.robinhoodTestnet.json` — has concrete testnet Factory `0x1e57…D8E1`, NPM, Router `0x0F13…1D82`, WETH `0x823F…88eb`.
