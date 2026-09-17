@@ -28,7 +28,7 @@ async function main() {
   const token = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((x) => x && x.name === "Launched").args.token;
   console.log("launched:", token, "| whole supply in curve:", f(await curve.curves(token).then((c) => c.tokenReserve)));
 
-  // A small curve buy (under the anti-snipe per-wallet cap so it lands in-window).
+  // A small curve buy; any active launch tax is included by the curve.
   await (await weth.deposit({ value: E(0.0012) })).wait();
   await (await weth.approve(d.CensusCurve, ethers.MaxUint256)).wait();
   const feeVault = d.FeeVault;

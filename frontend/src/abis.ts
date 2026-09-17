@@ -23,6 +23,11 @@ export const factoryV2Abi = parseAbi([
 // trade against the curve (2% fee, split 75/25). `curves(coin)` is the per-coin state tuple; quoteBuy/
 // quoteSell are the fee-net readouts; graduationProgress is 0..10000 bps toward graduation.
 export const censusCurveAbi = parseAbi([
+  "function buyFeeBps(address coin,address buyer) view returns (uint256)",
+  "function currentSnipeTaxBps(address coin,address buyer) view returns (uint256)",
+  "function launchedAt(address coin) view returns (uint256)",
+  "function quoteBuyFor(address coin,uint256 quoteIn,address buyer) view returns (uint256)",
+  "function maxQuoteInFor(address coin,address buyer) view returns (uint256)",
   "function virtualTokenOffset(address coin) view returns (uint256)",
   "function maxQuoteIn(address coin) view returns (uint256)",
   "function buy(address coin,uint256 quoteIn,uint256 minTokensOut) returns (uint256 tokensOut)",

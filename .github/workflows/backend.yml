@@ -21,6 +21,8 @@ jobs:
       - run: npm run rehearse:bonding
       - run: npm ci --prefix ../indexer
       - run: node ../indexer/pf.parity.cjs # real contract events must reproduce indexer reserves/prices
+      - run: node ../indexer/pf.parity.cjs .test-build/launch-tax-events-prima.json
+      - run: node ../indexer/pf.parity.cjs .test-build/launch-tax-events-maxima.json
 
   indexer:
     runs-on: ubuntu-latest

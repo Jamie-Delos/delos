@@ -2,7 +2,7 @@
 // Run contracts/test/pf.graduation.test.js first to generate the fixture (no RPC needed here).
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
 const {parseAbi,parseAbiItem,decodeEventLog}=require('viem');
-const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'../contracts/.test-build/pf-events.json'),'utf8'));
+const fixture=JSON.parse(fs.readFileSync(process.argv[2] || path.join(__dirname,'../contracts/.test-build/pf-events.json'),'utf8'));
 function code(file,tail=''){return ts.transpileModule(fs.readFileSync(path.join(__dirname,'src',file),'utf8').replace(/^import .*;\r?$/gm,'')+tail,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;}
 const abis={exports:{},parseAbi};vm.runInNewContext(code('abis.ts'),abis);
 const rows=new Map(),trades=new Map(),points=[];

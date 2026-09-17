@@ -29,6 +29,7 @@ export function Coin() {
   const [quoteOut, setQuoteOut] = useState("");
   const [via, setVia] = useState("");
   const [gradBps, setGradBps] = useState<number | null>(null);
+  const [curveFeeBps, setCurveFeeBps] = useState<number | null>(null);
 
   const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -37,11 +38,27 @@ export function Coin() {
   const quote = cq.quote;
   const isWethQuote = quote.toLowerCase() === CONTRACTS.weth.toLowerCase();
   const quoteSym = ANCHORS.find((a) => a.quote.toLowerCase() === quote.toLowerCase())?.key ?? QUOTE;
-  // Non-graduated + registered on the curve → trade against the bonding curve (un-dodgeable 2% fee).
+  // Non-graduated + registered on the curve → use its base fee and any active launch tax.
   // Graduated (or unknown/preview) coins fall through to the 0x/pool path below.
   const curveAddr = CONTRACTS.curve;
   const hasCurve = curveAddr !== ZERO;
   const onCurve = hasCurve && !!cq.routed && !cq.graduated;
+  // The launch fee depends on the buyer and chain timestamp; never label it as a flat 2%.
+  useEffect(() => {
+    let cancelled = false;
+    setCurveFeeBps(null);
+    if (!onCurve || !publicClient) return;
+    const refresh = async () => {
+      try {
+        const fee = buy ? Number(await publicClient.readContract({ address: curveAddr, abi: censusCurveAbi,
+          functionName: "buyFeeBps", args: [coin.address as Address, me ?? ZERO] })) : 200;
+        if (!cancelled) setCurveFeeBps(fee);
+      } catch { if (!cancelled) setCurveFeeBps(null); }
+    };
+    void refresh();
+    const interval = setInterval(refresh, 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [onCurve, publicClient, curveAddr, coin.address, me, buy]);
   const coinName = cq.name ?? coin.name;
   const coinSym = cq.symbol ?? coin.symbol;
 
@@ -60,7 +77,7 @@ export function Coin() {
   const mcapDisp = mcapUsd != null ? usd(mcapUsd) : priceQuote != null && supply != null ? `${(priceQuote * supply).toPrecision(3)} ${quoteSym}` : "new";
 
   // Live indicative "you receive ≈" as the user types (debounced). On the bonding curve this reads
-  // quoteBuy/quoteSell (net of the 2% fee) straight off the curve; for graduated coins it falls back to
+  // quoteBuy/quoteSell (net of the current fee) straight off the curve; for graduated coins it falls back to
   // the 0x proxy. Stays blank when there's no route (brand-new coin) or the dev proxy isn't running.
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +90,7 @@ export function Coin() {
           const amt = parseUnits(amount, 18);
           const out = (await publicClient.readContract({
             address: curveAddr, abi: censusCurveAbi,
-            functionName: buy ? "quoteBuy" : "quoteSell", args: [coinAddr, amt],
+            functionName: buy ? "quoteBuy" : "quoteSell", args: [coinAddr, amt], account: me ?? ZERO,
           })) as bigint;
           if (cancelled) return;
           setQuoteOut(out > 0n ? formatUnits(out, 18) : "");
@@ -90,7 +107,7 @@ export function Coin() {
       } catch { if (!cancelled) { setQuoteOut(""); setVia(""); } }
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [amount, buy, coin.address, me, quote, onCurve, curveAddr, publicClient]);
+  }, [amount, buy, coin.address, me, quote, onCurve, curveAddr, publicClient, curveFeeBps]);
 
   // Live graduation progress (bps 0..10000) straight off the curve. Replaces the old hardcoded 42%.
   useEffect(() => {
@@ -121,16 +138,22 @@ export function Coin() {
     const buyToken = buy ? coinAddr : quote;
     try {
       // Non-graduated coin → trade against the CensusCurve. There is no pool to route around, so the
-      // flat 2% fee is taken on-chain (split 75% creator-side / 25% platform). BUY approves `quoteIn`
+      // current launch/base fee is taken on-chain (75% creator-side / 25% platform). BUY approves `quoteIn`
       // of the quote asset to the curve then curve.buy; SELL approves the coin then curve.sell. Works
       // for ETH- and HOOD-quoted coins.
       if (onCurve) {
-        let minOut = 0n;
-        if (quoteOut) { try { minOut = (parseUnits(quoteOut, 18) * 98n) / 100n; } catch { minOut = 0n; } }
+        // Refresh immediately before submitting; do not trade with a missing/stale quote and minOut=0.
+        const currentQuote = await publicClient.readContract({ address: curveAddr, abi: censusCurveAbi,
+          functionName: buy ? "quoteBuy" : "quoteSell", args: [coinAddr, amountIn], account: me });
+        if (currentQuote <= 0n) { setStatus("no executable curve quote"); return; }
+        const minOut = currentQuote * 98n / 100n;
+        const currentFee = buy ? Number(await publicClient.readContract({ address: curveAddr, abi: censusCurveAbi,
+          functionName: "buyFeeBps", args: [coinAddr, me] })) : 200;
+        setCurveFeeBps(currentFee);
         if (buy) {
           if (isWethQuote) {
             // one-tap: native ETH in, wrapped + bought in a single tx on the curve (no pre-wrap, no approval)
-            setStatus("buying · 2% fee…");
+            setStatus(`buying · ${currentFee / 100}% current fee…`);
             const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: "buyWithETH", args: [coinAddr, minOut], value: amountIn });
             await publicClient.waitForTransactionReceipt({ hash: h });
             setStatus("bought ✓");
@@ -141,7 +164,7 @@ export function Coin() {
             setStatus("approving…");
             const a = await writeContractAsync({ address: quote, abi: erc20Abi, functionName: "approve", args: [curveAddr, amountIn] });
             await publicClient.waitForTransactionReceipt({ hash: a });
-            setStatus("buying · 2% fee…");
+            setStatus(`buying · ${currentFee / 100}% current fee…`);
             const h = await writeContractAsync({ address: curveAddr, abi: censusCurveAbi, functionName: "buy", args: [coinAddr, amountIn, minOut] });
             await publicClient.waitForTransactionReceipt({ hash: h });
             setStatus("bought ✓");
@@ -210,7 +233,9 @@ export function Coin() {
   const anchor = quoteSym;
   const tier = cq.isV2 ? "Maxima" : "Prima";
   const reserveEth = cq.realQuote != null ? Number(cq.realQuote) / 10 ** quoteDec : 0;
-  const feeAmt = feeBreakdown(Number(amount) || 0).fee;
+  const feeAmt = onCurve
+    ? buy ? (Number(amount) || 0) * (curveFeeBps ?? 0) / 10000 : (Number(quoteOut) || 0) * 200 / 9800
+    : feeBreakdown(Number(amount) || 0).fee;
   const graduated = !!cq.graduated;
 
   return (
@@ -269,7 +294,7 @@ export function Coin() {
         <div className="cx-panel cx-panel--plain" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div>
             <div className="cx-stat__value"><Num>—</Num></div>
-            <div className="cx-stat__note">75% of the 2% trade fee accrues to the creator side.</div>
+            <div className="cx-stat__note">75% of curve fees accrue to the creator side, including any launch tax.</div>
           </div>
           <span className="cx-cta" aria-disabled="true" style={{ pointerEvents: "none" }}>Collect</span>
         </div>
@@ -313,7 +338,8 @@ export function Coin() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 28 }}>
             <QuoteRow label="You receive ~" value={quoteOut ? `${Number(quoteOut).toLocaleString(undefined, { maximumSignificantDigits: 6 })} ${buy ? coinSym : anchor}` : "—"} bright />
-            <QuoteRow label="Fee (2%)" value={`${feeAmt.toFixed(3)} ${anchor}`} />
+            <QuoteRow label={onCurve ? `Fee estimate (${curveFeeBps == null ? "loading" : `${curveFeeBps / 100}%`})` : "Fee (2%)"} value={onCurve && curveFeeBps == null ? "—" : `${feeAmt.toFixed(3)} ${anchor}`} />
+            {onCurve && buy && curveFeeBps != null && curveFeeBps > 200 && <p role="status">Launch tax active. The buy fee decays to 2% within three seconds of launch; the mined transaction determines the final rate.</p>}
             <QuoteRow label="Slippage" value="2%" />
             <QuoteRow label="Route" value={graduated ? "Locked Uniswap pool" : via && via !== "census curve" ? via : onCurve ? "The Census curve" : `${anchor} pool`} />
           </div>

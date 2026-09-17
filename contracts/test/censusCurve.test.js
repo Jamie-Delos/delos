@@ -130,6 +130,8 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
   it("ZAP buyWithETH: HOOD-quoted coin — ETH in wraps + swaps to HOOD, buys, fees paid in HOOD", async () => {
     const { platform, creator, trader, hood, curve, coin } = await setupZap();
     const coinAddr = await coin.getAddress();
+    await hre.network.provider.send("evm_increaseTime", [3]);
+    await hre.network.provider.send("evm_mine");
 
     // At the router's 1:1 rate, E(1) ETH -> E(1) HOOD into the curve, so tokens out match a 1-HOOD buy.
     const expTokens = await curve.quoteBuy(coinAddr, E(1));
@@ -141,6 +143,19 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     expect(await hood.balanceOf(creator.address)).to.equal(E(0.015));  // 75% creator side (Prima: holdersBps 0)
     const c = await curve.curves(coinAddr);
     expect(c.realQuote).to.equal(E(0.98)); // net HOOD held by the curve
+  });
+
+  it("ZAP launch buy takes the decayed tax in the quote asset", async () => {
+    const { platform, creator, trader, hood, curve, coin } = await setupZap();
+    const coinAddr = await coin.getAddress();
+    await hre.network.provider.send("evm_setNextBlockTimestamp", [Number(await curve.launchedAt(coinAddr)) + 2]);
+    const rc = await (await curve.connect(trader).buyWithETH(coinAddr, 0, { value: E('0.1') })).wait();
+    const trade = rc.logs.map(l => { try { return curve.interface.parseLog(l); } catch { return null; } }).find(l => l?.name === 'Traded');
+    const fee = E('0.1') * 219n / 10000n;
+    expect(trade.args.fee).to.equal(fee);
+    expect(await hood.balanceOf(platform.address)).to.equal(fee / 4n);
+    expect(await hood.balanceOf(creator.address)).to.equal(fee - fee / 4n);
+    expect((await curve.curves(coinAddr)).realQuote).to.equal(E('0.1') - fee);
   });
 
   it("ZAP sellForETH: HOOD-quoted coin — sell gives HOOD, swaps to WETH, unwraps to native ETH", async () => {
@@ -205,17 +220,19 @@ describe("CensusCurve — bonding curve, 2% fee, accounting, anti-snipe", () => 
     expect(c.tokenReserve).to.be.gt(PARAMS.totalSupply - E(1)); // ~whole supply back in the curve
   });
 
-  it("anti-snipe: wallet balance cap applies in the window; creator is exempt; free after 100 blocks", async () => {
+  it("launch tax: ordinary wallets can buy without caps and creator buys keep the base fee", async () => {
     const { creator, trader, quote, curve, coin } = await setup();
-    // In-window buy by a normal wallet reverts because it exceeds the 2% wallet balance limit.
+    // Funding/approval transactions advance beyond the three-second launch window.
     await quote.mint(trader.address, E(1));
     await quote.connect(trader).approve(await curve.getAddress(), E(1));
-    await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), 0)).to.be.reverted;
+    await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), 0)).to.not.be.reverted;
     // The creator is exempt -> can buy in the window.
     await quote.mint(creator.address, E(1));
     await quote.connect(creator).approve(await curve.getAddress(), E(1));
     await expect(curve.connect(creator).buy(await coin.getAddress(), E(1), 0)).to.not.be.reverted;
-    // After the window, the normal wallet is free.
+    // A second purchase is also unrestricted (fund and approve it separately).
+    await quote.mint(trader.address, E(1));
+    await quote.connect(trader).approve(await curve.getAddress(), E(1));
     await mine(101);
     await expect(curve.connect(trader).buy(await coin.getAddress(), E(1), 0)).to.not.be.reverted;
   });

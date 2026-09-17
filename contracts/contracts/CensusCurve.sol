@@ -24,7 +24,7 @@ interface IWETH {
 }
 
 /// @title CensusCurve
-/// @notice The bonding-curve venue for Census coins. Trades executed here pay the 2% fee.
+/// @notice Bonding-curve venue: 2% normal fee plus a buy-only launch penalty decaying over 3 seconds.
 ///         Tokens remain transferable: external pools and OTC trades do not pay this curve's fee.
 ///         When the curve fills to its graduation reserve, it deposits the remaining
 ///         tokens + the raised quote into a permanently-locked Uniswap V3 pool (the coin's home for
@@ -42,6 +42,8 @@ contract CensusCurve is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint16 public constant FEE_BPS = 200;        // 2.00% trade fee
+    uint16 public constant SNIPE_TAX_START_BPS = 9900;
+    uint256 public constant SNIPE_TAX_SECONDS = 3;
     uint16 public constant PROTOCOL_BPS = 2500;  // 25% of the fee -> platform; 75% -> creator side
     uint16 public constant BPS = 10_000;
     uint16 public constant MIGRATION_MIN_BPS = 9_999; // retain at least 99.99% of each intended LP asset
@@ -109,12 +111,17 @@ contract CensusCurve is ReentrancyGuard {
     mapping(address => Curve) public curves; // coin => curve
     // Kept outside Curve to preserve the existing curves() return tuple used by keeper/metadata.
     mapping(address => uint256) public virtualTokenOffset;
+    mapping(address => uint256) public launchedAt;
+    mapping(address => mapping(address => bool)) public snipeTaxExempt;
 
     event FactorySet(address indexed factory, bool allowed);
     event QuoteAllowed(address indexed quote, bool allowed);
     event ZapPathSet(address indexed quote, bytes pathIn, bytes pathOut);
     event Registered(address indexed coin, address quote, address creator, address vault, uint16 holdersBps, uint256 virtualQuote, uint256 graduationQuote, uint256 virtualTokenOffset);
     event BuyRefunded(address indexed coin, address indexed buyer, address quote, uint256 amount, bool nativeRefund);
+    event LaunchWindow(address indexed coin, uint256 launchedAt, uint256 secondsWindow, uint16 startBps);
+    event SnipeTaxExempted(address indexed coin, address indexed account);
+    event SnipeTaxCharged(address indexed coin, address indexed buyer, uint256 amount);
     event Traded(address indexed coin, address indexed trader, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 fee);
     event Graduated(address indexed coin, address pool, uint256 tokenId, uint256 tokensIn, uint256 quoteIn);
     event MigrationPriceRestored(address indexed coin, address pool, uint160 poolSqrtPriceX96, uint160 targetSqrtPriceX96, int256 amount0Delta, int256 amount1Delta);
@@ -245,7 +252,7 @@ contract CensusCurve is ReentrancyGuard {
     function register(
         address coin, address quote, address creator, address vault, uint16 holdersBps,
         uint24 poolFee, uint256 virtualQuote, uint256 tokenSupply, uint256 graduationQuote
-    ) external {
+    ) public {
         if (!factory[msg.sender]) revert NotFactory();
         if (curves[coin].exists) revert AlreadyRegistered();
         if (!(allowedQuote[quote] || isPairableCompanyCoin(quote))) revert QuoteNotSupported();
@@ -267,6 +274,26 @@ contract CensusCurve is ReentrancyGuard {
             graduationQuote: graduationQuote, graduated: false, exists: true
         });
         emit Registered(coin, quote, creator, vault, holdersBps, virtualQuote, graduationQuote, offset);
+        launchedAt[coin] = block.timestamp;
+        snipeTaxExempt[coin][creator] = true;
+        emit LaunchWindow(coin, block.timestamp, SNIPE_TAX_SECONDS, SNIPE_TAX_START_BPS);
+        emit SnipeTaxExempted(coin, creator);
+    }
+
+    /// @notice Register and freeze creator-authorized launch-bundle exemptions atomically.
+    ///         register rejects an existing coin, so exemptions cannot be added after launch.
+    function registerWithExemptions(
+        address coin, address quote, address creator, address vault, uint16 holdersBps,
+        uint24 poolFee, uint256 virtualQuote, uint256 tokenSupply, uint256 graduationQuote,
+        address[] calldata exemptBuyers
+    ) external {
+        if (exemptBuyers.length > 32) revert BadParams();
+        register(coin, quote, creator, vault, holdersBps, poolFee, virtualQuote, tokenSupply, graduationQuote);
+        for (uint256 i; i < exemptBuyers.length; ++i) {
+            if (exemptBuyers[i] == address(0)) revert BadParams();
+            snipeTaxExempt[coin][exemptBuyers[i]] = true;
+            emit SnipeTaxExempted(coin, exemptBuyers[i]);
+        }
     }
 
     function _distributeFee(Curve storage c, uint256 fee) internal {
@@ -291,7 +318,7 @@ contract CensusCurve is ReentrancyGuard {
 
     // ----------------------------- trading -----------------------------
 
-    /// @notice Buy `coin` with `quoteIn` of the quote asset. Fee is 2% of the input.
+    /// @notice Buy `coin` with `quoteIn`. Normal fee is 2%; a buy-only launch penalty decays over 3s.
     /// @dev Caller must approve `quoteIn` of the quote asset to this contract first.
     function buy(address coin, uint256 quoteIn, uint256 minTokensOut) external nonReentrant returns (uint256 tokensOut) {
         Curve storage c = curves[coin];
@@ -307,8 +334,8 @@ contract CensusCurve is ReentrancyGuard {
     /// @notice One-tap buy with native ETH. For an ETH-quoted coin it just wraps msg.value to WETH. For a
     ///         coin quoted in another asset (e.g. HOOD) it *zaps*: wraps to WETH, then swaps WETH->quote
     ///         through the quote's configured V3 pool, and buys with the proceeds — all in one call, no
-    ///         pre-wrap and no approval. `msg.sender` stays the buyer, so the anti-snipe still applies per
-    ///         wallet. `minTokensOut` guards the whole path (swap + curve), so intermediate slippage on
+    ///         pre-wrap and no approval. `msg.sender` determines the launch-tax exemption.
+    ///         `minTokensOut` guards the whole path (swap + curve), so intermediate slippage on
     ///         the swap is covered by the final token check.
     function buyWithETH(address coin, uint256 minTokensOut) external payable nonReentrant returns (uint256 tokensOut) {
         Curve storage c = curves[coin];
@@ -335,11 +362,12 @@ contract CensusCurve is ReentrancyGuard {
 
     /// @dev Shared buy core. Assumes `quoteIn` of `c.quote` is already held by this contract.
     function _buy(Curve storage c, address coin, uint256 quoteIn, uint256 minTokensOut, bool nativeRefund) internal returns (uint256 tokensOut) {
-        uint256 maximum = _maxBuy(c);
+        uint256 feeBps = buyFeeBps(coin, msg.sender);
+        uint256 maximum = _maxBuy(c, feeBps);
         if (maximum == 0) revert CurveFilled();
         uint256 refund = quoteIn > maximum ? quoteIn - maximum : 0;
         quoteIn -= refund;
-        uint256 fee = (quoteIn * FEE_BPS) / BPS;
+        uint256 fee = Math.mulDiv(quoteIn, feeBps, BPS);
         uint256 netIn = quoteIn - fee;
 
         tokensOut = Math.mulDiv(c.tokenReserve + virtualTokenOffset[coin], netIn, c.virtualQuote + netIn);
@@ -351,11 +379,11 @@ contract CensusCurve is ReentrancyGuard {
         c.virtualQuote += netIn;
         c.realQuote += netIn;
 
-        // interactions: pay out the fee, then send the coin (the token's anti-snipe, pool == this curve,
-        // guards early buys on this last transfer).
+        // The launch penalty follows the ordinary platform/creator/holder split.
         _distributeFee(c, fee);
         IERC20(coin).safeTransfer(msg.sender, tokensOut);
         emit Traded(coin, msg.sender, true, quoteIn, tokensOut, fee);
+        if (feeBps > FEE_BPS) emit SnipeTaxCharged(coin, msg.sender, fee - Math.mulDiv(quoteIn, FEE_BPS, BPS));
         if (refund > 0) {
             if (nativeRefund) {
                 IWETH(weth).withdraw(refund);
@@ -568,21 +596,44 @@ contract CensusCurve is ReentrancyGuard {
 
     /// @notice Maximum gross quote accepted before graduation. Larger buys are partially filled.
     function maxQuoteIn(address coin) external view returns (uint256) {
-        return _maxBuy(curves[coin]);
+        return _maxBuy(curves[coin], buyFeeBps(coin, msg.sender));
     }
 
-    function _maxBuy(Curve memory c) internal pure returns (uint256) {
+    function maxQuoteInFor(address coin, address buyer) external view returns (uint256) {
+        return _maxBuy(curves[coin], buyFeeBps(coin, buyer));
+    }
+
+    /// @notice Effective extra buy fee after capping the combined take at 99%.
+    ///         Fourteen integer halvings across 3 seconds: raw 9900, 618, 19, then 0 bps.
+    function currentSnipeTaxBps(address coin, address buyer) public view returns (uint256) {
+        if (!curves[coin].exists || curves[coin].graduated || snipeTaxExempt[coin][buyer]) return 0;
+        uint256 elapsed = block.timestamp - launchedAt[coin];
+        if (elapsed >= SNIPE_TAX_SECONDS) return 0;
+        uint256 raw = uint256(SNIPE_TAX_START_BPS) >> ((elapsed * 14) / SNIPE_TAX_SECONDS);
+        return Math.min(raw, BPS - FEE_BPS - 100);
+    }
+
+    function buyFeeBps(address coin, address buyer) public view returns (uint256) {
+        return FEE_BPS + currentSnipeTaxBps(coin, buyer);
+    }
+
+    function _maxBuy(Curve memory c, uint256 feeBps) internal pure returns (uint256) {
         if (!c.exists || c.graduated || c.realQuote >= c.graduationQuote) return 0;
         // With fee=floor(gross*FEE/BPS), this gross amount nets exactly the remaining reserve.
-        return Math.mulDiv(c.graduationQuote - c.realQuote, BPS, BPS - FEE_BPS);
+        return Math.mulDiv(c.graduationQuote - c.realQuote, BPS, BPS - feeBps);
     }
 
-    /// @notice Tokens a buyer would receive for `quoteIn` right now (net of the 2% fee).
+    /// @notice Current quote including this caller's launch fee; use quoteBuyFor for another buyer.
     function quoteBuy(address coin, uint256 quoteIn) external view returns (uint256 tokensOut) {
+        return quoteBuyFor(coin, quoteIn, msg.sender);
+    }
+
+    function quoteBuyFor(address coin, uint256 quoteIn, address buyer) public view returns (uint256 tokensOut) {
         Curve memory c = curves[coin];
         if (!c.exists || c.graduated || quoteIn == 0) return 0;
-        quoteIn = Math.min(quoteIn, _maxBuy(c));
-        uint256 netIn = quoteIn - (quoteIn * FEE_BPS) / BPS;
+        uint256 feeBps = buyFeeBps(coin, buyer);
+        quoteIn = Math.min(quoteIn, _maxBuy(c, feeBps));
+        uint256 netIn = quoteIn - Math.mulDiv(quoteIn, feeBps, BPS);
         tokensOut = Math.mulDiv(c.tokenReserve + virtualTokenOffset[coin], netIn, c.virtualQuote + netIn);
     }
 

@@ -6,9 +6,9 @@ import {LaunchToken} from "./LaunchToken.sol";
 import {DividendVaultDeployer} from "./DividendVaultDeployer.sol";
 
 interface ICensusCurve {
-    function register(
+    function registerWithExemptions(
         address coin, address quote, address creator, address vault, uint16 holdersBps,
-        uint24 poolFee, uint256 virtualQuote, uint256 tokenSupply, uint256 graduationQuote
+        uint24 poolFee, uint256 virtualQuote, uint256 tokenSupply, uint256 graduationQuote, address[] calldata exemptBuyers
     ) external;
 }
 
@@ -29,10 +29,6 @@ contract LaunchFactoryV2 {
     /// @notice Creates + wires each launch's DividendVault. Keeping the vault creation code out of this
     ///         contract's runtime keeps the factory far below the EIP-170 limit.
     DividendVaultDeployer public immutable vaultDeployer;
-
-    uint256 private constant ANTISNIPE_WINDOW = 100;
-    uint16 private constant ANTISNIPE_MAX_WALLET_BPS = 200; // 2%
-    uint16 private constant ANTISNIPE_MAX_BUY_BPS = 0;      // no cumulative purchase cap
 
     struct LaunchParams {
         string name;
@@ -95,21 +91,14 @@ contract LaunchFactoryV2 {
         ex[2] = DEAD;
         vault = _createVault(q, basket, weights, paths, token, ex, msg.sender);
 
-        // 3. Seed the whole supply into the curve (before the dividend hook is wired + before anti-snipe).
+        // 3. Seed supply before wiring dividends. No token-level wallet/buy/block restrictions.
         IERC20(token).transfer(curve, p.totalSupply);
 
-        // 4. Arm anti-snipe: curve is the "pool". Creator, vault and any bundle wallets are exempt.
-        address[] memory exempt = new address[](2 + exemptBuyers.length);
-        exempt[0] = msg.sender;
-        exempt[1] = vault;
-        for (uint256 i; i < exemptBuyers.length; i++) exempt[i + 2] = exemptBuyers[i];
-        t.initAntiSnipe(curve, ANTISNIPE_WINDOW, ANTISNIPE_MAX_WALLET_BPS, ANTISNIPE_MAX_BUY_BPS, address(0), exempt);
-
-        // 5. Wire the token's transfer hook to the vault.
+        // 4. Wire the token's transfer hook to the vault.
         t.setDividendVault(vault);
 
-        // 6. Register the curve with the vault + split.
-        ICensusCurve(curve).register(token, q, msg.sender, vault, holdersBps, p.poolFee, p.virtualQuote, p.totalSupply, p.graduationQuote);
+        // 5. Register the 3-second buy tax and freeze creator/bundle exemptions.
+        ICensusCurve(curve).registerWithExemptions(token, q, msg.sender, vault, holdersBps, p.poolFee, p.virtualQuote, p.totalSupply, p.graduationQuote, exemptBuyers);
 
         emit LaunchedV2(token, msg.sender, curve, vault, holdersBps);
     }

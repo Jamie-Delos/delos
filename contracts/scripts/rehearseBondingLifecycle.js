@@ -52,9 +52,13 @@ async function runScenario(label,holdersBps){
     return row;
   }
   await capture('Launch',launch);
-  await assert.rejects(curve.connect(alice).buyWithETH(token.target,0,{value:E('1')}));
-  result.checks.push('Anti-snipe rejects an oversized early buy');
-  await network.provider.send('hardhat_mine',['0x65']);
+  assert.equal(await token.maxWallet(), 0n);
+  assert.equal(await token.maxBuy(), 0n);
+  assert.equal(await curve.buyFeeBps(token.target, alice.address), 9900n);
+  await network.provider.send('evm_increaseTime',[3]);
+  await network.provider.send('evm_mine');
+  assert.equal(await curve.buyFeeBps(token.target, alice.address), 200n);
+  result.checks.push('No wallet/buy caps; launch fee starts at 99% and expires after three seconds');
   for(const who of people){await token.connect(who).approve(curve.target,ethers.MaxUint256);await token.connect(who).approve(router.target,ethers.MaxUint256);}
 
   async function curveBuy(who,value,title){
