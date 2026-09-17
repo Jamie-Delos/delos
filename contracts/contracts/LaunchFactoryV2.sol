@@ -76,7 +76,11 @@ contract LaunchFactoryV2 {
         if (salt == bytes32(0)) {
             t = new LaunchToken(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
         } else {
-            t = new LaunchToken{salt: salt}(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
+            // Bind the vanity address to the creator (see LaunchFactory): the CREATE2 salt is
+            // keccak256(salt, creator), so a mempool watcher cannot reproduce this launch's …c0de
+            // address under their own key. The off-chain grinders mirror this derivation.
+            bytes32 s = keccak256(abi.encodePacked(salt, msg.sender));
+            t = new LaunchToken{salt: s}(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
             require((uint160(address(t)) & 0xFFFF) == 0xC0DE, "not a census address");
         }
         token = address(t);

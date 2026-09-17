@@ -67,7 +67,7 @@ async function main() {
   const supply = 1_000_000_000n * 10n ** 18n;
   // Grind a CREATE2 vanity salt so the token deploys to a `…c0de` address; the deterministic
   // address is also used for the tick geometry (token0/token1 ordering vs WETH).
-  const { salt, address: predicted, tries } = await grindSalt(factoryAddr, { name: "Devnet Doge", symbol: "DDOGE", totalSupply: supply, decimals: 18 });
+  const { salt, address: predicted, tries } = await grindSalt(factoryAddr, { name: "Devnet Doge", symbol: "DDOGE", totalSupply: supply, decimals: 18 }, creator.address);
   console.log(`    [c0de] grinded a vanity salt in ${tries} tries -> ${predicted}`);
   const p = computeLaunchParams({ token: predicted, weth: WETH, tokenDecimals: 18, quoteDecimals: std.quoteDecimals, fee: std.fee, priceWethPerToken: std.launchPriceWethPerToken });
   const gradTick = computeGraduationTick({ token: predicted, weth: WETH, tokenDecimals: 18, quoteDecimals: std.quoteDecimals, graduationPriceWethPerToken: std.graduationPriceWethPerToken });

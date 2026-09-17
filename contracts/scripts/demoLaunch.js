@@ -29,7 +29,7 @@ async function main() {
 
   const launched = [];
   for (const c of COINS) {
-    const { salt, address } = await grindSalt(d.LaunchFactory, { name: c.name, symbol: c.symbol, totalSupply: SUPPLY, decimals: DEC });
+    const { salt, address } = await grindSalt(d.LaunchFactory, { name: c.name, symbol: c.symbol, totalSupply: SUPPLY, decimals: DEC }, signer.address);
     const params = [c.name, c.symbol, SUPPLY, DEC, POOLFEE, VQ, GQ];
     const rc = await (await factory[CREATE_SIG](params, salt)).wait();
     const token = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((x) => x && x.name === "Launched").args.token;

@@ -100,7 +100,7 @@ async function main() {
 
   const fac1Addr = await fac1.getAddress();
   const supply1 = ethers.parseEther("1000000000");
-  let g = await grindSalt(fac1Addr, { name: "HoodDoge", symbol: "HDOGE", totalSupply: supply1, decimals: 18 });
+  let g = await grindSalt(fac1Addr, { name: "HoodDoge", symbol: "HDOGE", totalSupply: supply1, decimals: 18 }, creator.address);
   let predicted = g.address, salt = g.salt;
   console.log(`[c0de] v1 salt in ${g.tries} tries -> ${predicted}`);
   let lp = computeLaunchParams({ token: predicted, weth: HOOD, tokenDecimals: 18, quoteDecimals: 18, fee: STD.fee, priceWethPerToken: STD.launchPriceWethPerToken });
@@ -127,7 +127,7 @@ async function main() {
   const fac2Addr = await fac2.getAddress();
   // Grind the CREATE2 vanity salt for the v2 token (the factory deploys it via CREATE2 -> `…c0de`).
   const supply2 = ethers.parseEther("1000000000");
-  g = await grindSalt(fac2Addr, { name: "Iron Man", symbol: "IRON", totalSupply: supply2, decimals: 18 });
+  g = await grindSalt(fac2Addr, { name: "Iron Man", symbol: "IRON", totalSupply: supply2, decimals: 18 }, creator.address);
   predicted = g.address; salt = g.salt;
   console.log(`[c0de] v2 salt in ${g.tries} tries -> ${predicted}`);
   lp = computeLaunchParams({ token: predicted, weth: WETH, tokenDecimals: 18, quoteDecimals: 18, fee: STD.fee, priceWethPerToken: STD.launchPriceWethPerToken });

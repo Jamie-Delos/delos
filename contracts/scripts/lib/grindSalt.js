@@ -11,10 +11,13 @@ const { ethers, artifacts } = hre;
 /**
  * @param {string} factory  deployer = the factory address (also the token's `mintTo` arg)
  * @param {{name:string,symbol:string,totalSupply:bigint,decimals:number}} args token constructor args
+ * @param {string} creator  the address that will call createLaunch — the salt is bound to it, so no
+ *                          one else can reproduce this address (the factory uses keccak256(salt, creator)).
  * @param {{suffix?:number,mask?:number,limit?:number}} [opts]
- * @returns {Promise<{salt:string,address:string,tries:number}>}
+ * @returns {Promise<{salt:string,address:string,tries:number}>} `salt` is the value to pass on-chain.
  */
-async function grindSalt(factory, args, opts = {}) {
+async function grindSalt(factory, args, creator, opts = {}) {
+  if (!creator) throw new Error("grindSalt: creator (the launching address) is required — the vanity salt is bound to it");
   const suffix = BigInt(opts.suffix ?? 0xc0de);
   const mask = BigInt(opts.mask ?? 0xffff);
   const limit = opts.limit ?? 20_000_000;
@@ -28,7 +31,9 @@ async function grindSalt(factory, args, opts = {}) {
 
   for (let i = 0; i <= limit; i++) {
     const salt = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-    const addr = ethers.getCreate2Address(factory, salt, initCodeHash);
+    // The factory derives the CREATE2 salt as keccak256(abi.encodePacked(salt, creator)); mirror it.
+    const effectiveSalt = ethers.solidityPackedKeccak256(["bytes32", "address"], [salt, creator]);
+    const addr = ethers.getCreate2Address(factory, effectiveSalt, initCodeHash);
     if ((BigInt(addr) & mask) === suffix) return { salt, address: addr, tries: i + 1 };
   }
   throw new Error(`grindSalt: no salt found for suffix 0x${suffix.toString(16)} within ${limit} tries`);

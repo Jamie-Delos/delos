@@ -25,7 +25,7 @@ async function main() {
 
   const { salt, address: predicted, tries } = await grindSalt(dep.LaunchFactoryV2, {
     name: TOKEN.name, symbol: TOKEN.symbol, totalSupply, decimals: TOKEN.decimals,
-  });
+  }, signer.address);
   console.log(`Grinded c0de salt in ${tries} tries -> ${predicted}`);
 
   const p = computeLaunchParams({ token: predicted, weth: uni.WETH, tokenDecimals: TOKEN.decimals, quoteDecimals: std.quoteDecimals, fee: std.fee, priceWethPerToken: std.launchPriceWethPerToken });

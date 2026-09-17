@@ -80,7 +80,9 @@ export function Launch() {
   const [pendingMeta, setPendingMeta] = useState<{ token: Address; meta: CoinMetadata } | null>(null);
   const [status, setStatus] = useState("");
   const [launchPct, setLaunchPct] = useState<number | null>(null); // 0..100 while launching; null when idle
-  const [reserved, setReserved] = useState<{ salt: Hex; address: Address } | null>(null);
+  // `creator` is stored so a salt grinded for one wallet is never reused when signing with another —
+  // the on-chain address is bound to the creator (CX-F1), so a mismatch would deploy off-address.
+  const [reserved, setReserved] = useState<{ salt: Hex; address: Address; creator: Address } | null>(null);
   const [ethUsd, setEthUsd] = useState(ETH_USD_FALLBACK);
   const set: Setter = (p) => setDraft((d) => ({ ...d, ...p }));
 
@@ -162,23 +164,25 @@ export function Launch() {
   // Grind the reserved …c0de address once we reach Identity and have a name + ticker. A changed
   // name/ticker/tier means a different address, so the old one is dropped immediately (never shown, never
   // launched with) while the new grind runs.
-  const grindKey = `${draft.name}|${ticker}|${isV2}`;
+  // The address depends on the connected wallet, so the grind key includes it and a wallet change re-grinds.
+  const grindKey = `${draft.name}|${ticker}|${isV2}|${address ?? ""}`;
   const lastGrind = useRef("");
   useEffect(() => {
-    if (step < 3 || !draft.name.trim() || ticker === "—") return;
+    if (step < 3 || !draft.name.trim() || ticker === "—" || !address) return;
     if (lastGrind.current === grindKey) return;
     lastGrind.current = grindKey;
     setReserved(null);
     if (!hasFactory) return;
     let cancelled = false;
+    const creator = address;
     (async () => {
       try {
-        const g = await grindC0de({ name: draft.name.trim(), symbol: ticker, totalSupply: parseUnits(String(STANDARD.totalSupply), STANDARD.decimals), decimals: STANDARD.decimals, factory: factoryAddr });
-        if (!cancelled) setReserved({ salt: g.salt, address: g.address });
+        const g = await grindC0de({ name: draft.name.trim(), symbol: ticker, totalSupply: parseUnits(String(STANDARD.totalSupply), STANDARD.decimals), decimals: STANDARD.decimals, factory: factoryAddr, creator });
+        if (!cancelled) setReserved({ salt: g.salt, address: g.address, creator });
       } catch { if (!cancelled) setReserved(null); }
     })();
     return () => { cancelled = true; };
-  }, [step, grindKey, factoryAddr, hasFactory]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, grindKey, factoryAddr, hasFactory, address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hint = [
     valid[0] ? "Anchors next." : !nameOk ? "Add a company name to continue." : "Add a one-line thesis to continue.",
@@ -248,12 +252,15 @@ export function Launch() {
       // phases fill the rest.
       setStatus("reserving your …c0de address…");
       setLaunchPct(4);
-      let salt: Hex = reserved?.salt ?? ZERO_SALT;
-      if (reserved) {
+      // Reuse the previewed salt only if it was grinded for the wallet that's about to sign; otherwise
+      // grind fresh bound to the current creator. A salt from another wallet would deploy off-address.
+      let salt: Hex = ZERO_SALT;
+      if (reserved && address && reserved.creator === address) {
+        salt = reserved.salt;
         setLaunchPct(68);
-      } else {
+      } else if (address) {
         try {
-          const g = await grindC0de({ name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, factory: factoryAddr },
+          const g = await grindC0de({ name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, factory: factoryAddr, creator: address },
             { onProgress: (n) => setLaunchPct(Math.min(66, 6 + Math.round((n / 65536) * 60))) });
           salt = g.salt;
           setLaunchPct(68);

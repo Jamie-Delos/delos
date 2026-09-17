@@ -59,7 +59,13 @@ contract LaunchFactory {
         if (salt == bytes32(0)) {
             t = new LaunchToken(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
         } else {
-            t = new LaunchToken{salt: salt}(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
+            // Bind the vanity address to the creator: the CREATE2 salt is keccak256(salt, creator), so
+            // the deployed address depends on msg.sender. A mempool watcher who copies (params, salt)
+            // deploys to a DIFFERENT address under their own key and cannot hijack this launch's
+            // …c0de address. The off-chain grinder (scripts/lib/grindSalt.js, frontend/src/lib/c0de.ts)
+            // mirrors this derivation, grinding `salt` for the connected creator.
+            bytes32 s = keccak256(abi.encodePacked(salt, msg.sender));
+            t = new LaunchToken{salt: s}(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
             require((uint160(address(t)) & 0xFFFF) == 0xC0DE, "not a census address");
         }
         token = address(t);

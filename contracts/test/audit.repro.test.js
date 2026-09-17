@@ -51,13 +51,17 @@ describe('Audit regressions and remaining design risks', function () {
     const constructor = ethers.AbiCoder.defaultAbiCoder().encode(['string', 'string', 'uint256', 'uint8', 'address'], ['Audit', 'AUD', E('1000000000'), 18, s.factory.target]);
     const oldHash = ethers.keccak256(ethers.concat([embedded, constructor]));
     const newHash = ethers.keccak256(ethers.concat([actual, constructor]));
+    // The factory binds the vanity address to the creator (CX-F1): effective salt = keccak256(salt, creator).
     let salt;
+    const creator = s.creator.address;
     for (let i = 1; i < 5000000; i++) {
       const candidate = ethers.toBeHex(i, 32);
-      if (ethers.getCreate2Address(s.factory.target, candidate, oldHash).toLowerCase().endsWith('c0de')) { salt = candidate; break; }
+      const eff = ethers.solidityPackedKeccak256(['bytes32', 'address'], [candidate, creator]);
+      if (ethers.getCreate2Address(s.factory.target, eff, oldHash).toLowerCase().endsWith('c0de')) { salt = candidate; break; }
     }
     expect(salt).to.not.equal(undefined);
-    expect(ethers.getCreate2Address(s.factory.target, salt, newHash).toLowerCase().endsWith('c0de')).to.equal(true);
+    const effNew = ethers.solidityPackedKeccak256(['bytes32', 'address'], [salt, creator]);
+    expect(ethers.getCreate2Address(s.factory.target, effNew, newHash).toLowerCase().endsWith('c0de')).to.equal(true);
     const p = ['Audit', 'AUD', E('1000000000'), 18, 10000, E('1.5'), E('4')];
     await expect(s.factory.connect(s.creator)['createLaunch((string,string,uint256,uint8,uint24,uint256,uint256),bytes32)'](p, salt)).not.to.be.reverted;
   });
