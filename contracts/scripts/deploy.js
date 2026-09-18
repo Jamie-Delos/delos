@@ -19,6 +19,19 @@ function loadUni(netName) {
 
 async function main() {
   const netName = hre.network.name;
+
+  // CX-G2: fail closed on the real mainnet. The curve's `platform` fee recipient is IMMUTABLE, so a
+  // deployer-owned FeeVault (the fallback when FEE_SPLIT_A/B are unset) can never be repointed — it must
+  // be an approved immutable FeeSplitter/multisig. The keeper must also be set. Testnet/local are exempt.
+  if (netName === "robinhood") {
+    if (!(process.env.FEE_SPLIT_A && process.env.FEE_SPLIT_B)) {
+      throw new Error("Mainnet deploy refused (CX-G2): set FEE_SPLIT_A/FEE_SPLIT_B to an approved immutable FeeSplitter/multisig — the platform fee recipient is immutable and must not be a single deployer EOA.");
+    }
+    if (!process.env.KEEPER_ADDRESS) {
+      throw new Error("Mainnet deploy refused (CX-G2): set KEEPER_ADDRESS (the reward-distribution keeper) before launch.");
+    }
+  }
+
   const uni = loadUni(netName);
   if (!uni || !uni.NonfungiblePositionManager) throw new Error(`No Uniswap addresses for "${netName}".`);
   if (!uni.SwapRouter02) throw new Error(`No SwapRouter02 for "${netName}" — needed by LaunchFactoryV2's vaults.`);

@@ -51,7 +51,9 @@ async function main() {
   };
   const call = async ({ endpoint = 'price', chainId = '4663', ip = '1.1.1.1' } = {}) => {
     const r = res();
-    await handler({ query: { endpoint, chainId, sellToken: 'A', buyToken: 'B', sellAmount: '1' }, headers: { 'x-forwarded-for': ip } }, r);
+    const query = { endpoint, sellToken: 'A', buyToken: 'B', sellAmount: '1' };
+    if (chainId != null) query.chainId = chainId; // pass chainId:null to omit it entirely
+    await handler({ query, headers: { 'x-forwarded-for': ip } }, r);
     return r;
   };
 
@@ -64,9 +66,10 @@ async function main() {
   // 2. A different IP is independent.
   assert.equal((await call({ ip: '8.8.8.8' })).code, 200, 'a different IP is not throttled');
 
-  // 3. Chain cap: a foreign chainId is refused before spending the key (checked before the upstream).
+  // 3. Chain cap: a foreign OR missing chainId is refused before spending the key (checked pre-upstream).
   const hitsBefore = upstreamHits;
   assert.equal((await call({ chainId: '1', ip: '7.7.7.7' })).code, 400, 'foreign chain rejected');
+  assert.equal((await call({ chainId: null, ip: '7.7.7.8' })).code, 400, 'missing chain rejected when CENSUS_CHAIN_ID set');
   assert.equal(upstreamHits, hitsBefore, 'a rejected chain must not hit the upstream key');
 
   // 4. Bad/missing endpoint → 400.

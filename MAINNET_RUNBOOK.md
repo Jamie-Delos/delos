@@ -117,9 +117,16 @@ splitter args from the `verify` block instead of the `FeeVault` line, and pass i
   VITE_CURVE_ADDRESS=<from deploy>
   VITE_WETH=0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73
   VITE_SWAP_ROUTER=0xCaf681a66D020601342297493863E78C959E5cb2
+  VITE_QUOTER=<Robinhood Chain QuoterV2 — verify on-chain first>
   ```
-- Provision Vercel KV so launch metadata (thesis/description/logo) persists (KV_REST_API_URL +
-  KV_REST_API_TOKEN on the census project); until then metadata degrades to null.
+- **Verify + set `VITE_QUOTER`** (CX-H1): confirm the Robinhood Chain Uniswap **QuoterV2** address with a
+  read-only call, then set it. Without it, graduated-pool trades quote off an impact-free spot estimate
+  (guarded only by user slippage) and revert on shallow pools. After setting, smoke-test the 0.01 / 0.1 /
+  0.5 / 1 ETH presets on a graduated coin.
+- Provision Vercel KV so launch metadata (thesis/description/logo) persists AND the API rate limits are
+  live (KV_REST_API_URL + KV_REST_API_TOKEN on the census project) — the /api/zeroex + /api/metadata
+  limits fail OPEN without KV, so an unprovisioned KV leaves the 0x key unthrottled. Until then metadata
+  also degrades to null.
 - Redeploy the frontend:
   ```
   cd frontend

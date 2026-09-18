@@ -4,8 +4,25 @@ Companion to the audit in this folder (README = verdict, FINDINGS = A–G detail
 TRACK-* = H–Z detail, DOOM/MONEY-MAP/COVERAGE/NOT-VERIFIED). This page records everything **fixed**,
 with proof and commit, and everything that **remains** (and why it can't be closed in code alone).
 
-All work is on `adminofcensus/Census-Core-Repo` `main`, pushed. Commits this session:
-`c57156f` → `7d3e5f4` → `a2ffb81` → `93426bf` → `10aeb85` → `b30332a`.
+All work is on `adminofcensus/Census-Core-Repo` `main`, pushed. Commits:
+`c57156f` → `7d3e5f4` → `a2ffb81` → `93426bf` → `10aeb85` → `b30332a` → `14cb19d` → `713fbfb` → (18 Sep follow-ups).
+
+## Neil re-audit follow-ups (18 Sep, on `713fbfb` → this commit)
+
+Neil independently re-audited `713fbfb` (`audit/Census-Core-Repo-re-audit-713fbfb.md`) and **confirmed
+every code fix is real** — no reversal, price-impact test uses real Uniswap V3, CI green (98 passing).
+He caught four small code items the 17 Sep pass had missed; all now closed and verified:
+
+| Item | Fix | Proof |
+|---|---|---|
+| **0x chain-cap hole** (a missing/non-string `chainId` bypassed the cap and still spent the key) | `api/zeroex.ts` now requires an exact match when `CENSUS_CHAIN_ID` is set (rejects missing/non-string too) | `api.zeroex.test.cjs` — added a missing-chain case |
+| **`VITE_QUOTER` undocumented** | added to `frontend/.env.example` and `MAINNET_RUNBOOK.md` (verify on-chain + set + smoke-test presets) | docs |
+| **CI didn't build the frontend** (CX-V3) | `.github/workflows/backend.yml` now runs `npm run build` + the zeroex/names tests, not just `tsc` | workflow |
+| **`deploy.js` mainnet safety optional** (CX-G2) | mainnet (`robinhood`) deploy now **fails closed** without `FEE_SPLIT_A/B` (immutable splitter/multisig) and `KEEPER_ADDRESS` | proven: `hardhat run … --network robinhood` refuses before any network call |
+
+Note: the deploy guard forces the treasury/keeper to be *set*; choosing the actual multisig/keeper values
+is still the team's call (G1/G2). And the API rate limits **fail open without KV** (a KV outage leaves
+`/api/zeroex` unthrottled) — provisioning + a spend alert stay on the mainnet gate list (G9).
 
 ## Verdict (unchanged)
 

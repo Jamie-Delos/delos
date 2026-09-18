@@ -74,8 +74,10 @@ export default async function handler(req: any, res: any) {
     // Cost cap: only proxy quotes for Census's own chain (when configured), and throttle per IP.
     const wantChain = process.env.CENSUS_CHAIN_ID;
     const reqChain = req.query?.chainId;
-    if (wantChain && typeof reqChain === "string" && reqChain !== wantChain) {
-      return res.status(400).json({ message: "unsupported chain" });
+    // When a chain is configured, require an EXACT match — a missing or non-string chainId must be
+    // rejected too, not just a mismatched one, so the key is never spent off Census's chain (CX-L1).
+    if (wantChain && (typeof reqChain !== "string" || reqChain !== wantChain)) {
+      return res.status(400).json({ message: "unsupported or missing chain" });
     }
     if (await rateLimited(req)) {
       res.setHeader("retry-after", "60");
