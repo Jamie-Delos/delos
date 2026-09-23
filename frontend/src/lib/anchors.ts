@@ -183,8 +183,18 @@ export async function curveLaunchParams(
   a: Anchor,
   graduationEth: number,
 ): Promise<{ quote: Address; virtualQuote: bigint; graduationQuote: bigint }> {
+  // ETH targets are already denominated in the quote asset. A USD oracle adds no information
+  // here and must not block a launch when its pool or RPC is unavailable. Direct parsing also
+  // avoids floating-point rounding from multiplying and dividing by the same USD price.
+  if (isDefaultAnchor(a)) {
+    return {
+      quote: a.quote,
+      virtualQuote: parseUnits(String(START_FDV_ETH), a.quoteDecimals),
+      graduationQuote: parseUnits(String(graduationEth), a.quoteDecimals),
+    };
+  }
   const ethUsd = await ethUsdPrice(pc);
-  const quoteUsd = isDefaultAnchor(a) ? ethUsd : await quoteUsdPrice(pc, a);
+  const quoteUsd = await quoteUsdPrice(pc, a);
   if (!(quoteUsd > 0) || !Number.isFinite(quoteUsd)) throw new Error(`couldn't price ${a.key} on-chain`);
   const toQuoteWei = (ethAmount: number) => parseUnits(((ethAmount * ethUsd) / quoteUsd).toFixed(a.quoteDecimals), a.quoteDecimals);
   return {
