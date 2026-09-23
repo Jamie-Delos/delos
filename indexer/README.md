@@ -13,6 +13,18 @@ CensusCurve (chain) ──events──► ingester ──► Postgres ──► 
 ```
 - **Ingester** (`src/ingest.ts`): backfills from the curve deploy block, then live-polls. Tracks each
   curve's reserves directly from `Traded` events (no per-trade RPC), so it scales.
+- **Products**: the legacy **V3** product (`CensusCurve` at `CURVE_ADDRESS`, graduated coins trade in a
+  locked Uniswap V3 pool) and the **V4** product (`CensusCurveV4` at `CURVE_V4_ADDRESS`, graduated
+  coins trade in a canonical Uniswap V4 pool with the Census hook; `POOL_MANAGER_ADDRESS` and
+  `HOOK_ADDRESS` add the post-graduation coverage). Either or both can be configured; every coin
+  carries `product: "v3" | "v4"`.
+  V4 events indexed: curve `Registered` (with `reflectionBps`), `Traded`, `FeeAllocated` (per-trade
+  protocol/creator/holder/penalty split stored on the trade), `Graduated(coin, poolId, ...)`;
+  PoolManager `Swap` filtered by the coin's `poolId` (venue `pool`, price from `sqrtPriceX96` oriented
+  by which currency is the coin) paired with the hook's `FeeAccrued` of the same transaction (gross
+  quote volume + fee split; `fee` = protocol + creator + holder); vault `Distributed`/`Claimed` and hook
+  `FeesClaimed` to a vault (reward kind `collected`). Fee logs are annotations of their trade, so an
+  inconsistent pairing stops ingestion instead of writing a partial trade.
 - **API** (`src/api.ts`): Fastify. `/coins`, `/coins/:address`, `/coins/:address/trades`,
   `/coins/:address/chart`, `/stats`, and `/ws` (live stream).
 - **DB** (`prisma/schema.prisma`): Postgres via Prisma. Everything the board reads is denormalised onto
@@ -45,13 +57,17 @@ then `DATABASE_URL="postgresql://postgres:census@localhost:5432/census?schema=pu
 ## API
 | Route | Returns |
 | --- | --- |
+| `GET /health` | `ok`, `database`, `chainId`, `curve`, `finalizedBlock`, `ingestionError`, `usdPricing`, `products` (`["v3"]`, `["v4"]` or `["v3","v4"]`: the configured curves) |
 | `GET /coins?sort=new\|mcap\|volume\|active&limit=&graduated=` | board list |
-| `GET /coins/:address` | one coin (curve state + aggregates) |
-| `GET /coins/:address/trades?limit=` | recent trades |
+| `GET /coins/:address` | one coin (curve state + aggregates). Every coin has `product` (`"v3"` \| `"v4"`), `reflectionBps` (V4 holder-reflection fee in bps, 0 on V3), `pool` (V3 graduated pool address, null on V4) and `poolId` (V4 graduated pool id, bytes32, null on V3) |
+| `GET /coins/:address/trades?limit=` | recent trades: `venue` (`curve` \| `pool`), `fee` and its split `feeProtocol`/`feeCreator`/`feeHolders`/`feePenalty` (V4 `FeeAllocated` on the curve, hook `FeeAccrued` in the pool; all `"0"` on V3 trades). V4 pool trades: `amountIn` is the gross quote on buys, `amountOut` the net quote on sells |
+| `GET /coins/:address/rewards?limit=&holder=` | reward ledger: `kind` `distributed` \| `claimed` \| `converted` (V3) \| `collected` (V4: hook fees pushed to the vault) |
 | `GET /coins/:address/chart?limit=` | price points for the chart |
 | `GET /stats` | totals (coins, graduated, trades, volume) |
-| `GET /ws` | WebSocket stream: `{type:"coin"\|"trade"\|"graduate", data}` |
+| `GET /ws` | WebSocket stream: `{type:"coin"\|"trade"\|"graduate"\|"reward", data}` |
 
-All amounts are strings (uint256); prices/mcap are numbers. `priceUsd`/`marketCapUsd` are populated for
-ETH-quoted coins; HOOD/other-quoted coins report `priceQuote` (in the quote asset) until a price feed for
-that quote is wired.
+All amounts are strings (uint256); prices/mcap are numbers or **null**. USD pricing fails closed:
+`priceUsd`/`marketCapUsd`/`volumeUsd` are null unless the quote asset has a configured USD price
+(`ETH_USD` for WETH, `QUOTE_USD` for others); there is no default ETH price. `/stats.volumeUsd` is null
+while any coin is unpriced (`unpricedCoins` says how many) and `/health.usdPricing` reports whether
+`ETH_USD` is configured. Company-coin quotes are not USD-priced yet.

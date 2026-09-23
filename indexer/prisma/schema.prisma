@@ -22,9 +22,11 @@ model Coin {
   quoteSymbol     String   @default("ETH")
   quoteDecimals   Int      @default(18) // the quote asset's own decimals (company-coin quotes may differ)
   quoteIsCoin     Boolean  @default(false) // meme pair: quoted in a Census company coin (UI highlights these)
-  vault           String? // DividendVault (Maxima); null => Prima
-  holdersBps      Int      @default(0)
-  isV2            Boolean  @default(false)
+  vault           String? // DividendVault (V3 Maxima) or CensusRewardVault (V4); null => no holder rewards
+  holdersBps      Int      @default(0) // V3: holder share of the fee
+  isV2            Boolean  @default(false) // has a reward vault
+  product         String   @default("v3") // v3 (CensusCurve + locked V3 pool) | v4 (CensusCurveV4 + hooked V4 pool)
+  reflectionBps   Int      @default(0) // V4: extra holder-reflection fee on top of the 2% base (0 or 100..400)
 
   // Live curve state (refreshed from the chain each reconcile).
   virtualQuote    String   @default("0")
@@ -33,15 +35,16 @@ model Coin {
   realQuote       String   @default("0")
   graduationQuote String   @default("0")
   graduated       Boolean  @default(false)
-  pool            String? // graduated Uniswap V3 pool
+  pool            String? // graduated Uniswap V3 pool (V3 product; null for V4)
+  poolId          String? // graduated canonical Uniswap V4 pool id, bytes32 (V4 product; null for V3)
   progressBps     Int      @default(0) // 0..10000 toward graduation
 
   // Aggregates for the board.
   priceQuote      Float    @default(0) // spot price, quote per token
-  priceUsd        Float    @default(0)
-  marketCapUsd    Float    @default(0)
+  priceUsd        Float? // null = no configured USD price for the quote asset (fail closed)
+  marketCapUsd    Float?
   volumeQuote     Float    @default(0) // cumulative quote volume
-  volumeUsd       Float    @default(0)
+  volumeUsd       Float? // null once any trade could not be priced; rebuild after configuring a price
   tradeCount      Int      @default(0)
 
   createdBlock    BigInt   @default(0)
@@ -65,7 +68,13 @@ model Trade {
   isBuy       Boolean
   amountIn    String // buy: quote in (incl. fee); sell: tokens in
   amountOut   String // buy: tokens out; sell: quote out (net)
-  fee         String // in quote (curve trades; pool swaps record "0" — LP fees accrue in the position)
+  fee         String // in quote (curve trades and V4 hooked-pool swaps; V3 pool swaps record "0" — LP fees accrue in the position)
+  // V4 fee split of `fee` (FeeAllocated on the curve; FeeAccrued from the hook, where penalty is folded into
+  // protocol/creator and stays "0"). All "0" on V3 trades.
+  feeProtocol String   @default("0")
+  feeCreator  String   @default("0")
+  feeHolders  String   @default("0")
+  feePenalty  String   @default("0")
   priceQuote  Float // quote per token at this trade
   venue       String   @default("curve") // curve | pool (the coin's own graduated pool)
   block       BigInt
@@ -83,10 +92,10 @@ model Trade {
 model RewardEvent {
   id          String   @id @default(cuid())
   coinAddress String
-  kind        String // distributed | claimed | converted
+  kind        String // distributed | claimed | converted | collected (V4: hook fees pushed to the vault)
   holder      String? // claimed: the holder paid
-  asset       String? // claimed: the payout asset; converted/distributed: the quote asset
-  amount      String   @default("0") // distributed: quote spent; claimed: amount paid; converted: launch tokens sold
+  asset       String? // claimed/collected: the payout asset; converted/distributed: the quote asset
+  amount      String   @default("0") // distributed: quote spent; claimed/collected: amount paid; converted: launch tokens sold
   amountB     String   @default("0") // converted: quote received
   block       BigInt
   txHash      String
@@ -103,7 +112,7 @@ model PricePoint {
   coin        Coin     @relation(fields: [coinAddress], references: [address])
   coinAddress String
   priceQuote  Float
-  priceUsd    Float    @default(0)
+  priceUsd    Float?
   block       BigInt
   ts          DateTime @default(now())
 

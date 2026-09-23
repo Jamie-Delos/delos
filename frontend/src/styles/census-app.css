@@ -392,6 +392,8 @@
 
 /* Coin page: main + sticky trade aside; collapses to one column on mobile. */
 .cx-coin { display: grid; grid-template-columns: minmax(0, 1fr) var(--census-aside-width); gap: 44px; align-items: start; }
+/* The trade aside must span the full row for its sticky panel to have room to stick (see census.css). */
+.cx-coin > :last-child { align-self: stretch; }
 @media (max-width: 900px) { .cx-coin { grid-template-columns: minmax(0, 1fr); gap: 28px; } .cx-coin .cx-panel { position: static !important; } }
 
 /* The bottom tab bar is mobile-only; on desktop the sidebar handles navigation. */

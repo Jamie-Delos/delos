@@ -19,6 +19,8 @@ jobs:
       - run: node scripts/exportTokenBytecode.js --check   # client bytecode parity + EIP-170 sizes
       - run: npx hardhat test --network hardhat
       - run: npm run rehearse:bonding
+      - run: npm run rehearse:v4        # V4 product: curve -> hooked V4 pool -> reflections, real PoolManager bytecode
+      - run: npm run deploy:v4:local     # deployment script rehearsal incl. hook salt mining and wiring assertions
       - run: npm ci --prefix ../indexer
       - run: node ../indexer/pf.parity.cjs # real contract events must reproduce indexer reserves/prices
       - run: node ../indexer/pf.parity.cjs .test-build/launch-tax-events-prima.json

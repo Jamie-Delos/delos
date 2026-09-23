@@ -1,13 +1,15 @@
-// Lightweight on-chain "indexer": reads Launched (Prima) + LaunchedV2 (Maxima) events straight from the
-// factories and turns them into the board's coin list, newest first. When VITE_INDEXER_URL is set the
-// deployed indexer serves the same list instead (fast, scales). No placeholder data: until the first
-// read completes the pages show a loading state, and an empty chain shows an honest empty state.
+// Lightweight on-chain "indexer": reads LaunchedV4 events from LaunchFactoryV4 (plus the legacy
+// Launched/LaunchedV2 events when those factories are configured, so old testnet coins still show)
+// and turns them into the board's coin list, newest first. When VITE_INDEXER_URL is set the deployed
+// indexer serves the same list instead (fast, scales). No placeholder data: until the first read
+// completes the pages show a loading state, and an empty chain shows an honest empty state.
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { zeroAddress, type Address } from "viem";
 import { CONTRACTS } from "../config";
-import { factoryAbi, factoryV2Abi, erc20Abi } from "../abis";
+import { factoryAbi, factoryV2Abi, factoryV4Abi, erc20Abi } from "../abis";
 import { fetchCoins, indexerEnabled, type IndexerCoin } from "./indexer";
+import type { CurveVenue } from "./curves";
 
 export type LaunchedCoin = {
   address: Address;
@@ -16,6 +18,10 @@ export type LaunchedCoin = {
   creator: Address;
   age: string; // "39m", "2h", "3d" — from the launch block's timestamp
   launchedAt: number; // unix seconds (0 when unknown)
+  venue: CurveVenue; // "v4" for LaunchedV4 coins, "legacy" for the V3-era factories
+  quote?: Address; // the pairing asset (V4 event / indexer)
+  vault?: Address; // reflection rewards vault, when the launch has one
+  reflectionBps?: number; // holder reflection (V4), when known
 };
 
 const FROM_BLOCK = BigInt(import.meta.env.VITE_FROM_BLOCK ?? 0); // set to the factory deploy block on mainnet
@@ -28,9 +34,18 @@ const ago = (ts: number) => {
   return `${Math.floor(s / 86400)}d`;
 };
 
+const isAddr = (v: unknown): v is Address => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v) && v.toLowerCase() !== zeroAddress;
+
+// The indexer is adding V4 fields separately: read them defensively and treat anything unknown as legacy.
 function indexerToCoin(c: IndexerCoin): LaunchedCoin {
   const created = Math.floor(new Date(c.createdAt).getTime() / 1000) || 0;
-  return { address: c.address as Address, name: c.name || "Token", symbol: c.symbol || "TOKEN", creator: c.creator as Address, age: ago(created), launchedAt: created };
+  // An indexer without V4 fields yet reports no venue/reflection: such coins are treated as legacy.
+  const venue: CurveVenue = c.venue === "legacy" ? "legacy" : c.venue === "v4" || typeof c.reflectionBps === "number" ? "v4" : "legacy";
+  return {
+    address: c.address as Address, name: c.name || "Token", symbol: c.symbol || "TOKEN", creator: c.creator as Address, age: ago(created), launchedAt: created,
+    venue, quote: isAddr(c.quote) ? c.quote : undefined, vault: isAddr(c.vault) ? c.vault : undefined,
+    reflectionBps: typeof c.reflectionBps === "number" ? c.reflectionBps : undefined,
+  };
 }
 
 // One shared read per page load: navigating Home → Market → Profile reuses the last result for a while
@@ -65,20 +80,27 @@ export function useLaunches(enabled = true): { coins: LaunchedCoin[]; live: bool
       return () => { cancelled = true; };
     }
 
-    const v1 = CONTRACTS.factory, v2 = CONTRACTS.factoryV2;
-    if (!publicClient || (v1 === zeroAddress && v2 === zeroAddress)) { setLoading(false); return; }
+    const v4 = CONTRACTS.factoryV4, v1 = CONTRACTS.factory, v2 = CONTRACTS.factoryV2;
+    if (!publicClient || (v4 === zeroAddress && v1 === zeroAddress && v2 === zeroAddress)) { setLoading(false); return; }
     (async () => {
       try {
         // Launch events carry (token, creator, curve, …) — no pool at launch, since trading is on the
-        // CensusCurve until graduation. Token + creator + block are all the list needs.
-        const evs: { token: Address; creator: Address; block: bigint }[] = [];
+        // curve until graduation. Token + creator + block (+ the V4 vault/reflection/quote) are all the list needs.
+        type Ev = { token: Address; creator: Address; block: bigint; venue: CurveVenue; quote?: Address; vault?: Address; reflectionBps?: number };
+        const evs: Ev[] = [];
+        if (v4 !== zeroAddress) {
+          const logs = await publicClient.getContractEvents({ address: v4, abi: factoryV4Abi, eventName: "LaunchedV4", fromBlock: FROM_BLOCK });
+          for (const l of logs) if (l.args.token && l.args.creator) {
+            evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, venue: "v4", quote: l.args.quote, vault: isAddr(l.args.vault) ? l.args.vault : undefined, reflectionBps: Number(l.args.reflectionBps ?? 0) });
+          }
+        }
         if (v1 !== zeroAddress) {
           const logs = await publicClient.getContractEvents({ address: v1, abi: factoryAbi, eventName: "Launched", fromBlock: FROM_BLOCK });
-          for (const l of logs) if (l.args.token && l.args.creator) evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n });
+          for (const l of logs) if (l.args.token && l.args.creator) evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, venue: "legacy" });
         }
         if (v2 !== zeroAddress) {
           const logs = await publicClient.getContractEvents({ address: v2, abi: factoryV2Abi, eventName: "LaunchedV2", fromBlock: FROM_BLOCK });
-          for (const l of logs) if (l.args.token && l.args.creator) evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n });
+          for (const l of logs) if (l.args.token && l.args.creator) evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, venue: "legacy", vault: isAddr(l.args.vault) ? l.args.vault : undefined });
         }
         evs.sort((a, b) => Number(b.block - a.block)); // newest first
 
@@ -96,7 +118,7 @@ export function useLaunches(enabled = true): { coins: LaunchedCoin[]; live: bool
             ]);
           } catch { /* leave defaults */ }
           const launchedAt = times.get(e.block) ?? 0;
-          return { address: e.token, name, symbol, creator: e.creator, age: ago(launchedAt), launchedAt };
+          return { address: e.token, name, symbol, creator: e.creator, age: ago(launchedAt), launchedAt, venue: e.venue, quote: e.quote, vault: e.vault, reflectionBps: e.reflectionBps };
         }));
         done(built);
       } catch {

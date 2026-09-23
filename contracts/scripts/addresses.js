@@ -11,6 +11,13 @@ module.exports = {
     NonfungiblePositionManager: "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
     SwapRouter02: "0xCaf681a66D020601342297493863E78C959E5cb2",
     WETH: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    // Uniswap V4 (official deployment list: https://developers.uniswap.org/docs/protocols/v4/deployments;
+    // code presence verified on-chain 2026-09-21 at block 69078172).
+    v4: {
+      PoolManager: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      Quoter: "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
+      StateView: "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+    },
   },
   // === Arc testnet (chainId 5042002) — Circle's L1, USDC gas (18-dec native) ===
   // DEX = UNITFLOW V3 (a Uniswap V3 fork). Quote asset = WUSDC (wrapped native USDC, 18 decimals,

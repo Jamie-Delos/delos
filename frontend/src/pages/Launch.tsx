@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { isAddress, parseUnits, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
-import { CONTRACTS, STANDARD, CHAIN, DEFAULT_FEE, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS } from "../config";
-import { factoryAbi, factoryV2Abi } from "../abis";
+import { CONTRACTS, STANDARD, CHAIN, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS, REFLECTION_OPTIONS, MAX_REWARD_BASKET, REHEARSAL, REHEARSAL_GRADUATION_ETH, pctLabel, feeBreakdown, feeSplit } from "../config";
+import { factoryV4Abi } from "../abis";
 import { STOCK_ROUTES } from "../lib/stockRoutes";
 import { basketPathFor } from "../lib/basket";
+import { useAllowedRewardAssets, isAllowedRewardAsset } from "../lib/rewards";
 import { useLaunches } from "../lib/useLaunches";
 import { stripConfusables, coinNameWarning, type NameWarning } from "../lib/names";
 import { useCurveStats } from "../lib/useCurveStats";
@@ -18,24 +19,40 @@ import { useWalletConnect, CxAvatar, fmtUsd } from "../census";
 import { AssetLogo, StockLogo } from "../components/StockLogo";
 
 // Designer's 5-step launch wizard (Company → Anchors → Economics → Identity → Review), with an explicit
-// Prima/Maxima choice up front. Full-page shell (census-wizard); the step lives in the URL
-// (/create, /create/anchors, …) so Back/Forward and refresh keep your place. The draft autosaves.
+// Prima/Maxima choice up front. Both launch through LaunchFactoryV4 with the same economics (2% base fee,
+// optional 1-4% holder reflection paid into a reward basket); the tier is the product framing (meme coin
+// vs company coin) and sets the reflection default. Full-page shell (census-wizard); the step lives in
+// the URL (/create, /create/anchors, …) so Back/Forward and refresh keep your place. The draft autosaves.
 type Tier = "v1" | "v2";
 const STEPS = ["Company", "Anchors", "Economics", "Identity", "Review"];
 const SLUGS = ["company", "anchors", "economics", "identity", "review"];
-const MAX_BASKET = 4;
+const MAX_BASKET = MAX_REWARD_BASKET; // CensusRewardVault.MAX_BASKET = 3
+// Reward-basket picks are keyed by stock ticker, or QUOTE_KEY for the pairing asset (the anchor's quote
+// address). Rewards are only ever paid in quoted assets — the coin itself is never a basket entry.
+const QUOTE_KEY = "__quote";
+const isSpecialPick = (k: string) => k === QUOTE_KEY;
 const ZERO_SALT = ("0x" + "00".repeat(32)) as Hex;
 const DRAFT_KEY = "census:launch-draft";
-const GRADS = [
-  { eth: 2, label: "Fast graduation" },
-  { eth: 4, label: "Standard" },
-  { eth: 8, label: "High conviction" },
-];
+// Graduation targets by launch type. Prima (meme) coins always graduate at 4 ETH; Maxima (company) coins
+// choose 4 or 8. The 2 ETH "fast graduation" option was retired at mainnet launch (2026-09-23); older
+// drafts that still carry it are snapped back to 4 in loadDraft / on tier change / at launch.
+const GRADS: Record<Tier, { eth: number; label: string }[]> = {
+  v1: [{ eth: 4, label: "Standard" }],
+  v2: [{ eth: 4, label: "Standard" }, { eth: 8, label: "High conviction" }],
+};
+const DEFAULT_GRAD = 4;
+const isTier = (t: unknown): t is Tier => t === "v1" || t === "v2";
+// Rehearsal builds (VITE_REHEARSAL_GRADUATION_ETH, side deployment on a throwaway stack) add a tiny target
+// to both tiers so the whole lifecycle can be exercised on mainnet for cents. Never set in production.
+const gradsFor = (tier: Tier) => (REHEARSAL ? [...GRADS[tier], { eth: REHEARSAL_GRADUATION_ETH, label: "Rehearsal" }] : GRADS[tier]);
+const gradAllowed = (tier: Tier, eth: number) => gradsFor(tier).some((g) => g.eth === eth);
+const gradFor = (tier: Tier, eth: number) => (gradAllowed(tier, eth) ? eth : DEFAULT_GRAD);
 
-// Routable tokenised-stock universe for the Maxima basket.
+// Routable tokenised-stock universe for the reward basket. The picker further narrows it to the stocks
+// allow-listed on CensusCurveV4 (useAllowedRewardAssets) — the factory rejects anything else.
 const UNIVERSE = STOCK_CATEGORIES.flatMap((c) => c.stocks.map((s) => ({ ...s, sector: c.label })))
   .filter((s) => !!STOCK_ROUTES[s.ticker]);
-const SECTORS = ["All", ...Array.from(new Set(UNIVERSE.map((u) => u.sector)))];
+const stockAddress = (ticker: string) => STOCK_ROUTES[ticker]?.address ?? "";
 const deriveTicker = (name: string) => name.replace(/[^a-zA-Z]/g, "").slice(0, 5).toUpperCase();
 const usd = (v: number) => `$${v.toFixed(2)}`;
 const usdK = (v: number) => `$${Math.round(v / 1000)}k`;
@@ -45,21 +62,28 @@ const gradLabel = (eth: number, anchorKey: string) => (anchorKey === "ETH" ? `~$
 type Draft = {
   tier: Tier; name: string; thesis: string; description: string;
   quoteKey: string; picks: string[]; weights: Record<string, number>;
-  graduationEth: number; holdersBps: number; image: string; ticker: string; publicConsent: boolean;
+  graduationEth: number; reflectionBps: number; image: string; ticker: string; publicConsent: boolean;
   quoteSymbol: string; // cached symbol when quoteKey is a company coin's address
 };
 type Setter = (p: Partial<Draft>) => void;
-// holdersBps: how the creator side of the trade fee is split — 0 = you only, 10000 = holders only,
-// in-between = both. Maxima defaults to all-holders; Prima is always creator-only on-chain.
-const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 4, holdersBps: 10000, image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
+// reflectionBps: the holder reflection charged ON TOP of the 2% base fee on every buy and sell — 0 (off)
+// or 100..400 — paid into the launch's reward basket. Frozen at launch. Maxima defaults to 2%, Prima to off.
+const DEFAULT_REFLECTION: Record<Tier, number> = { v1: 0, v2: 200 };
+const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 4, reflectionBps: 0, image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
 
 function loadDraft(): Draft {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (raw) {
-      const { ipfsConsent, ...saved } = JSON.parse(raw); // older drafts stored the consent flag under this name
+      const { ipfsConsent, holdersBps, ...saved } = JSON.parse(raw); // older drafts: consent under another name, and the retired holdersBps model
       const d: Draft = { ...EMPTY, ...saved, publicConsent: !!(saved.publicConsent ?? ipfsConsent) };
+      if (!isTier(d.tier)) d.tier = "v1";
+      d.graduationEth = gradFor(d.tier, Number(d.graduationEth)); // retired targets (2 ETH) and Maxima-only ones on a Prima draft
       if (!anchorAvailable(anchorByKey(d.quoteKey))) { d.quoteKey = "ETH"; d.quoteSymbol = ""; }
+      if (!(REFLECTION_OPTIONS as readonly number[]).includes(d.reflectionBps)) d.reflectionBps = holdersBps != null ? DEFAULT_REFLECTION[d.tier] ?? 0 : 0;
+      // Older drafts may hold the retired "this coin" pick; it (and any unroutable ticker) is dropped here,
+      // and stocks that are no longer allow-listed are pruned once the allow-list loads (see Launch).
+      d.picks = (Array.isArray(d.picks) ? d.picks : []).filter((k: string) => isSpecialPick(k) || !!STOCK_ROUTES[k]).slice(0, MAX_BASKET);
       return d;
     }
   } catch { /* ignore a corrupt draft */ }
@@ -101,11 +125,20 @@ export function Launch() {
   const tier = draft.tier;
   const isV2 = tier === "v2";
   const anchor = anchorByKey(draft.quoteKey, draft.quoteSymbol);
-  // Maxima always pays holders a stock basket; the anchor (ETH or HOOD) is just the asset the fee arrives
-  // in — the vault swaps it into the basket either way (HOOD routes via USDG). See lib/stockRoutes.basketPath.
-  const usesBasket = isV2;
+  // Reflection on => the launch gets a reward vault and a basket (the pairing asset and/or allow-listed
+  // tokenised stocks — never this coin). The anchor is the asset the fee arrives in; the vault turns it
+  // into the basket.
+  const usesBasket = draft.reflectionBps > 0;
+  // The curve's reward-asset allow-list (null while loading). A stock pick that isn't in it would make
+  // the factory revert `AssetNotAllowed`, so such picks are pruned from the draft as soon as we know.
+  const { allowed: allowedAssets, error: allowedError } = useAllowedRewardAssets();
+  useEffect(() => {
+    if (!allowedAssets) return;
+    const keep = draft.picks.filter((k) => isSpecialPick(k) || isAllowedRewardAsset(allowedAssets, stockAddress(k)));
+    if (keep.length !== draft.picks.length) set({ picks: keep });
+  }, [allowedAssets, draft.picks]); // eslint-disable-line react-hooks/exhaustive-deps
   const ticker = (draft.ticker || deriveTicker(draft.name)) || "—";
-  const factoryAddr = isV2 ? CONTRACTS.factoryV2 : CONTRACTS.factory;
+  const factoryAddr = CONTRACTS.factoryV4; // one factory for both tiers; also the CREATE2 deployer for the …c0de grind
   // CX-P2: warn (non-blocking) if the name/ticker duplicates an existing Census coin or impersonates a
   // real company. useLaunches is module-cached, so this shares AnchorStep's scan.
   const { coins: existingCoins } = useLaunches();
@@ -153,8 +186,8 @@ export function Launch() {
   const thesisOk = draft.thesis.trim().length >= 3;
   const valid = [
     nameOk && thesisOk,                       // Company
-    usesBasket ? picks.length >= 1 : true,    // Anchors
-    true,                                     // Economics
+    true,                                     // Anchors
+    usesBasket ? picks.length >= 1 : true,    // Economics (a reflection needs at least one basket asset)
     draft.publicConsent,                      // Identity
     true,                                     // Review
   ];
@@ -167,10 +200,10 @@ export function Launch() {
   useEffect(() => { if (urlStep !== step) nav(pathFor(step), { replace: true }); }, [urlStep, step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Grind the reserved …c0de address once we reach Identity and have a name + ticker. A changed
-  // name/ticker/tier means a different address, so the old one is dropped immediately (never shown, never
+  // name/ticker means a different address, so the old one is dropped immediately (never shown, never
   // launched with) while the new grind runs.
   // The address depends on the connected wallet, so the grind key includes it and a wallet change re-grinds.
-  const grindKey = `${draft.name}|${ticker}|${isV2}|${address ?? ""}`;
+  const grindKey = `${draft.name}|${ticker}|${address ?? ""}`;
   const lastGrind = useRef("");
   useEffect(() => {
     if (step < 3 || !draft.name.trim() || ticker === "—" || !address) return;
@@ -189,17 +222,19 @@ export function Launch() {
     return () => { cancelled = true; };
   }, [step, grindKey, factoryAddr, hasFactory, address]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pickLabel = (k: string) => (k === QUOTE_KEY ? anchor.key : k);
+  const totalFeeBps = TRADE_FEE_BPS + draft.reflectionBps;
   const hint = [
     valid[0] ? "Anchors next." : !nameOk ? "Add a company name to continue." : "Add a one-line thesis to continue.",
-    usesBasket ? (picks.length ? `${picks.join(" · ")} — economics next.` : "Anchor at least one stock to continue.") : `Anchored to ${anchor.key} — economics next.`,
-    `Fee ${TRADE_FEE_LABEL} · graduates at ${gradLabel(draft.graduationEth, anchor.key)}`,
+    `Anchored to ${anchor.key} — economics next.`,
+    usesBasket && !picks.length ? "Pick at least one reward asset, or turn the reflection off." : `Fee ${pctLabel(totalFeeBps)}${usesBasket ? ` · rewards ${picks.map(pickLabel).join(" · ")}` : ""} · graduates at ${gradLabel(draft.graduationEth, anchor.key)}`,
     draft.publicConsent ? "Review next." : "Accept the moderation terms to continue.",
     isConnected || !signUp ? "Everything looks right? Launch it." : "Everything looks right? Connect a wallet, or sign up above, to launch.",
   ][step];
   const ctaLabel = ["Continue to Anchors", "Continue to Economics", "Continue to Identity", "Review launch", isConnected ? `Launch ${ticker}` : pending === "wallet" ? "Connecting…" : "Connect wallet"][step];
   const launching = launchPct != null || isPending;
 
-  const toggleStock = (t: string) => {
+  const togglePick = (t: string) => {
     if (picks.includes(t)) set({ picks: picks.filter((x) => x !== t) });
     else if (picks.length < MAX_BASKET) set({ picks: [...picks, t], weights: { ...draft.weights, [t]: draft.weights[t] ?? 25 } });
   };
@@ -229,25 +264,29 @@ export function Launch() {
   async function launch() {
     setStatus("");
     if (!publicClient) { setStatus("Couldn't reach the network — reload and try again."); return; }
-    if (!hasFactory) { setStatus(`${isV2 ? "Maxima" : "Prima"} launches aren't enabled on this network yet.`); return; }
+    if (!hasFactory) { setStatus("Launches aren't enabled on this network yet."); return; }
 
     const nm = draft.name.trim();
     const sym = ticker;
     const totalSupply = parseUnits(String(STANDARD.totalSupply), STANDARD.decimals);
 
-    // Maxima basket: holders receive the chosen stocks regardless of the anchor. The vault swaps the fee
-    // (which arrives in the coin's anchor asset) into each stock via `basketPath` — WETH routes for an
-    // ETH-anchored coin, HOOD->USDG->stock routes for a HOOD-anchored one. A stock that IS the anchor is a
-    // passthrough ("0x"). See lib/stockRoutes.basketPath.
+    // Reward basket (reflection on): up to three QUOTED assets. The pairing asset is the anchor's quote,
+    // credited directly (path 0x). A tokenised stock must be allow-listed on the curve (the factory
+    // reverts `AssetNotAllowed` otherwise) and is reached by the vault via a V3 route from the anchor
+    // (lib/basket.ts). The coin itself is never a reward. Weights are the displayed percentages (largest
+    // remainder, exactly 100) in bps, so they sum to exactly 10000. Frozen at launch.
     let basket: Address[] = [], paths: Hex[] = [], weights: number[] = [];
     if (usesBasket) {
-      basket = picks.map((t) => STOCK_ROUTES[t].address);
-      try { paths = await Promise.all(picks.map((t) => basketPathFor(publicClient, anchor.quote, t))); }
-      catch (e: any) { setStatus(e?.message ?? "This anchor can't be routed into a stock basket."); return; }
-      const raw = picks.map((t) => weightOf(t));
-      const sum = raw.reduce((a, b) => a + b, 0) || 1;
-      weights = raw.map((w) => Math.round((w / sum) * 10000));
-      weights[0] += 10000 - weights.reduce((a, b) => a + b, 0); // fix rounding to exactly 10000
+      if (!picks.length) { setStatus("Pick at least one reward asset, or turn the reflection off."); return; }
+      if (!allowedAssets) { setStatus("Still checking which stocks are listed for rewards — try again in a moment."); return; }
+      const unlisted = picks.find((k) => !isSpecialPick(k) && !isAllowedRewardAsset(allowedAssets, stockAddress(k)));
+      if (unlisted) { setStatus(`${unlisted} isn't listed for rewards — remove it from the basket.`); return; }
+      try {
+        basket = picks.map((k) => (k === QUOTE_KEY ? anchor.quote : STOCK_ROUTES[k].address));
+        paths = picks.map((k) => (isSpecialPick(k) ? ("0x" as Hex) : basketPathFor(anchor.quote, k)));
+      } catch (e: any) { setStatus(e?.message ?? "This anchor can't be routed into a stock basket."); return; }
+      weights = picks.map((k) => pctOf(k) * 100);
+      if (weights.reduce((a, b) => a + b, 0) !== 10000 || weights.some((w) => w <= 0)) { setStatus("Basket weights must add up to 100% with every asset above 0%."); return; }
     }
 
     let hash: Hex | undefined;
@@ -277,27 +316,21 @@ export function Launch() {
       setStatus("pricing the curve…");
       setLaunchPct(72);
       let cp;
-      try { cp = await curveLaunchParams(publicClient, anchor, draft.graduationEth); }
+      try { cp = await curveLaunchParams(publicClient, anchor, gradFor(draft.tier, draft.graduationEth)); }
       catch { setStatus(`Couldn't price against ${anchor.key} — try ETH, or retry.`); setLaunchPct(null); return; }
-      const params = { name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, poolFee: DEFAULT_FEE, virtualQuote: cp.virtualQuote, graduationQuote: cp.graduationQuote };
+      const params = { name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, virtualQuote: cp.virtualQuote, graduationQuote: cp.graduationQuote };
 
       // On Robinhood Chain first — otherwise the launch tx goes to whatever network the wallet is on.
       if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then launch.`); setLaunchPct(null); return; }
       setStatus("confirm in wallet…");
       setLaunchPct(80);
 
-      let token: Address | undefined;
-      if (isV2) {
-        hash = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.factoryV2, abi: factoryV2Abi, functionName: "createLaunch", args: [params, basket, weights, paths, salt, cp.quote, draft.holdersBps, []] });
-        setStatus("launching…"); setLaunchPct(90);
-        const rc = await publicClient.waitForTransactionReceipt({ hash });
-        token = parseEventLogs({ abi: factoryV2Abi, eventName: "LaunchedV2", logs: rc.logs })[0]?.args.token;
-      } else {
-        hash = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.factory, abi: factoryAbi, functionName: "createLaunch", args: [params, salt, cp.quote, []] });
-        setStatus("launching…"); setLaunchPct(90);
-        const rc = await publicClient.waitForTransactionReceipt({ hash });
-        token = parseEventLogs({ abi: factoryAbi, eventName: "Launched", logs: rc.logs })[0]?.args.token;
-      }
+      // One factory for both tiers. No basket / reflection 0 => no vault (the factory requires the basket
+      // to be empty in that case). Empty `exemptBuyers`: no launch-bundle anti-snipe exemptions.
+      hash = await writeContractAsync({ chainId: CHAIN.id, address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunch", args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, []] });
+      setStatus("launching…"); setLaunchPct(90);
+      const rc = await publicClient.waitForTransactionReceipt({ hash });
+      const token: Address | undefined = parseEventLogs({ abi: factoryV4Abi, eventName: "LaunchedV4", logs: rc.logs })[0]?.args.token;
       if (!token) {
         setLaunchPct(null);
         setStatus(`The transaction went through but the launch event wasn't found in its receipt.${EXPLORER ? ` Check it on the explorer: ${EXPLORER}/tx/${hash}` : ""}`);
@@ -367,13 +400,13 @@ export function Launch() {
       <div className="census-wizard__body">
         <main>
           {step === 0 && <CompanyStep draft={draft} set={set} ticker={ticker} warning={nameWarning} />}
-          {step === 1 && <AnchorsStep draft={draft} set={set} anchor={anchor} usesBasket={usesBasket} picks={picks} pctOf={pctOf} setPct={setPct} toggleStock={toggleStock} />}
-          {step === 2 && <EconomicsStep draft={draft} set={set} isV2={isV2} usesBasket={usesBasket} ethUsd={ethUsd} anchorKey={anchor.key} />}
+          {step === 1 && <AnchorsStep draft={draft} set={set} anchor={anchor} />}
+          {step === 2 && <EconomicsStep draft={draft} set={set} anchor={anchor} ticker={ticker} ethUsd={ethUsd} picks={picks} pctOf={pctOf} setPct={setPct} togglePick={togglePick} pickLabel={pickLabel} allowed={allowedAssets} allowedError={allowedError} />}
           {step === 3 && <IdentityStep draft={draft} set={set} ticker={ticker} reserved={reserved} hasFactory={hasFactory} />}
-          {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} usesBasket={usesBasket} picks={picks} pctOf={pctOf} reserved={reserved} onEdit={goTo} status={status} anchorKey={anchor.key} />}
+          {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} picks={picks} pctOf={pctOf} pickLabel={pickLabel} reserved={reserved} onEdit={goTo} status={status} anchorKey={anchor.key} />}
         </main>
         <aside className="census-wizard__aside">
-          <Preview draft={draft} ticker={ticker} isV2={isV2} usesBasket={usesBasket} picks={picks} pctOf={pctOf} reserved={reserved} anchor={anchor} />
+          <Preview draft={draft} ticker={ticker} isV2={isV2} picks={picks} pctOf={pctOf} pickLabel={pickLabel} reserved={reserved} anchor={anchor} />
         </aside>
       </div>
 
@@ -423,8 +456,8 @@ function CompanyStep({ draft, set, ticker, warning }: { draft: Draft; set: Sette
 
       <div className="census-field-label">Launch type</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 26 }}>
-        {([["v1", "Prima", "Anchor to ETH or HOOD. A clean coin, live from block one."], ["v2", "Maxima", "Holders earn a share of trade fees, paid in a basket of tokenised stocks."]] as const).map(([t, name, desc]) => (
-          <button key={t} onClick={() => set({ tier: t })}
+        {([["v1", "Prima", "A meme coin. Anchor to ETH or HOOD; a clean coin, live from block one."], ["v2", "Maxima", "A company coin. Holders earn a reflection on every trade, paid in a basket of the pairing asset and/or listed tokenised stocks — never in the coin itself."]] as const).map(([t, name, desc]) => (
+          <button key={t} onClick={() => set(t === draft.tier ? { tier: t } : { tier: t, reflectionBps: DEFAULT_REFLECTION[t], picks: t === "v1" ? [] : draft.picks, graduationEth: gradFor(t, draft.graduationEth) })}
             className={"census-card" + (draft.tier === t ? " census-card--selected" : "")}
             style={{ textAlign: "left", cursor: "pointer", color: "var(--census-text)" }}>
             <div style={{ fontWeight: 600, fontSize: 16 }}>{name} {draft.tier === t && <span className="census-dot">.</span>}</div>
@@ -480,13 +513,13 @@ function QuotePicker({ draft, set }: { draft: Draft; set: Setter }) {
   );
 }
 
-// Graduated Census coins ("company coins") a new launch can anchor to. Its locked pool is where the new
-// coin's anchor trades and, for Maxima, the first hop on the fee's way into the stock basket.
+// Graduated V4 Census coins ("company coins") a new launch can anchor to. Its canonical pool is where the
+// new coin's anchor trades. (Legacy V3-era coins aren't pairable on the V4 curve.)
 function CompanyPicker({ draft, set }: { draft: Draft; set: Setter }) {
   const { coins, loading } = useLaunches();
   const stats = useCurveStats(coins.map((c) => c.address));
   const ready = !loading && (coins.length === 0 || Object.keys(stats).length > 0);
-  const graduated = coins.filter((c) => stats[c.address.toLowerCase()]?.graduated);
+  const graduated = coins.filter((c) => { const s = stats[c.address.toLowerCase()]; return s?.graduated && s.venue === "v4"; });
   if (!ready) return <div style={{ marginTop: 14, fontSize: 13, color: "var(--census-text-muted)" }}>Looking for graduated companies…</div>;
   if (!graduated.length) {
     return (
@@ -515,7 +548,7 @@ function CompanyPicker({ draft, set }: { draft: Draft; set: Setter }) {
         );
       })}
       <div style={{ padding: "12px 16px", borderTop: "1px solid var(--census-hairline)", fontSize: 12, color: "var(--census-text-muted)" }}>
-        Buyers pay in the company coin, so they need to hold it. Your coin's fees arrive in it and route through its pool.
+        Buyers pay in the company coin, so they need to hold it. Your coin's fees arrive in it; a reward basket can then hold the company coin (stocks route from ETH or HOOD only).
       </div>
     </div>
   );
@@ -543,83 +576,129 @@ function WeightInput({ value, onCommit }: { value: number; onCommit: (n: number)
   );
 }
 
-type AnchorsProps = { draft: Draft; set: Setter; anchor: Anchor; usesBasket: boolean; picks: string[]; pctOf: (t: string) => number; setPct: (t: string, p: number) => void; toggleStock: (t: string) => void };
-function AnchorsStep({ draft, set, anchor, usesBasket, picks, pctOf, setPct, toggleStock }: AnchorsProps) {
-  const [query, setQuery] = useState("");
-  const [sector, setSector] = useState("All");
-  const full = picks.length >= MAX_BASKET;
-  const results = UNIVERSE
-    .filter((u) => sector === "All" || u.sector === sector)
-    .filter((u) => { const q = query.trim().toLowerCase(); return !q || u.ticker.toLowerCase().includes(q) || u.name.toLowerCase().includes(q); });
-
+type AnchorsProps = { draft: Draft; set: Setter; anchor: Anchor };
+function AnchorsStep({ draft, set, anchor }: AnchorsProps) {
   return (
     <>
       <h1 className="census-wizard__title">What is it anchored to?</h1>
-      <p className="census-wizard__subtitle">{usesBasket ? "Pick the pairing asset, then up to four stocks holders earn a share of." : "Choose the asset your coin is paired against."}</p>
+      <p className="census-wizard__subtitle">Choose the asset your coin is paired against — on the curve and, after graduation, in its canonical pool.</p>
 
       <div className="census-field-label">Anchored to</div>
       <QuotePicker draft={draft} set={set} />
-      {usesBasket && anchor.key !== "ETH" && (
-        <div style={{ marginTop: 12, fontSize: 13, color: "var(--census-text-muted)" }}>
-          Priced against {anchor.key}. Holders still earn the stock basket below — the {anchor.key} fee is swapped into it automatically.
+      <div style={{ marginTop: 12, fontSize: 13, color: "var(--census-text-muted)" }}>
+        {anchor.coin
+          ? `Priced against ${anchor.key}. Buyers pay in it, and your fees arrive in it.`
+          : `Priced against ${anchor.key}. Fees arrive in ${anchor.key}; if you turn on a holder reflection (next step) the vault turns its share into the reward basket automatically.`}
+      </div>
+    </>
+  );
+}
+
+// The reward basket for a launch with a reflection: up to three QUOTED assets among the pairing asset
+// and the tokenised stocks that are both routable and allow-listed on the curve (`allowed`; null while
+// that read is in flight). The coin itself is never a reward. Stocks are reached by a V3 route from
+// ETH/HOOD, so a company-coin anchor limits the basket to the pairing coin. Weights always read 100%.
+type BasketProps = { set: Setter; anchor: Anchor; ticker: string; picks: string[]; pctOf: (t: string) => number; setPct: (t: string, p: number) => void; togglePick: (t: string) => void; pickLabel: (k: string) => string; allowed: Set<string> | null; allowedError: boolean };
+function BasketPicker({ set, anchor, ticker, picks, pctOf, setPct, togglePick, pickLabel, allowed, allowedError }: BasketProps) {
+  const [query, setQuery] = useState("");
+  const [sector, setSector] = useState("All");
+  const full = picks.length >= MAX_BASKET;
+  const stocksRoutable = !anchor.coin;
+  const loadingList = allowed == null;
+  // Only stocks the contract will accept are ever shown.
+  const listed = allowed ? UNIVERSE.filter((u) => isAllowedRewardAsset(allowed, stockAddress(u.ticker))) : [];
+  const sectors = ["All", ...Array.from(new Set(listed.map((u) => u.sector)))];
+  const results = listed
+    .filter((u) => sector === "All" || u.sector === sector)
+    .filter((u) => { const q = query.trim().toLowerCase(); return !q || u.ticker.toLowerCase().includes(q) || u.name.toLowerCase().includes(q); });
+  const specials: { key: string; title: string; sub: string; node: ReactNode }[] = [
+    { key: QUOTE_KEY, title: anchor.key, sub: anchor.coin ? "The pairing coin, credited as-is" : `${anchor.label} — the pairing asset, credited as-is`, node: anchor.coin ? <CxAvatar name={anchor.key} size={30} /> : <AssetLogo src={anchor.logo} label={anchor.key} size={30} radius={8} /> },
+  ];
+  const rowLogo = (k: string) => (k === QUOTE_KEY ? (anchor.coin ? <CxAvatar name={anchor.key} size={34} /> : <AssetLogo src={anchor.logo} label={anchor.key} size={34} radius={9} />) : <StockLogo ticker={k} size={34} />);
+  const rowSub = (k: string) => (k === QUOTE_KEY ? "Pairing asset" : UNIVERSE.find((u) => u.ticker === k)?.name);
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "30px 0 12px" }}>
+        <div className="census-field-label" style={{ margin: 0 }}>Reward basket</div>
+        <span className="census-mono" style={{ fontSize: 12, color: full ? "var(--census-lime)" : "var(--census-text-muted)" }}>{picks.length}/{MAX_BASKET} selected</span>
+      </div>
+
+      {picks.length === 0 ? (
+        <div style={{ border: "1px dashed rgba(242,245,241,0.18)", borderRadius: "var(--census-radius-input)", padding: "34px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, color: "var(--census-text-secondary)" }}>Nothing in the basket yet</div>
+          <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 6 }}>Choose up to three assets below. Holders earn the reflection in these — paid in {anchor.key} and listed stocks, never in ${ticker}.</div>
+        </div>
+      ) : (
+        <div className="census-card" style={{ padding: 0, overflow: "hidden" }}>
+          {picks.map((t, i) => (
+            <div key={t} style={{ display: "grid", gridTemplateColumns: "34px minmax(0,1.4fr) minmax(0,1fr) 120px 30px", alignItems: "center", gap: 14, padding: "14px 18px", borderTop: i === 0 ? 0 : "1px solid var(--census-hairline)" }}>
+              {rowLogo(t)}
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontWeight: 600, fontSize: 14 }}>{pickLabel(t)}</span>
+                <span style={{ display: "block", fontSize: 12, color: "var(--census-text-secondary)" }}>{rowSub(t)}</span>
+              </span>
+              <span className="census-bar" style={{ display: "block" }}><i className="census-bar__fill" style={{ width: `${pctOf(t)}%` }} /></span>
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                <button className="census-btn-ghost" aria-label={`decrease ${pickLabel(t)}`} onClick={() => setPct(t, pctOf(t) - 5)} style={{ width: 26, height: 26, padding: 0, borderRadius: 7, fontSize: 16, lineHeight: 1 }}>−</button>
+                <WeightInput value={pctOf(t)} onCommit={(n) => setPct(t, n)} />
+                <button className="census-btn-ghost" aria-label={`increase ${pickLabel(t)}`} onClick={() => setPct(t, pctOf(t) + 5)} style={{ width: 26, height: 26, padding: 0, borderRadius: 7, fontSize: 16, lineHeight: 1 }}>+</button>
+              </span>
+              <button className="census-btn-ghost" aria-label={`remove ${pickLabel(t)}`} onClick={() => togglePick(t)} style={{ width: 30, height: 30, padding: 0, borderRadius: 8, fontSize: 15 }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "13px 18px", borderTop: "1px solid var(--census-hairline)", background: "rgba(180,240,61,0.03)" }}>
+            <span style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>Weights normalise to exactly 100% · frozen at launch</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <button className="census-btn-ghost" onClick={() => set({ weights: Object.fromEntries(picks.map((t) => [t, 25])) })}>Split evenly</button>
+              <span className="census-mono" style={{ fontSize: 13 }}>Total 100%</span>
+            </span>
+          </div>
         </div>
       )}
 
-      {usesBasket && (<>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "30px 0 12px" }}>
-          <div className="census-field-label" style={{ margin: 0 }}>Stock basket</div>
-          <span className="census-mono" style={{ fontSize: 12, color: full ? "var(--census-lime)" : "var(--census-text-muted)" }}>{picks.length}/{MAX_BASKET} selected</span>
-        </div>
-
-        {picks.length === 0 ? (
-          <div style={{ border: "1px dashed rgba(242,245,241,0.18)", borderRadius: "var(--census-radius-input)", padding: "34px 20px", textAlign: "center" }}>
-            <div style={{ fontSize: 15, color: "var(--census-text-secondary)" }}>Nothing anchored yet</div>
-            <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 6 }}>Choose a stock below to start the basket.</div>
-          </div>
-        ) : (
-          <div className="census-card" style={{ padding: 0, overflow: "hidden" }}>
-            {picks.map((t, i) => {
-              const meta = UNIVERSE.find((u) => u.ticker === t);
-              return (
-                <div key={t} style={{ display: "grid", gridTemplateColumns: "34px minmax(0,1.4fr) minmax(0,1fr) 120px 30px", alignItems: "center", gap: 14, padding: "14px 18px", borderTop: i === 0 ? 0 : "1px solid var(--census-hairline)" }}>
-                  <StockLogo ticker={t} size={34} />
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ display: "block", fontWeight: 600, fontSize: 14 }}>{t}</span>
-                    <span style={{ display: "block", fontSize: 12, color: "var(--census-text-secondary)" }}>{meta?.name}</span>
-                  </span>
-                  <span className="census-bar" style={{ display: "block" }}><i className="census-bar__fill" style={{ width: `${pctOf(t)}%` }} /></span>
-                  <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-                    <button className="census-btn-ghost" aria-label={`decrease ${t}`} onClick={() => setPct(t, pctOf(t) - 5)} style={{ width: 26, height: 26, padding: 0, borderRadius: 7, fontSize: 16, lineHeight: 1 }}>−</button>
-                    <WeightInput value={pctOf(t)} onCommit={(n) => setPct(t, n)} />
-                    <button className="census-btn-ghost" aria-label={`increase ${t}`} onClick={() => setPct(t, pctOf(t) + 5)} style={{ width: 26, height: 26, padding: 0, borderRadius: 7, fontSize: 16, lineHeight: 1 }}>+</button>
-                  </span>
-                  <button className="census-btn-ghost" aria-label={`remove ${t}`} onClick={() => toggleStock(t)} style={{ width: 30, height: 30, padding: 0, borderRadius: 8, fontSize: 15 }}>×</button>
-                </div>
-              );
-            })}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "13px 18px", borderTop: "1px solid var(--census-hairline)", background: "rgba(180,240,61,0.03)" }}>
-              <span style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>Weights normalise to 100% at launch</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <button className="census-btn-ghost" onClick={() => set({ weights: Object.fromEntries(picks.map((t) => [t, 25])) })}>Split evenly</button>
-                <span className="census-mono" style={{ fontSize: 13 }}>Total 100%</span>
+      <div className="census-field-label" style={{ marginTop: 30 }}>Pairing asset</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+        {specials.map((sp) => {
+          const on = picks.includes(sp.key); const blocked = !on && full;
+          return (
+            <button key={sp.key} className={"census-card" + (on ? " census-card--selected" : "")} onClick={() => togglePick(sp.key)} disabled={blocked} aria-pressed={on}
+              style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left", padding: "12px 13px", color: "var(--census-text)", cursor: blocked ? "not-allowed" : "pointer", opacity: blocked ? 0.45 : 1 }}>
+              {sp.node}
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontWeight: 600, fontSize: 13.5 }}>{sp.title}</span>
+                <span style={{ display: "block", fontSize: 11.5, color: "var(--census-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sp.sub}</span>
               </span>
-            </div>
-          </div>
-        )}
+              <span className="census-mono" style={{ fontSize: 12, color: on ? "var(--census-lime)" : "var(--census-text-muted)" }}>{on ? "✓" : "+"}</span>
+            </button>
+          );
+        })}
+      </div>
 
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 30 }}>
-          <div className="census-field-label" style={{ margin: 0 }}>Available on-chain</div>
-          <span className="census-mono" style={{ fontSize: 12, color: "var(--census-text-muted)" }}>{results.length} of {UNIVERSE.length}</span>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 30 }}>
+        <div className="census-field-label" style={{ margin: 0 }}>Tokenised stocks listed for rewards</div>
+        <span className="census-mono" style={{ fontSize: 12, color: "var(--census-text-muted)" }}>{loadingList ? "…" : `${results.length} of ${listed.length}`}</span>
+      </div>
+      {!stocksRoutable ? (
+        <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>Stocks route from ETH or HOOD. With {anchor.key} as the anchor, the basket can hold {anchor.key}.</div>
+      ) : loadingList ? (
+        <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }} role="status">Checking which stocks are listed for rewards…</div>
+      ) : listed.length === 0 ? (
+        <div style={{ marginTop: 10, border: "1px dashed rgba(242,245,241,0.18)", borderRadius: "var(--census-radius-input)", padding: "22px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, color: "var(--census-text-secondary)" }}>{allowedError ? "Couldn't read which stocks are listed for rewards" : "No stocks are listed for rewards yet"}</div>
+          <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 6 }}>{allowedError ? "Reload to try again. " : ""}You can still reward holders in {anchor.key}, the pairing asset.</div>
         </div>
+      ) : (<>
+        {allowedError && <div style={{ marginTop: 10, fontSize: 12.5, color: "#e0a33a", lineHeight: 1.5 }}>⚠ Some listings couldn't be read — only stocks confirmed as listed are shown. Reload to check again.</div>}
         <input className="census-input" style={{ marginTop: 10 }} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ticker or company — NVDA, Tesla, gold…" aria-label="Search stocks" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-          {SECTORS.map((s) => <button key={s} className="census-chip" aria-pressed={s === sector} onClick={() => setSector(s)}>{s}</button>)}
+          {sectors.map((sc) => <button key={sc} className="census-chip" aria-pressed={sc === sector} onClick={() => setSector(sc)}>{sc}</button>)}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 10, marginTop: 16 }}>
           {results.map((u) => {
             const on = picks.includes(u.ticker); const blocked = !on && full;
             return (
-              <button key={u.ticker} className={"census-card" + (on ? " census-card--selected" : "")} onClick={() => toggleStock(u.ticker)} disabled={blocked} aria-pressed={on}
+              <button key={u.ticker} className={"census-card" + (on ? " census-card--selected" : "")} onClick={() => togglePick(u.ticker)} disabled={blocked} aria-pressed={on}
                 style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left", padding: "12px 13px", color: "var(--census-text)", cursor: blocked ? "not-allowed" : "pointer", opacity: blocked ? 0.45 : 1 }}>
                 <StockLogo ticker={u.ticker} size={30} />
                 <span style={{ flex: 1, minWidth: 0 }}>
@@ -631,84 +710,76 @@ function AnchorsStep({ draft, set, anchor, usesBasket, picks, pctOf, setPct, tog
             );
           })}
         </div>
-        {results.length === 0 && <div style={{ marginTop: 12, fontSize: 13, color: "var(--census-text-muted)" }}>No stocks match — try a ticker like NVDA or a name like Tesla.</div>}
-        <div style={{ marginTop: 12, fontSize: 13, color: "var(--census-text-muted)" }}>Stocks with stablecoin-only liquidity are reached automatically by routing the swap.</div>
+        {results.length === 0 && <div style={{ marginTop: 12, fontSize: 13, color: "var(--census-text-muted)" }}>No listed stocks match — try another ticker or name.</div>}
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--census-text-muted)" }}>Only stocks listed for rewards on-chain are shown. Stocks with stablecoin-only liquidity are reached automatically by routing the swap.</div>
       </>)}
     </>
   );
 }
 
-type EconomicsProps = { draft: Draft; set: Setter; isV2: boolean; usesBasket: boolean; ethUsd: number; anchorKey: string };
-function EconomicsStep({ draft, set, isV2, usesBasket, ethUsd, anchorKey }: EconomicsProps) {
-  const fee = 1000 * (TRADE_FEE_BPS / 10000); // the fee on $1,000 traded
-  const holdersBps = isV2 ? draft.holdersBps : 0;
-  const holdersPct = Math.round(holdersBps / 100);
-  const PRESETS: [string, number][] = [["Holders", 10000], ["Split", 5000], ["You", 0]];
+type EconomicsProps = { draft: Draft; set: Setter; anchor: Anchor; ticker: string; ethUsd: number; picks: string[]; pctOf: (t: string) => number; setPct: (t: string, p: number) => void; togglePick: (t: string) => void; pickLabel: (k: string) => string; allowed: Set<string> | null; allowedError: boolean };
+function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPct, togglePick, pickLabel, allowed, allowedError }: EconomicsProps) {
+  const anchorKey = anchor.key;
+  const reflection = draft.reflectionBps;
+  const totalBps = TRADE_FEE_BPS + reflection;
+  const base = 1000 * (TRADE_FEE_BPS / 10000); // the base fee on $1,000 traded
+  const refl = 1000 * (reflection / 10000); // the reflection on $1,000 traded
   return (
     <>
-      <h1 className="census-wizard__title">Who gets the fees?</h1>
-      <p className="census-wizard__subtitle">Every trade pays a {TRADE_FEE_LABEL} fee. You decide how your share is split.</p>
+      <h1 className="census-wizard__title">The economics.</h1>
+      <p className="census-wizard__subtitle">Every trade pays a {TRADE_FEE_LABEL} base fee. Add a holder reflection on top, and choose what holders earn it in.</p>
 
       <div className="census-field-label">Trade fee</div>
-      <div className="census-card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>Fixed at <span className="census-mono" style={{ color: "var(--census-lime)" }}>{TRADE_FEE_LABEL}</span> per trade</div>
-          <div style={{ fontSize: 13, color: "var(--census-text-secondary)", marginTop: 4 }}>Taken on every trade through Census. Same for every company.</div>
+      <FeeSplitTip reflectionBps={reflection} basket={picks.map(pickLabel)} block>
+        <div className="census-card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 16 }}>Fee <span className="census-mono" style={{ color: "var(--census-lime)" }}>{pctLabel(totalBps)}</span> per trade</div>
+            <div style={{ fontSize: 13, color: "var(--census-text-secondary)", marginTop: 4 }}>{feeBreakdown(reflection)} · on every buy and sell, on the curve and in the canonical pool. Same for every company.</div>
+          </div>
+          <span className="census-tip__hint" aria-hidden="true">ⓘ where it goes</span>
         </div>
+      </FeeSplitTip>
+
+      <div className="census-field-label" style={{ marginTop: 30 }}>Holder reflection</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        {REFLECTION_OPTIONS.map((bps) => (
+          <button key={bps} className="census-chip" aria-pressed={reflection === bps} onClick={() => set({ reflectionBps: bps, picks: bps === 0 ? [] : draft.picks })}>{bps === 0 ? "Off" : pctLabel(bps)}</button>
+        ))}
+      </div>
+      <div style={{ fontSize: 13, color: "var(--census-text-muted)" }}>
+        {reflection > 0
+          ? `Charged on top of the ${TRADE_FEE_LABEL} base on every buy and sell, and paid to holders in the basket below. Reflection and basket are frozen at launch.`
+          : `Off: trades pay the ${TRADE_FEE_LABEL} base fee only. Turn it on to reward holders — it's frozen at launch.`}
       </div>
 
-      {/* The creator side of the fee goes to holders, you, or both (Maxima only). */}
-      {isV2 ? (<>
-        <div className="census-field-label" style={{ marginTop: 30 }}>Your share goes to</div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          {PRESETS.map(([label, bps]) => {
-            const active = label === "Split" ? draft.holdersBps > 0 && draft.holdersBps < 10000 : draft.holdersBps === bps;
-            return <button key={label} className="census-chip" aria-pressed={active} onClick={() => set({ holdersBps: bps })}>{label}</button>;
-          })}
-        </div>
-        <div className="census-card" style={{ padding: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
-            <div style={{ fontSize: 15, display: "inline-flex", alignItems: "baseline", gap: 6 }}>Holders <WeightInput value={holdersPct} onCommit={(n) => set({ holdersBps: Math.max(0, Math.min(100, n)) * 100 })} /></div>
-            <div style={{ fontSize: 15, color: "var(--census-text-secondary)", display: "inline-flex", alignItems: "baseline", gap: 6 }}>You <WeightInput value={100 - holdersPct} onCommit={(n) => set({ holdersBps: (100 - Math.max(0, Math.min(100, n))) * 100 })} /></div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button className="census-btn-ghost" aria-label="less to holders" onClick={() => set({ holdersBps: Math.max(0, draft.holdersBps - 500) })} style={{ width: 30, height: 30, padding: 0, borderRadius: 8, fontSize: 16, lineHeight: 1 }}>−</button>
-            <div style={{ flex: 1, height: 10, borderRadius: 6, background: "var(--census-track)", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${holdersPct}%`, background: "linear-gradient(90deg,var(--census-lime-shade),var(--census-lime))" }} />
-            </div>
-            <button className="census-btn-ghost" aria-label="more to holders" onClick={() => set({ holdersBps: Math.min(10000, draft.holdersBps + 500) })} style={{ width: 30, height: 30, padding: 0, borderRadius: 8, fontSize: 16, lineHeight: 1 }}>+</button>
-          </div>
-          <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 10 }}>Holders earn {usesBasket ? "the stock basket" : anchorKey}; you keep the rest.</div>
-        </div>
-      </>) : (
-        <div className="census-panel" style={{ marginTop: 30 }}>
-          As the creator, you earn from the {TRADE_FEE_LABEL} fee. Switch to Maxima to reward your holders instead, or split it.
-        </div>
-      )}
+      {reflection > 0 && <BasketPicker set={set} anchor={anchor} ticker={ticker} picks={picks} pctOf={pctOf} setPct={setPct} togglePick={togglePick} pickLabel={pickLabel} allowed={allowed} allowedError={allowedError} />}
 
       <div className="census-field-label" style={{ marginTop: 30 }}>On every $1,000 traded</div>
       <div className="census-card" style={{ display: "grid", gap: 10 }}>
-        <FeeRow label="Fee collected" value={usd(fee)} />
-        {isV2 && <FeeRow label="Holders' share of your rewards" value={`${holdersPct}%`} accent={holdersPct > 0} />}
-        <FeeRow label="Your share of your rewards" value={`${100 - holdersPct}%`} accent={holdersPct === 0} />
+        <FeeRow label={`Base fee (${TRADE_FEE_LABEL})`} value={usd(base)} />
+        {reflection > 0 && <FeeRow label={`Holder reflection (${pctLabel(reflection)})`} value={usd(refl)} accent />}
+        <FeeRow label="Fee total" value={usd(base + refl)} accent={reflection === 0} />
       </div>
-      <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>Creator rewards come out of every trade's fee and are split as set above.</div>
+      <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>
+        The base fee is shared between Census and you, the creator.{reflection > 0 ? ` The reflection goes to holders${picks.length ? ` as ${picks.map(pickLabel).join(", ")}` : ""}.` : ""}
+      </div>
 
       <div className="census-field-label" style={{ marginTop: 30 }}>Graduation target</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
-        {GRADS.map((t) => {
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(2, gradsFor(draft.tier).length)},1fr)`, gap: 12 }}>
+        {gradsFor(draft.tier).map((t) => {
           const on = t.eth === draft.graduationEth;
           return (
             <button key={t.eth} className={"census-card" + (on ? " census-card--selected" : "")} onClick={() => set({ graduationEth: t.eth })} aria-pressed={on} style={{ textAlign: "left", color: "var(--census-text)", cursor: "pointer" }}>
               <span className="census-mono" style={{ fontSize: 17, fontWeight: 500, color: on ? "var(--census-lime)" : "var(--census-text)" }}>{t.eth} ETH</span>
               <div style={{ fontSize: 13, color: "var(--census-text-secondary)", marginTop: 5 }}>{t.label}</div>
-              <span className="census-mono" style={{ fontSize: 12, color: "var(--census-text-muted)", marginTop: 3, display: "block" }}>≈ {usdK(graduationFdvEth(t.eth) * ethUsd)} mcap at graduation</span>
+              <span className="census-mono" style={{ fontSize: 12, color: t.label === "Rehearsal" ? "#e06c60" : "var(--census-text-muted)", marginTop: 3, display: "block" }}>{t.label === "Rehearsal" ? "mainnet test run — not a real target" : `≈ ${usdK(graduationFdvEth(t.eth) * ethUsd)} mcap at graduation`}</span>
             </button>
           );
         })}
       </div>
       <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>
-        At the target the bonding curve graduates{isV2 ? " and holder rewards switch on" : ""} — a milestone; liquidity stays locked.
+        {draft.tier === "v1" ? "Prima (meme) coins graduate at 4 ETH. " : "Company coins choose 4 or 8 ETH. "}
+        At the target the bonding curve graduates into the canonical Census pool — a milestone; liquidity stays locked and the same fee keeps applying there.
         {anchorKey !== "ETH" && ` Targets are set in ETH terms and converted to ${anchorKey} at launch.`}
       </div>
     </>
@@ -829,19 +900,20 @@ const Group = ({ title, onEdit, children }: { title: string; onEdit: () => void;
     {children}
   </div>
 );
-const Row = ({ k, v, accent }: { k: string; v: ReactNode; accent?: boolean }) => (
+const Row = ({ k, v, accent }: { k: ReactNode; v: ReactNode; accent?: boolean }) => (
   <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
     <span style={{ color: "var(--census-text-secondary)" }}>{k}</span>
     <span className="census-mono" style={{ color: accent ? "var(--census-lime)" : "var(--census-text)" }}>{v}</span>
   </div>
 );
 
-type ReviewProps = { draft: Draft; ticker: string; isV2: boolean; usesBasket: boolean; picks: string[]; pctOf: (t: string) => number; reserved: { address: Address } | null; onEdit: (step: number) => void; status: string; anchorKey: string };
-function ReviewStep({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, onEdit, status, anchorKey }: ReviewProps) {
+type ReviewProps = { draft: Draft; ticker: string; isV2: boolean; picks: string[]; pctOf: (t: string) => number; pickLabel: (k: string) => string; reserved: { address: Address } | null; onEdit: (step: number) => void; status: string; anchorKey: string };
+function ReviewStep({ draft, ticker, isV2, picks, pctOf, pickLabel, reserved, onEdit, status, anchorKey }: ReviewProps) {
+  const reflection = draft.reflectionBps;
   return (
     <>
       <h1 className="census-wizard__title">Review &amp; launch.</h1>
-      <p className="census-wizard__subtitle">The whole supply seeds the curve — trading from block one. Liquidity locks in a pool at graduation.</p>
+      <p className="census-wizard__subtitle">The whole supply seeds the curve — trading from block one. Liquidity locks in the canonical pool at graduation.</p>
 
       <Group title="Company" onEdit={() => onEdit(0)}>
         <Row k="Name" v={draft.name || "—"} /><Row k="Ticker" v={`$${ticker}`} accent /><Row k="Type" v={isV2 ? "Maxima" : "Prima"} />
@@ -849,12 +921,13 @@ function ReviewStep({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, o
       </Group>
       <Group title="Anchors" onEdit={() => onEdit(1)}>
         <Row k="Anchored to" v={anchorKey} accent />
-        {isV2 && (usesBasket ? picks.map((t) => <Row key={t} k={t} v={`${pctOf(t)}%`} />) : <Row k="Holders earn" v={anchorKey} />)}
       </Group>
       <Group title="Economics" onEdit={() => onEdit(2)}>
-        <Row k="Trade fee" v={TRADE_FEE_LABEL} />
-        <Row k="Your rewards" v={isV2 ? `holders ${Math.round(draft.holdersBps / 100)}% · you ${100 - Math.round(draft.holdersBps / 100)}%` : "all to you"} accent />
+        <Row k={<FeeSplitTip reflectionBps={reflection} basket={picks.map(pickLabel)}><span className="census-tip__label">Trade fee</span></FeeSplitTip>} v={`${pctLabel(TRADE_FEE_BPS + reflection)} (${feeBreakdown(reflection)})`} />
+        <Row k="Holder reflection" v={reflection > 0 ? pctLabel(reflection) : "Off"} accent={reflection > 0} />
+        {reflection > 0 && picks.map((t) => <Row key={t} k={`Basket · ${pickLabel(t)}`} v={`${pctOf(t)}%`} />)}
         <Row k="Graduation" v={gradLabel(draft.graduationEth, anchorKey)} />
+        {reflection > 0 && <div style={{ fontSize: 12, color: "var(--census-text-muted)", marginTop: 6 }}>Reflection and basket are frozen at launch.</div>}
       </Group>
       <Group title="Identity" onEdit={() => onEdit(3)}>
         <Row k="Logo" v={draft.image ? (isHostedUrl(draft.image) ? "Set" : "Preview only — not saved yet") : "None"} />
@@ -867,8 +940,9 @@ function ReviewStep({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, o
 
 /* ---------------- sticky preview ---------------- */
 
-type PreviewProps = { draft: Draft; ticker: string; isV2: boolean; usesBasket: boolean; picks: string[]; pctOf: (t: string) => number; reserved: { address: Address } | null; anchor: Anchor };
-function Preview({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, anchor }: PreviewProps) {
+type PreviewProps = { draft: Draft; ticker: string; isV2: boolean; picks: string[]; pctOf: (t: string) => number; pickLabel: (k: string) => string; reserved: { address: Address } | null; anchor: Anchor };
+function Preview({ draft, ticker, isV2, picks, pctOf, pickLabel, reserved, anchor }: PreviewProps) {
+  const reflection = draft.reflectionBps;
   return (
     <div className="census-panel" style={{ position: "sticky", top: "var(--census-space-6)" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
@@ -885,8 +959,9 @@ function Preview({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, anch
       <div style={{ display: "grid", gap: 9 }}>
         <PvRow k="Type" v={isV2 ? "Maxima" : "Prima"} accent />
         <PvRow k="Anchored to" v={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><AssetLogo src={anchor.logo} label={anchor.key} size={16} radius={4} />{anchor.key}</span>} />
-        {isV2 && <PvRow k="Holders earn" v={usesBasket ? (picks.length ? picks.map((t) => `${t} ${pctOf(t)}%`).join(", ") : "—") : anchor.key} />}
-        <PvRow k="Trade fee" v={TRADE_FEE_LABEL} />
+        <PvRow k={<FeeSplitTip reflectionBps={reflection} basket={picks.map(pickLabel)}><span className="census-tip__label">Trade fee</span></FeeSplitTip>} v={pctLabel(TRADE_FEE_BPS + reflection)} />
+        <PvRow k="Holder reflection" v={reflection > 0 ? pctLabel(reflection) : "Off"} accent={reflection > 0} />
+        {reflection > 0 && <PvRow k="Holders earn" v={picks.length ? picks.map((t) => `${pickLabel(t)} ${pctOf(t)}%`).join(", ") : "—"} />}
         <PvRow k="Graduation" v={gradLabel(draft.graduationEth, anchor.key)} />
         <PvRow k="Liquidity" v="Locks at graduation" accent />
         {reserved && <PvRow k="Address" v={`…${reserved.address.slice(-8)}`} />}
@@ -895,12 +970,48 @@ function Preview({ draft, ticker, isV2, usesBasket, picks, pctOf, reserved, anch
   );
 }
 
-function PvRow({ k, v, accent }: { k: string; v: ReactNode; accent?: boolean }) {
+function PvRow({ k, v, accent }: { k: ReactNode; v: ReactNode; accent?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}>
       <span style={{ color: "var(--census-text-secondary)", flex: "none" }}>{k}</span>
       <span className="census-mono" style={{ color: accent ? "var(--census-lime)" : "var(--census-text)", textAlign: "right" }}>{v}</span>
     </div>
+  );
+}
+
+// Hover / focus tooltip spelling out where every part of the trade fee goes — creators asked for the
+// distribution to be explicit. Shares come from config.feeSplit (mirrored from the contracts). Wraps its
+// trigger; `block` makes a whole card the hover target. Keyboard and tap users get it via focus.
+function FeeSplitTip({ reflectionBps, basket, block, children }: { reflectionBps: number; basket: string[]; block?: boolean; children: ReactNode }) {
+  const s = feeSplit(reflectionBps);
+  const Wrap = block ? "div" : "span";
+  return (
+    <Wrap className={"census-tip" + (block ? " census-tip--block" : "")} tabIndex={0}>
+      {children}
+      <span className="census-tip__pop" role="tooltip">
+        <span className="census-tip__title">Where the {pctLabel(s.total)} goes</span>
+        Charged on every buy and sell. Nothing else is ever taken from a trade.
+        <span className="census-tip__row"><span>Base fee — Census and you</span><span className="census-mono">{pctLabel(s.base)}</span></span>
+        {s.phases.map((p) => (
+          <span key={p.phase} className="census-tip__sub">
+            <span>{p.phase} ({p.censusShare / 100} / {100 - p.censusShare / 100})</span>
+            <span className="census-mono" style={{ flex: "none" }}>Census {pctLabel(p.census)} · you {pctLabel(p.creator)}</span>
+          </span>
+        ))}
+        {s.reflection > 0 ? (
+          <>
+            <span className="census-tip__row"><span>Holder reflection — holders</span><span className="census-mono">{pctLabel(s.reflection)}</span></span>
+            <span className="census-tip__sub">
+              <span>All of it, paid {basket.length ? "as " + basket.join(", ") : "into the reward basket"}</span>
+              <span className="census-mono" style={{ flex: "none" }}>holders {pctLabel(s.reflection)}</span>
+            </span>
+          </>
+        ) : (
+          <span className="census-tip__sub"><span>No holder reflection on this launch — holders receive nothing from the fee.</span></span>
+        )}
+        <span className="census-tip__foot">Census's share goes to the Census treasury; your share goes to the wallet that launches the coin. The split is fixed by the contracts for the life of the coin.</span>
+      </span>
+    </Wrap>
   );
 }
 

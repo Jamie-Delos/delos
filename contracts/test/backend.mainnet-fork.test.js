@@ -11,7 +11,7 @@ suite('Local fork lifecycle against configured mainnet Uniswap dependencies', fu
     const rpc = 'https://rpc.mainnet.chain.robinhood.com';
     const response = await fetch(rpc, { method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}),signal:AbortSignal.timeout(15000) });
     const body = await response.json(); if (!body.result) throw new Error('missing fork block');
-    const blockNumber = Number(BigInt(body.result));
+    const blockNumber = process.env.AUDIT_FORK_BLOCK ? Number(process.env.AUDIT_FORK_BLOCK) : Number(BigInt(body.result)); // pin with AUDIT_FORK_BLOCK for a reproducible run
     await network.provider.send('hardhat_reset',[{forking:{jsonRpcUrl:rpc,blockNumber}}]);
     console.log('      mainnet dependency state pinned at block',blockNumber,'; transactions LOCAL ONLY');
     const [owner,platform,creator,buyer,other] = await ethers.getSigners();

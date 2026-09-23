@@ -4,7 +4,7 @@ import { HashRouter } from "react-router-dom";
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "./wagmi";
-import { PRIVY_ENABLED } from "./config";
+import { PRIVY_ENABLED, REHEARSAL, REHEARSAL_GRADUATION_ETH } from "./config";
 import { WalletsAuthProvider } from "./census";
 import { App } from "./App";
 import "./styles/base.css";
@@ -14,6 +14,18 @@ import "./styles/census-app.css";
 
 const queryClient = new QueryClient();
 const root = ReactDOM.createRoot(document.getElementById("root")!);
+
+// Rehearsal build (VITE_REHEARSAL_GRADUATION_ETH set on a side deployment): keep it out of search engines
+// and make it unmistakable on screen. Production never sets the flag, so none of this ships there.
+if (REHEARSAL) {
+  document.title = "Rehearsal build";
+  const meta = document.createElement("meta"); meta.name = "robots"; meta.content = "noindex,nofollow"; document.head.appendChild(meta);
+  const strip = document.createElement("div");
+  strip.textContent = `REHEARSAL BUILD · mainnet test stack · graduation at ${REHEARSAL_GRADUATION_ETH} ETH · generic names only`;
+  strip.setAttribute("style", "position:fixed;top:0;left:0;right:0;z-index:9999;background:#e06c60;color:#0c130f;font:600 12px/1.4 system-ui,sans-serif;text-align:center;padding:5px 12px;letter-spacing:.02em");
+  document.body.prepend(strip);
+  document.body.style.paddingTop = "26px";
+}
 
 // Default: wallets only (EIP-6963 picker). With a Privy App ID set, Privy adds "Sign up" and runs
 // "Connect wallet" through its modal; its SDK is a separate chunk fetched only in that case.

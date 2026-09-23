@@ -1,19 +1,21 @@
-// Launch "anchors" — the quote asset a coin's bonding curve (and, after graduation, its locked pool) is
-// priced in. Default is ETH (WETH). A non-ETH anchor pairs the coin directly against that token (e.g.
+// Launch "anchors" — the quote asset a coin's bonding curve (and, after graduation, its canonical pool)
+// is priced in. Default is ETH (WETH). A non-ETH anchor pairs the coin directly against that token (e.g.
 // HOOD/TOKEN), the stock-anchored model that is a live meta on Robinhood Chain: OPENAI, ANTHROPIC,
-// NVDA, HOOD… are all used as anchors on-chain. Both tiers take any anchor — Prima simply trades in it;
-// Maxima collects fees in it and its vault swaps them into the stock basket (lib/basket.ts).
+// NVDA, HOOD… are all used as anchors on-chain. Every launch takes any anchor — it trades in it, and a
+// reflection vault collects fees in it and turns them into the reward basket (lib/basket.ts).
 //
 // Two kinds of anchor:
-//   - the fixed menu below (ETH, HOOD): each needs a `pricePool` (its quote/USDG pool) for USD pricing,
-//     plus a zap path on the curve (CensusCurve.setZapPath) so plain-ETH buyers can reach it;
-//   - any GRADUATED Census coin ("company coin"): priced through its own locked pool back to its anchor,
-//     recursively, so a coin anchored to a coin anchored to HOOD still gets a real dollar figure.
+//   - the fixed menu below (ETH, HOOD): each needs a `pricePool` (its quote/USDG V3 pool) for USD pricing,
+//     plus a zap path on the curve (setZapPath) so plain-ETH buyers can reach it;
+//   - any GRADUATED V4 Census coin ("company coin"): priced through its own canonical pool back to its
+//     anchor, recursively, so a coin anchored to a coin anchored to HOOD still gets a real dollar figure.
 import { isAddress, parseUnits, zeroAddress, type Address, type PublicClient } from "viem";
-import { CONTRACTS, DEFAULT_FEE, IS_MAINNET, START_FDV_ETH } from "../config";
-import { censusCurveAbi, erc20Abi, poolAbi } from "../abis";
+import { CONTRACTS, LEGACY_V3_POOL_FEE, IS_MAINNET, START_FDV_ETH } from "../config";
+import { erc20Abi, poolAbi } from "../abis";
 import { poolSpotOut, poolRawPrice } from "./pool";
 import { readTokenOffset, curveSpot } from "./curveOffset";
+import { readCurve, hasAnyCurve } from "./curves";
+import { v4SpotPrice } from "./v4pool";
 
 // ETH price used only when no WETH/USDG pool is configured (testnet). On mainnet ETH is read live from
 // CONTRACTS.ethPricePool exactly like any other anchor.
@@ -88,30 +90,36 @@ async function poolUsdPrice(pc: PublicClient, a: Anchor): Promise<number> {
   return usd;
 }
 
-// USD price of a Census coin: its price in its own anchor (curve spot pre-graduation, the locked pool's
-// spot after) times that anchor's USD price — recursive for coins anchored to coins. Guarded two ways:
+// USD price of a Census coin: its price in its own anchor (curve spot pre-graduation, the canonical
+// pool's spot after) times that anchor's USD price — recursive for coins anchored to coins. Guarded two ways:
 // a depth cap AND a `seen` set (CX-H2). The cycle guard matters because the shared price cache can hand
 // back an IN-FLIGHT promise for a coin already being priced upstream, so an A↔B anchor pair would await
 // each other forever (a hang) rather than hit the depth cap. On-chain rules prevent cycles today; this
 // makes an accidental one resolve to "—" instead of hanging the row.
 async function coinUsdPrice(pc: PublicClient, coin: Address, depth: number, seen: Set<string>): Promise<number> {
-  if (depth > 3 || CONTRACTS.curve === zeroAddress) throw new Error("unpriceable anchor");
+  if (depth > 3 || !hasAnyCurve()) throw new Error("unpriceable anchor");
   const key = coin.toLowerCase();
   if (seen.has(key)) throw new Error("anchor cycle");
   seen.add(key);
-  const cv = await pc.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "curves", args: [coin] });
-  if (!cv[10]) throw new Error("not a Census coin");
-  const [quote, , , , poolFee, virtualQuote, tokenReserve, , , graduated] = cv;
+  const rec = await readCurve(pc, coin);
+  if (!rec) throw new Error("not a Census coin");
+  const { quote, virtualQuote, tokenReserve, graduated } = rec;
   const usdA = await quoteUsdDepth(pc, quote, depth + 1, seen);
   if (usdA == null) throw new Error("anchor unpriceable");
   const decA = (await quoteInfo(pc, quote)).decimals;
   let priceInA: number;
-  if (graduated) {
-    const out = await poolSpotOut(pc, quote, coin, parseUnits("1", decA), poolFee || DEFAULT_FEE);
+  if (graduated && rec.venue === "v4") {
+    // V4: the canonical hooked pool's spot (there is no TWAP in V4).
+    const spot = await v4SpotPrice(pc, coin, quote, decA);
+    if (spot == null) throw new Error("no pool price");
+    priceInA = spot;
+  } else if (graduated) {
+    // Legacy: the V3 pool the old curve minted.
+    const out = await poolSpotOut(pc, quote, coin, parseUnits("1", decA), rec.legacyPoolFee || LEGACY_V3_POOL_FEE);
     if (out == null || out <= 0n) throw new Error("no pool price");
     priceInA = 1 / (Number(out) / 1e18);
   } else {
-    const spot = curveSpot(virtualQuote, tokenReserve, await readTokenOffset(pc, coin), decA);
+    const spot = curveSpot(virtualQuote, tokenReserve, await readTokenOffset(pc, rec.curve, coin), decA);
     if (spot == null) throw new Error("no curve price");
     priceInA = spot;
   }
@@ -152,8 +160,7 @@ export function quoteInfo(pc: PublicClient, quote: string): Promise<QuoteInfo> {
         const [symbol, decimals, isCoin] = await Promise.all([
           pc.readContract({ address: addr, abi: erc20Abi, functionName: "symbol" }).catch(() => `${quote.slice(0, 6)}…`),
           pc.readContract({ address: addr, abi: erc20Abi, functionName: "decimals" }).then(Number).catch(() => 18),
-          CONTRACTS.curve === zeroAddress ? Promise.resolve(false)
-            : pc.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "curves", args: [addr] }).then((cv) => cv[10]).catch(() => false),
+          hasAnyCurve() ? readCurve(pc, addr).then((r) => !!r).catch(() => false) : Promise.resolve(false),
         ]);
         return { symbol, decimals, isCoin };
       })();

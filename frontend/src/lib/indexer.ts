@@ -7,9 +7,12 @@ import { INDEXER_URL } from "../config";
 export type IndexerCoin = {
   address: string; name: string; symbol: string; decimals: number; totalSupply: string;
   creator: string; quote: string; quoteSymbol: string; vault: string | null; holdersBps: number; isV2: boolean;
+  // V4 fields (the indexer is adding these separately; absent on an older indexer — read defensively).
+  venue?: "v4" | "legacy" | string | null; reflectionBps?: number | null; poolId?: string | null;
   virtualQuote: string; tokenReserve: string; virtualTokenOffset: string; realQuote: string; graduationQuote: string;
   graduated: boolean; pool: string | null; progressBps: number;
-  priceQuote: number; priceUsd: number; marketCapUsd: number; volumeQuote: number; volumeUsd: number;
+  // USD fields are null when the indexer has no configured USD price for the quote asset (fail closed).
+  priceQuote: number; priceUsd: number | null; marketCapUsd: number | null; volumeQuote: number; volumeUsd: number | null;
   tradeCount: number; createdBlock: string; createdAt: string; updatedAt: string;
 };
 export type IndexerTrade = {
@@ -33,7 +36,7 @@ async function get<T>(path: string): Promise<T | null> {
 export const fetchCoins = (sort = "new", limit = 50) => get<{ coins: IndexerCoin[] }>(`/coins?sort=${sort}&limit=${limit}`);
 export const fetchCoin = (address: string) => get<{ coin: IndexerCoin }>(`/coins/${address.toLowerCase()}`);
 export const fetchTrades = (address: string, limit = 50) => get<{ trades: IndexerTrade[] }>(`/coins/${address.toLowerCase()}/trades?limit=${limit}`);
-export const fetchChart = (address: string, limit = 500) => get<{ points: { t: string; priceQuote: number; priceUsd: number }[] }>(`/coins/${address.toLowerCase()}/chart?limit=${limit}`);
+export const fetchChart = (address: string, limit = 500) => get<{ points: { t: string; priceQuote: number; priceUsd: number | null }[] }>(`/coins/${address.toLowerCase()}/chart?limit=${limit}`);
 
 // WebSocket URL for live updates (new coins / trades / graduations), or null if the indexer isn't set.
 export const indexerWsUrl = () => (INDEXER_URL ? INDEXER_URL.replace(/^http/, "ws") + "/ws" : null);

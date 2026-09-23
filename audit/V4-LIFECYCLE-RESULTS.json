@@ -1,0 +1,318 @@
+{
+  "generatedAt": "2026-09-23T20:12:11.657Z",
+  "results": [
+    {
+      "label": "meme launch, reflection off",
+      "reflectionBps": 0,
+      "basket": [],
+      "weights": [],
+      "hook": "0x65EEC50a97a260a2FCa1d0fab076373e2256A0CC",
+      "steps": [
+        {
+          "step": "window buy +1s (penalised)",
+          "gasUsed": "213854",
+          "tokenReserve": "937682405.763752900992036071",
+          "realQuote": "0.09182",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.007362",
+            "creator": "0.000818",
+            "holders": "0.0",
+            "penalty": "0.00618"
+          },
+          "actor": "alice",
+          "quoteIn": "0.1"
+        },
+        {
+          "step": "buy 1 ETH",
+          "gasUsed": "122607",
+          "tokenReserve": "549755273.363943488602290542",
+          "realQuote": "1.07182",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.018",
+            "creator": "0.002",
+            "holders": "0.0",
+            "penalty": "0.0"
+          },
+          "actor": "alice",
+          "quoteIn": "1"
+        },
+        {
+          "step": "sell half",
+          "gasUsed": "118304",
+          "tokenReserve": "774877636.681971744301145271",
+          "realQuote": "0.394843092278145891",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.012185584338993373",
+            "creator": "0.001353953815443709",
+            "holders": "0.0",
+            "penalty": "0.0"
+          },
+          "actor": "alice"
+        },
+        {
+          "step": "buy 0.5 ETH",
+          "gasUsed": "143223",
+          "tokenReserve": "599157463.169906443830898158",
+          "realQuote": "0.884843092278145891",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.009",
+            "creator": "0.001",
+            "holders": "0.0",
+            "penalty": "0.0"
+          },
+          "actor": "bob",
+          "quoteIn": "0.5"
+        },
+        {
+          "step": "final fill 10 ETH (capped, refund) — graduates in the same tx",
+          "gasUsed": "697003",
+          "tokenReserve": "0.0",
+          "realQuote": "0.0",
+          "graduated": true,
+          "fee": {
+            "protocol": "0.057217167692850381",
+            "creator": "0.006357463076983376",
+            "holders": "0.0",
+            "penalty": "0.0"
+          },
+          "actor": "carol",
+          "accepted": "3.178731538491687866",
+          "refunded": "6.821268461508312134"
+        },
+        {
+          "step": "graduate -> V4 (automatic, inside the fill)",
+          "gasUsed": "697003",
+          "poolId": "0x4f25e4b4d0c9d8aca1881a3bfcc53bb967ed7b1682c95e793527b0466e4485fc",
+          "tokensIn": "214285714.285714285786520896",
+          "quoteIn": "3.99999999999999841",
+          "liquidity": "29277002188455995386912",
+          "tokenDust": "0.000000000000003199",
+          "quoteDust": "0.00000000000000159"
+        },
+        {
+          "step": "pool buy 0.2 (hook)",
+          "gasUsed": "236798",
+          "tokenReserve": "0.0",
+          "realQuote": "0.0",
+          "graduated": true,
+          "fee": {
+            "protocol": "0.0012",
+            "creator": "0.0028",
+            "holders": "0.0",
+            "penalty": "0"
+          },
+          "actor": "bob",
+          "quoteIn": "0.2"
+        },
+        {
+          "step": "pool sell all (hook)",
+          "gasUsed": "167179",
+          "tokenReserve": "0.0",
+          "realQuote": "0.0",
+          "graduated": true,
+          "fee": {
+            "protocol": "0.011989385890410594",
+            "creator": "0.027975233744291387",
+            "holders": "0.0",
+            "penalty": "0"
+          },
+          "actor": "bob"
+        },
+        {
+          "step": "hook.claimFor treasury",
+          "amount": "0.013189385890410594"
+        },
+        {
+          "step": "hook.claimFor creator",
+          "amount": "0.030775233744291387"
+        }
+      ],
+      "checks": [
+        "hook custody equals reserved liabilities",
+        "graduator holds nothing",
+        "1B supply fully accounted for"
+      ]
+    },
+    {
+      "label": "company launch, 3% reflection, basket ETH/stock",
+      "reflectionBps": 300,
+      "basket": [
+        "weth",
+        "stock"
+      ],
+      "weights": [
+        4000,
+        6000
+      ],
+      "hook": "0x3ab12003f83B5b7A2cBbFD06b4461A7c64ea20CC",
+      "steps": [
+        {
+          "step": "window buy +1s (penalised)",
+          "gasUsed": "283275",
+          "tokenReserve": "939604661.680636303312251501",
+          "realQuote": "0.08882",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.007362",
+            "creator": "0.000818",
+            "holders": "0.003",
+            "penalty": "0.00618"
+          },
+          "actor": "alice",
+          "quoteIn": "0.1"
+        },
+        {
+          "step": "buy 1 ETH",
+          "gasUsed": "174928",
+          "tokenReserve": "557945578.204497702532222507",
+          "realQuote": "1.03882",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.018",
+            "creator": "0.002",
+            "holders": "0.03",
+            "penalty": "0.0"
+          },
+          "actor": "alice",
+          "quoteIn": "1"
+        },
+        {
+          "step": "sell half",
+          "gasUsed": "170558",
+          "tokenReserve": "778972789.102248851266111253",
+          "realQuote": "0.385813183058418053",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.011754122704948475",
+            "creator": "0.001306013633883164",
+            "holders": "0.019590204508247458",
+            "penalty": "0.0"
+          },
+          "actor": "alice"
+        },
+        {
+          "step": "buy 0.5 ETH",
+          "gasUsed": "195544",
+          "tokenReserve": "606074009.728306897368966424",
+          "realQuote": "0.860813183058418053",
+          "graduated": false,
+          "fee": {
+            "protocol": "0.009",
+            "creator": "0.001",
+            "holders": "0.015",
+            "penalty": "0.0"
+          },
+          "actor": "bob",
+          "quoteIn": "0.5"
+        },
+        {
+          "step": "distribute (pre-graduation)",
+          "gasUsed": "276905",
+          "quoteDistributed": "0.067590204508247458",
+          "reserved": [
+            "weth=0.027036081803298983",
+            "stock=0.040554122704948474"
+          ]
+        },
+        {
+          "step": "final fill 10 ETH (capped, refund) — graduates in the same tx",
+          "gasUsed": "838228",
+          "tokenReserve": "0.0",
+          "realQuote": "0.0",
+          "graduated": true,
+          "fee": {
+            "protocol": "0.059479329163103658",
+            "creator": "0.006608814351455962",
+            "holders": "0.099132215271839429",
+            "penalty": "0.0"
+          },
+          "actor": "carol",
+          "accepted": "3.304407175727980996",
+          "refunded": "6.695592824272019004"
+        },
+        {
+          "step": "graduate -> V4 (automatic, inside the fill)",
+          "gasUsed": "838228",
+          "poolId": "0x163390f1f801b07e3fe4bde23ea14d1e5e8fd1ab4bc02ee298163861a3027f8c",
+          "tokensIn": "214285714.285714285745907554",
+          "quoteIn": "3.999999999999998409",
+          "liquidity": "29277002188455995383381",
+          "tokenDust": "0.000000000000001613",
+          "quoteDust": "0.000000000000001591"
+        },
+        {
+          "step": "pool buy 0.2 (hook)",
+          "gasUsed": "459487",
+          "tokenReserve": "0.0",
+          "realQuote": "0.0",
+          "graduated": true,
+          "fee": {
+            "protocol": "0.0012",
+            "creator": "0.0028",
+            "holders": "0.006",
+            "penalty": "0"
+          },
+          "actor": "bob",
+          "quoteIn": "0.2"
+        },
+        {
+          "step": "pool sell all (hook)",
+          "gasUsed": "206173",
+          "tokenReserve": "0.0",
+          "realQuote": "0.0",
+          "graduated": true,
+          "fee": {
+            "protocol": "0.011857295689589706",
+            "creator": "0.027667023275709316",
+            "holders": "0.059286478447948532",
+            "penalty": "0"
+          },
+          "actor": "bob"
+        },
+        {
+          "step": "hook.claimFor treasury",
+          "amount": "0.013057295689589706"
+        },
+        {
+          "step": "hook.claimFor creator",
+          "amount": "0.030467023275709316"
+        },
+        {
+          "step": "hook.claimFor vault",
+          "amount": "0.065286478447948532"
+        },
+        {
+          "step": "distribute (post-graduation)",
+          "quoteDistributed": "0.164418693719787962"
+        },
+        {
+          "step": "claim alice",
+          "paid": 2,
+          "owed": [
+            "weth=0.03889030800766343",
+            "stock=0.058335462011495146"
+          ]
+        },
+        {
+          "step": "claim carol",
+          "paid": 2,
+          "owed": [
+            "weth=0.042046794698463468",
+            "stock=0.06307019224358935"
+          ]
+        }
+      ],
+      "checks": [
+        "vault never holds the coin",
+        "vault solvent for every reserved asset",
+        "hook custody equals reserved liabilities",
+        "graduator holds nothing",
+        "1B supply fully accounted for"
+      ]
+    }
+  ]
+}

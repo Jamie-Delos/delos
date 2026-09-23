@@ -1,0 +1,70 @@
+### tsc --noEmit
+exit=0
+### npm run build
+node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-BhSCzAaA.mjs (1:4779): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-BhSCzAaA.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-BhSCzAaA.mjs (1:5299): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-BhSCzAaA.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/to-ui-error-Du3cW-SF.mjs (4:133): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/to-ui-error-Du3cW-SF.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/to-ui-error-Du3cW-SF.mjs (4:1378): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/to-ui-error-Du3cW-SF.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/to-ui-error-Du3cW-SF.mjs (4:2045): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/to-ui-error-Du3cW-SF.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs (1:1596): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs (1:1980): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs (36:116): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs (43:1069): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs (44:876): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs (69:942): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CRdGjRoY.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+[2mdist/[22m[36massets/ErrorMessage-D8VaAP5m-Bo97rrL9.js                               [39m[1m[2m    0.21 kB[22m[1m[22m[2m │ gzip:   0.18 kB[22m
+[2mdist/[22m[36massets/ErrorBanner-BcpGRt0h-Cmv7aqbu.js                                [39m[1m[2m    0.90 kB[22m[1m[22m[2m │ gzip:   0.52 kB[22m
+[2mdist/[22m[36massets/ErrorScreen-BhSCzAaA-D5wIxWhB.js                                [39m[1m[2m    4.46 kB[22m[1m[22m[2m │ gzip:   1.91 kB[22m
+[2mdist/[22m[36massets/to-ui-error-Du3cW-SF-D3mvx6d3.js                                [39m[1m[2m    5.57 kB[22m[1m[22m[2m │ gzip:   2.34 kB[22m
+[2mdist/[22m[36massets/TransactionErrorView-CRdGjRoY-CpkwH7RC.js                       [39m[1m[2m   24.22 kB[22m[1m[22m[2m │ gzip:   6.94 kB[22m
+[32m✓ built in 25.76s[39m
+exit=0
+### api metadata
+metadata authorization: 23 checks passed
+exit=0
+### api upload
+upload authorization: 18 checks passed
+exit=0
+### api zeroex
+api.zeroex.test.cjs: all assertions passed
+exit=0
+### names
+lib.names.test.cjs: 10 checks passed
+exit=0
+### release-check tests
+release-check.test.cjs: 62 checks passed
+exit=0
+### release-check (no env: expected NOT RELEASABLE)
+release-check: chain 4663 (release target 4663)
+  WARN VITE_FROM_BLOCK is unset/0: the no-indexer fallback scans from block 0 (set it to the factory deploy block)
+  WARN VITE_PRIVY_APP_ID is unset: wallet-only connect, no email/social sign-up
+  FAIL VITE_FACTORY_V4_ADDRESS (LaunchFactoryV4 (every new launch; CREATE2 deployer for the c0de grind)) is missing or not a 20-byte hex address
+  FAIL VITE_CURVE_V4_ADDRESS (CensusCurveV4 (curve trading)) is missing or not a 20-byte hex address
+  FAIL VITE_V4_ROUTER (CensusV4Router (post-graduation trades in the hooked pool)) is missing or not a 20-byte hex address
+  FAIL VITE_V4_HOOK (CensusV4Hook (fee policy; part of the PoolKey)) is missing or not a 20-byte hex address
+  FAIL VITE_POOL_MANAGER (Uniswap V4 PoolManager) is missing or not a 20-byte hex address
+  FAIL VITE_STATE_VIEW (Uniswap V4 StateView (pool spot reads)) is missing or not a 20-byte hex address
+  FAIL VITE_V4_QUOTER (Uniswap V4Quoter (impact-aware pool quotes; mainnet gate G13)) is missing or not a 20-byte hex address
+  FAIL VITE_INDEXER_URL is empty: the board would scan chain logs from the browser on every load (G10)
+release-check: NOT RELEASABLE (8 failures)
+exit=1
+### release-check (complete env)
+release-check: chain 4663 (release target 4663)
+  WARN VITE_PRIVY_APP_ID is unset: wallet-only connect, no email/social sign-up
+release-check: configuration complete
+exit=0
+### grep: no V3 pool-tier labels in src
+src/lib/pool.ts:75:  const out = Number(amountIn) * rate * (1 - fee / 1e6);                       // net of the pool fee
+src/lib/pool.ts:79:// Estimated out for swapping `amountIn` of tokenIn for tokenOut (net of the pool fee). Prices off the
+(end)

@@ -1,0 +1,22 @@
+
+
+  V4 fee migration
+    √ creates a permanently custodied pool, rejects unauthorized graduation and swaps after graduation (3104ms)
+    √ preserves fee conservation at every tax rate, phase and launch second (61ms)
+    √ enforces 2% + 4% with real V4, both directions and two routers; quoteFirst=true (626ms)
+    √ enforces 2% + 4% with real V4, both directions and two routers; quoteFirst=false (11403ms)
+
+  V4 readiness: realistic reserves and adversarial flows
+    √ graduates and trades a 1B fixed supply with 6-decimal quote (3105ms)
+    √ graduates and trades a 1B fixed supply with 18-decimal quote (1856ms)
+      V4 swaps=500 wallets=10 elapsedMs=5937 maxGas=279830 (local sequential workload)
+    √ 500 mixed swaps across 10 wallets preserve independently calculated fee liabilities and pool custody (7408ms)
+    √ rolls back taxed deposits and isolates an unclaimable fee recipient (873ms)
+
+  V4 Robinhood fork: deployed PoolManager compatibility
+    - registers a Census hook, graduates and swaps against the actual deployed manager on a LOCAL fork
+
+
+  8 passing (28s)
+  1 pending
+

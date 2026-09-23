@@ -19,6 +19,8 @@ function limitOf(value: string | undefined, fallback: number, maximum: number) {
 const serializeTrade = (t: any) => ({
   coin: t.coinAddress, trader: t.trader, isBuy: t.isBuy,
   amountIn: t.amountIn, amountOut: t.amountOut, fee: t.fee,
+  // V4 fee split (FeeAllocated on the curve, FeeAccrued from the hook); "0" on V3 trades.
+  feeProtocol: t.feeProtocol ?? "0", feeCreator: t.feeCreator ?? "0", feeHolders: t.feeHolders ?? "0", feePenalty: t.feePenalty ?? "0",
   priceQuote: t.priceQuote, venue: t.venue ?? "curve", block: t.block?.toString?.() ?? String(t.block), txHash: t.txHash, ts: t.ts,
 });
 const serializeReward = (r: any) => ({
@@ -27,6 +29,8 @@ const serializeReward = (r: any) => ({
 });
 
 export async function runApi() {
+  // Which curves this deployment indexes: "v3" (CURVE_ADDRESS) and/or "v4" (CURVE_V4_ADDRESS).
+  const products = [...(cfg.curve ? ["v3"] : []), ...((cfg as any).curveV4 ? ["v4"] : [])];
   const app = Fastify({ logger: false, requestTimeout: 15000, bodyLimit: 16384, trustProxy: (cfg.trustProxy ?? false) as any });
   await app.register(cors, { origin: cfg.corsOrigin });
   await app.register(websocket);
@@ -37,7 +41,7 @@ export async function runApi() {
     let database = false;
     try { await prisma.$queryRaw`SELECT 1`; database = true; } catch { /* unavailable */ }
     const ok = database && !ingestion.error && Date.now() - ingestion.lastSuccessAt < Math.max(60000, cfg.pollMs * 3);
-    return reply.code(ok ? 200 : 503).send({ ok, database, chainId: cfg.chainId, curve: cfg.curve, finalizedBlock: ingestion.lastBlock, ingestionError: ingestion.error });
+    return reply.code(ok ? 200 : 503).send({ ok, database, chainId: cfg.chainId, curve: cfg.curve, finalizedBlock: ingestion.lastBlock, ingestionError: ingestion.error, usdPricing: (cfg as any).ethUsd == null ? "unconfigured" : "configured", products });
   });
 
   // Board: list coins. sort=new|mcap|volume, optional graduated filter.
@@ -47,7 +51,7 @@ export async function runApi() {
     const sort = q.sort ?? "new";
     if (!["new", "mcap", "volume", "active"].includes(sort) || q.graduated !== undefined && !["true", "false"].includes(q.graduated)) throw Object.assign(new Error("invalid filter"), { statusCode: 400 });
     const orderBy =
-      sort === "mcap" ? { marketCapUsd: "desc" as const }
+      sort === "mcap" ? { marketCapUsd: { sort: "desc" as const, nulls: "last" as const } }
       : sort === "volume" ? { volumeQuote: "desc" as const }
       : sort === "active" ? { updatedAt: "desc" as const }
       : { createdAt: "desc" as const };
@@ -101,8 +105,12 @@ export async function runApi() {
     const [coins, graduated, tradeCount] = await Promise.all([
       prisma.coin.count(), prisma.coin.count({ where: { graduated: true } }), prisma.trade.count(),
     ]);
-    const vol = await prisma.coin.aggregate({ _sum: { volumeQuote: true, volumeUsd: true } });
-    return { coins, graduated, tradeCount, volumeQuote: vol._sum.volumeQuote ?? 0, volumeUsd: vol._sum.volumeUsd ?? 0 };
+    const [vol, unpriced] = await Promise.all([
+      prisma.coin.aggregate({ _sum: { volumeQuote: true, volumeUsd: true } }),
+      prisma.coin.count({ where: { volumeUsd: null } }),
+    ]);
+    // A USD total over a set that contains unpriced coins is not a total: report null, not a partial sum.
+    return { coins, graduated, tradeCount, volumeQuote: vol._sum.volumeQuote ?? 0, volumeUsd: unpriced > 0 ? null : vol._sum.volumeUsd ?? 0, unpricedCoins: unpriced };
   });
 
   // Live stream: new coins, trades, graduations.

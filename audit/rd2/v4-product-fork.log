@@ -1,0 +1,12 @@
+### V4 product fork (AUDIT_V4_FORK=1)
+
+
+  V4 product on a Robinhood Chain fork (official PoolManager, local transactions only)
+      Robinhood dependency state pinned at block 69930892; deployments and trades LOCAL ONLY
+      V4 lifecycle verified against the official PoolManager at 0x8366a39cc670b4001a1121b8f6a443a643e40951
+    ✔ launches, trades on the curve, graduates into the official PoolManager, trades through the hook and distributes reflections (28140ms)
+
+
+  1 passing (28s)
+
+exit=0

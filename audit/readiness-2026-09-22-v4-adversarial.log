@@ -1,0 +1,14 @@
+### v4.adversarial (rerun)
+
+
+  V4 adversarial: partial fills, repeated claims, dust, bypass disclosure, registration
+    ✔ rejects a price-limited partial buy and partial sell atomically: no fee accrues, no balance moves (3342ms)
+    ✔ pays a repeated claim nothing and keeps the reserve ledger exact; a 1 wei buy rounds the fee to zero without breaking custody (1343ms)
+    ✔ DISCLOSURE: an independent hookless pool on the same manager trades the same pair with no Census fee (153ms)
+    ✔ refuses malformed or replayed registrations and a future launch timestamp (4351ms)
+    ✔ reverts a sell whose quote output is taxed on transfer, leaving balances and the fee ledger untouched (3080ms)
+
+
+  5 passing (12s)
+
+exit=0

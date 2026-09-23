@@ -1,21 +1,36 @@
-// Production keeper daemon for Census v2 launches.
+// Production keeper daemon for Census launches: legacy v2/V3 (LaunchFactoryV2 + DividendVault +
+// Uniswap V3 locker) and V4 (LaunchFactoryV4 + CensusCurveV4 + CensusV4Hook + CensusRewardVault).
+// Either product is enabled by its addresses; both may run in ONE process, each with its own launch
+// registry and discovery cursor, sharing the signer, the managed-transaction path and the state file.
 //
 // One process, one signer, one transaction in flight at a time. Every cycle it:
-//   1. DISCOVERS launches (factory LaunchedV2) and graduations (curve Graduated) from chain logs,
-//      resuming from a durable cursor;
-//   2. COLLECTS accrued LP fees from the locker for graduated positions (permissionless call);
-//   3. CONVERTS vault-held launch-token fees into the quote asset (operator/keeper-only, quoter-priced
-//      minimum output at SLIPPAGE_BPS);
-//   4. DISTRIBUTES each vault's unallocated quote into its stock basket (0x when the whole basket
-//      is quotable, else Uniswap with quoter minimums — same planners as src/keeper0x.js);
-//   5. PUSHES earned dividends to holders via DividendVault.claimFor (the team decision that
-//      rewards are delivered automatically), tracking holder balances from token Transfer logs,
-//      bounded per cycle and resumed round-robin.
+//   1. DISCOVERS launches (factory LaunchedV2 / LaunchedV4) and graduations (curve Graduated) from
+//      chain logs, resuming from a durable cursor per product;
+//   2. COLLECTS accrued fees: legacy -> locker.collectFees(tokenId) for graduated positions;
+//      V4 -> hook.claimFor(quote, vault) once hook.claimable(quote, vault) >= COLLECT_MIN_WEI
+//      (permissionless; the same call is also pushed for the creator and the treasury);
+//   3. CONVERTS (legacy only) vault-held launch-token fees into the quote asset (operator/keeper-only,
+//      quoter-priced minimum output at SLIPPAGE_BPS). A V4 vault has no conversion routine: it never
+//      holds or trades the launch token;
+//   4. DISTRIBUTES each vault's unallocated quote into its basket (0x when every external leg is
+//      quotable, else Uniswap with quoter minimums — same planners as src/keeper0x.js). A V4 basket
+//      holds only the quote asset and/or allow-listed tokenised stocks (never the launch token; the
+//      vault buys nothing on the curve or in the V4 pool): the quote entry is 0, every other entry
+//      is priced by the planners; distributeVia0x carries swapData only for stock entries. A stale
+//      vault whose basket still names the launch token is skipped with a one-time alert;
+//   5. PUSHES earned rewards to holders via vault.claimFor (the team decision that rewards are
+//      delivered automatically), tracking holder balances from token Transfer logs, bounded per cycle
+//      and resumed round-robin. V4 launches with reflection off (vault == 0) get no vault work.
 //
 // Authority: steps 3-4 need the signer to be the vault's `operator()` OR the platform keeper
-// registered on the curve (`CensusCurve.keeper()`, accepted by every vault). Vaults the signer is
-// not authorized for are skipped for those steps (logged once); collection and pushes are
-// permissionless and always run.
+// registered on the curve (`CensusCurve.keeper()` / `CensusCurveV4.keeper()`). On V4 vaults
+// `operator()` simply returns the curve keeper — the creator is never an operator (security checklist
+// 2026-09-23, F1). Vaults the signer is not authorized for are skipped for those steps (logged once);
+// collection and pushes are permissionless and always run.
+//
+// V4 startup wiring (verifyV4Wiring): hook.registrar() must be curve.graduator(), router.hook() must
+// be HOOK_ADDRESS (and hook.manager() POOL_MANAGER_ADDRESS when set) or the daemon refuses to start;
+// curve.keeper() must be the signer — a warning in dry run, a refusal when live.
 //
 // Durability and safety:
 //   - All progress lives in a JSON state file written atomically (tmp+rename): discovery cursors,
@@ -37,6 +52,9 @@
 //
 // Run:  node src/keeperd.js            (dry run, single cycle: CYCLES=1)
 //       DRY_RUN=false CYCLES=0 node src/keeperd.js   (live daemon; 0 = run forever)
+// Env:  legacy  FACTORY_V2_ADDRESS + CURVE_ADDRESS + LOCKER_ADDRESS (+ QUOTER_ADDRESS)
+//       V4      CURVE_V4_ADDRESS + FACTORY_V4_ADDRESS + HOOK_ADDRESS + V4_ROUTER_ADDRESS +
+//               POOL_MANAGER_ADDRESS (+ QUOTER_ADDRESS / ZEROX_API_KEY to price stock entries)
 "use strict";
 require("dotenv").config();
 const fs = require("node:fs");
@@ -77,6 +95,32 @@ const CURVE_VIEW_ABI = [
 ];
 const ERC20_VIEW_ABI = ["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)"];
 
+// ---- V4 product (LaunchFactoryV4 / CensusCurveV4 / CensusV4Hook / CensusV4Router) ----
+const FACTORY_V4_IFACE = new ethers.Interface([
+  "event LaunchedV4(address indexed token, address indexed creator, address curve, address vault, uint16 reflectionBps, address quote)",
+]);
+const CURVE_V4_IFACE = new ethers.Interface([
+  "event Graduated(address indexed coin, bytes32 indexed poolId, uint256 tokensIn, uint256 quoteIn, uint128 liquidity)",
+  "function graduate(address coin)",
+]);
+const LAUNCH_V4_TOPIC = FACTORY_V4_IFACE.getEvent("LaunchedV4").topicHash;
+const GRAD_V4_TOPIC = CURVE_V4_IFACE.getEvent("Graduated").topicHash;
+const CURVE_V4_VIEW_ABI = [
+  "function keeper() view returns (address)",
+  "function isGraduated(address) view returns (bool)",
+  "function graduationProgress(address) view returns (uint256)",
+  "function graduator() view returns (address)",
+  "function poolIds(address) view returns (bytes32)",
+];
+const HOOK_ABI = [
+  "function registrar() view returns (address)",
+  "function manager() view returns (address)",
+  "function protocol() view returns (address)",
+  "function claimable(address asset, address recipient) view returns (uint256)",
+  "function claimFor(address asset, address recipient)",
+];
+const V4_ROUTER_ABI = ["function hook() view returns (address)"];
+
 // ---------------------------------------------------------------------------
 // configuration
 // ---------------------------------------------------------------------------
@@ -92,6 +136,12 @@ function loadConfig(env = process.env) {
     curve: env.CURVE_ADDRESS,
     locker: env.LOCKER_ADDRESS,
     quoter: env.QUOTER_ADDRESS || null,
+    // V4 product. CURVE_V4_ADDRESS switches the V4 cycle on; the rest are required with it.
+    curveV4: env.CURVE_V4_ADDRESS || null,
+    factoryV4: env.FACTORY_V4_ADDRESS || null,
+    hook: env.HOOK_ADDRESS || null,
+    v4Router: env.V4_ROUTER_ADDRESS || null,
+    poolManager: env.POOL_MANAGER_ADDRESS || null,
     startBlock: big("KEEPER_START_BLOCK", "0"),
     logChunk: big("KEEPER_LOG_CHUNK", "5000"),
     stateFile: env.KEEPER_STATE_FILE || path.join(process.cwd(), "keeperd.state.json"),
@@ -112,6 +162,9 @@ function loadConfig(env = process.env) {
     alertWebhook: env.ALERT_WEBHOOK_URL || null,
     alertRepeatMs: num("ALERT_REPEAT_MS", 3_600_000), // identical alert keys are re-sent at most this often
   };
+  // Which product cycles run. Legacy needs its whole trio; V4 is keyed on the curve address.
+  cfg.legacy = Boolean(cfg.factory && cfg.curve && cfg.locker);
+  cfg.v4 = Boolean(cfg.curveV4);
   if (!Number.isInteger(cfg.slippageBps) || cfg.slippageBps < 0 || cfg.slippageBps >= 10000) throw new Error("SLIPPAGE_BPS must be 0..9999");
   if (cfg.logChunk <= 0n) throw new Error("KEEPER_LOG_CHUNK must be positive");
   return cfg;
@@ -120,7 +173,9 @@ function loadConfig(env = process.env) {
 // ---------------------------------------------------------------------------
 // durable state (atomic JSON file) + single-instance lock
 // ---------------------------------------------------------------------------
-const freshState = () => ({ cursor: null, launches: {}, pending: null, pushOffset: {}, counters: { cycles: 0, sent: 0, alerts: 0 }, alertsSeen: {} });
+// `cursor`/`launches`/`pushOffset` are the legacy registry; `v4` holds the V4 registry with its own
+// cursor so the two products discover independently while sharing one pending record and nonce.
+const freshState = () => ({ cursor: null, launches: {}, pending: null, pushOffset: {}, v4: { cursor: null, launches: {}, pushOffset: {} }, counters: { cycles: 0, sent: 0, alerts: 0 }, alertsSeen: {} });
 function loadState(file) {
   if (!fs.existsSync(file)) return freshState();
   // A corrupt state file must stop the daemon: silently starting fresh would drop the in-flight
@@ -133,7 +188,7 @@ function loadState(file) {
     throw new Error(`keeper state file ${file} is corrupt (${e.message}); restore it from backup before starting`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`keeper state file ${file} has an unexpected shape; refusing to start`);
-  return { ...freshState(), ...parsed, counters: { ...freshState().counters, ...(parsed.counters ?? {}) } };
+  return { ...freshState(), ...parsed, v4: { ...freshState().v4, ...(parsed.v4 ?? {}) }, counters: { ...freshState().counters, ...(parsed.counters ?? {}) } };
 }
 function saveState(file, state) {
   const body = JSON.stringify(state, (_, v) => (typeof v === "bigint" ? `bigint:${v}` : v), 2);
@@ -333,6 +388,43 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     });
   }
 
+  // ---- V4 discovery: LaunchedV4 (factory) + Graduated(coin, bytes32 poolId) (curve), own cursor ----
+  async function discoverV4() {
+    const head = await chain.blockNumber();
+    const reg = state.v4;
+    const from = reg.cursor !== null ? BigInt(reg.cursor) + 1n : cfg.startBlock;
+    await scanLogs({ address: [cfg.factoryV4, cfg.curveV4], topics: [[LAUNCH_V4_TOPIC, GRAD_V4_TOPIC]] }, from, head, async (logs, to) => {
+      for (const raw of logs) {
+        if (raw.topics[0] === LAUNCH_V4_TOPIC && raw.address.toLowerCase() === cfg.factoryV4.toLowerCase()) {
+          const ev = FACTORY_V4_IFACE.parseLog(raw);
+          const token = ev.args.token.toLowerCase();
+          if (!reg.launches[token]) {
+            reg.launches[token] = {
+              vault: ev.args.vault.toLowerCase(), creator: ev.args.creator.toLowerCase(), quote: ev.args.quote.toLowerCase(),
+              reflectionBps: Number(ev.args.reflectionBps),
+              createdBlock: raw.blockNumber.toString(), graduated: false, poolId: null,
+              // Holder scans start AT the launch block so same-block bundle buyers are tracked too.
+              holderCursor: (BigInt(raw.blockNumber) - 1n).toString(), holders: {},
+            };
+            log(`[discover:v4] launch ${token} vault ${reg.launches[token].vault} reflection ${reg.launches[token].reflectionBps}bps`);
+          }
+        }
+        if (raw.topics[0] === GRAD_V4_TOPIC && raw.address.toLowerCase() === cfg.curveV4.toLowerCase()) {
+          const ev = CURVE_V4_IFACE.parseLog(raw);
+          const token = ev.args.coin.toLowerCase();
+          const launch = reg.launches[token];
+          if (launch) {
+            launch.graduated = true;
+            launch.poolId = String(ev.args.poolId).toLowerCase();
+            log(`[discover:v4] graduated ${token} poolId ${launch.poolId}`);
+          }
+        }
+      }
+      reg.cursor = to.toString();
+      persist();
+    });
+  }
+
   // ---- holder tracking from token Transfer logs (durable per-token cursor) ----
   async function refreshHolders(token, launch) {
     const head = await chain.blockNumber();
@@ -426,19 +518,125 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     await sendManaged(`${plan.fn}:${token}`, launch.vault, data);
   }
 
-  async function pushStep(token, launch, budget, pushLimit) {
-    if (launch.vault === ethers.ZeroAddress || launch.holdersBps === 0) return;
+  // ---- V4 per-launch pipeline steps ----
+  // The hook only accrues after graduation (the curve pays the vault directly before), so every hook
+  // claim is gated on `graduated`. Claims are permissionless but still go through sendManaged.
+  const hookIface = new ethers.Interface(HOOK_ABI);
+  let hookTreasury = null; // hook.protocol(): the recorded treasury beneficiary, read once
+  async function treasuryAddress() {
+    if (!hookTreasury) hookTreasury = String(await chain.read(cfg.hook, HOOK_ABI, "protocol", [])).toLowerCase();
+    return hookTreasury;
+  }
+
+  // Graduation happens inside the buy that fills the curve. If the pool seeding was rejected in that
+  // transaction (GraduationDeferred) the curve is frozen at 100% and anyone may retry graduate(); the
+  // keeper is that anyone, so no launch ever waits on a manual transaction.
+  async function graduateStepV4(token, launch, budget) {
+    if (launch.graduated || budget.used >= budget.max) return;
+    const [done, progress] = await Promise.all([
+      chain.read(cfg.curveV4, CURVE_V4_VIEW_ABI, "isGraduated", [token]),
+      chain.read(cfg.curveV4, CURVE_V4_VIEW_ABI, "graduationProgress", [token]),
+    ]);
+    if (done) { launch.graduated = true; persist(); return; } // discovery will fill in the poolId
+    if (BigInt(progress) < 10000n) return;
+    try { await chain.simulate(cfg.curveV4, [...CURVE_V4_VIEW_ABI, "function graduate(address coin)"], "graduate", [token]); }
+    catch (e) { await raise("warn", `graduation retry for ${token} still reverts; will retry next cycle`, { message: e.message }, `graduate:${token}`); return; }
+    log(`[graduate:v4] ${token} filled but not graduated (deferred); retrying graduate()`);
+    budget.used++;
+    await sendManaged(`graduate:${token}`, cfg.curveV4, CURVE_V4_IFACE.encodeFunctionData("graduate", [token]));
+  }
+
+  async function collectStepV4(token, launch, budget) {
+    if (!launch.graduated || launch.vault === ethers.ZeroAddress || budget.used >= budget.max) return;
+    const amount = BigInt(await chain.read(cfg.hook, HOOK_ABI, "claimable", [launch.quote, launch.vault]));
+    if (amount < cfg.collectMinWei) return;
+    log(`[collect:v4] ${token} hook claimable ${amount} -> vault ${launch.vault}`);
+    budget.used++;
+    await sendManaged(`hookClaim:vault:${token}`, cfg.hook, hookIface.encodeFunctionData("claimFor", [launch.quote, launch.vault]));
+  }
+
+  // Creator/treasury claims are keyed per (quote, recipient) on the hook, so one push settles every
+  // pool sharing that pair; `done` dedupes them within a cycle.
+  async function hookClaimsStepV4(token, launch, budget, done) {
+    if (!launch.graduated) return;
+    const treasury = await treasuryAddress();
+    for (const [label, who] of [["creator", launch.creator], ["treasury", treasury]]) {
+      if (budget.used >= budget.max) return;
+      const key = `${launch.quote}:${who}`;
+      if (done.has(key)) continue;
+      done.add(key);
+      const amount = BigInt(await chain.read(cfg.hook, HOOK_ABI, "claimable", [launch.quote, who]));
+      if (amount < cfg.collectMinWei) continue;
+      log(`[collect:v4] ${token} hook claimable ${amount} -> ${label} ${who}`);
+      budget.used++;
+      await sendManaged(`hookClaim:${label}:${token}`, cfg.hook, hookIface.encodeFunctionData("claimFor", [launch.quote, who]));
+    }
+  }
+
+  // minOut for a V4 basket: quote entry 0 (credited as-is, pinned so neither planner routes it);
+  // every other entry (allow-listed tokenised stocks) from the shared 0x / Uniswap planners, exactly
+  // as for a legacy vault. The vault never buys the launch token, so a basket that still names it can
+  // only come from a stale deployment: such a launch is skipped for good with a one-time alert.
+  // No convert/sell step exists on a V4 vault.
+  async function distributeStepV4(token, launch, budget) {
+    if (launch.vault === ethers.ZeroAddress || launch.launchTokenBasket || budget.used >= budget.max) return;
+    const vault = chain.contract(launch.vault, [...VAULT_ABI, ...VAULT_EXTRA_ABI]);
+    const bal = BigInt(await vault.availableQuote());
+    if (bal < cfg.distributeMinWei) return;
+    const [len, quote, swapFee, allowanceHolder] = await Promise.all([
+      vault.basketLength(), vault.quote(), vault.swapFee(), vault.allowanceHolder(),
+    ]);
+    const basket = [], weights = [], paths = [], dec = [];
+    for (let i = 0; i < Number(len); i++) {
+      basket.push(await vault.basket(i));
+      weights.push(Number(await vault.weights(i)));
+      paths.push(await vault.paths(i));
+      dec.push(18);
+    }
+    if (basket.some((a) => a.toLowerCase() === token)) {
+      launch.launchTokenBasket = true; // persisted: never re-planned, alerted once
+      await raise("error", "distribute skipped for good: V4 basket names the launch token (stale vault deployment; a current CensusRewardVault holds only the quote asset and allow-listed stocks)", { token, vault: launch.vault, basket }, `launch-token-basket:${token}`);
+      return;
+    }
+    const pinned = { [String(quote).toLowerCase()]: 0n };
+    const external = basket.filter((a) => pinned[a.toLowerCase()] === undefined);
+    let plan;
+    let zx = null;
+    if (external.length > 0 && allowanceHolder !== ethers.ZeroAddress && process.env.ZEROX_API_KEY) {
+      try { zx = await planZeroEx(vault, quote, basket, weights, dec, bal, pinned); } catch (e) { log(`[distribute:v4] 0x planning failed: ${e.message}`); }
+    }
+    if (zx?.allQuotable) {
+      plan = { fn: "distributeVia0x", args: [zx.sellAmounts, zx.swapData, zx.minOut] };
+    } else {
+      const quoter = cfg.quoter ? chain.contract(cfg.quoter, QUOTER_ABI) : null;
+      if (!quoter && external.length > 0) {
+        await raise("warn", "distribute skipped: no 0x coverage and QUOTER_ADDRESS unset", { token }, "no-quoter-distribute");
+        return;
+      }
+      const uni = await planUniswap(quoter, quote, Number(swapFee), basket, weights, paths, dec, bal, pinned);
+      plan = { fn: "distribute", args: [uni.minOut] };
+    }
+    log(`[distribute:v4] ${token} ${plan.fn} spending ${bal}`);
+    const data = new ethers.Interface(VAULT_ABI).encodeFunctionData(plan.fn, plan.args);
+    budget.used++;
+    await sendManaged(`${plan.fn}:${token}`, launch.vault, data);
+  }
+
+  // Shared by both products: `offsets` is the registry's round-robin map, `share` the holder bps
+  // (legacy holdersBps / V4 reflectionBps); nothing is owed when it is zero.
+  async function pushStep(token, launch, budget, pushLimit, offsets = state.pushOffset, share = launch.holdersBps) {
+    if (launch.vault === ethers.ZeroAddress || share === 0) return;
     await refreshHolders(token, launch);
     const vault = chain.contract(launch.vault, [...VAULT_ABI, ...VAULT_EXTRA_ABI]);
     const basket = [];
     for (let i = 0; i < Number(await vault.basketLength()); i++) basket.push(await vault.basket(i));
     const holders = Object.keys(launch.holders).sort();
     if (holders.length === 0) return;
-    const start = state.pushOffset[token] ?? 0;
+    const start = offsets[token] ?? 0;
     let pushed = 0;
     for (let i = 0; i < holders.length && pushed < pushLimit && budget.used < budget.max; i++) {
       const holder = holders[(start + i) % holders.length];
-      state.pushOffset[token] = (start + i + 1) % holders.length;
+      offsets[token] = (start + i + 1) % holders.length;
       if (await vault.excluded(holder)) continue;
       let owed = 0n;
       for (const s of basket) owed += BigInt(await vault.withdrawableOf(holder, s));
@@ -457,34 +655,52 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     const budget = { used: 0, max: cfg.maxActionsPerCycle };
     try {
       await resolvePending();
-      await discover();
+      if (cfg.legacy) await discover();
+      if (cfg.v4) await discoverV4();
     } catch (e) {
       await raise("error", "discovery/recovery failed; pipeline skipped this cycle", { message: e.message }, "cycle-failed");
       state.lastRun = { at: Date.now(), actions: 0, dryRun: cfg.dryRun, failed: true };
       persist();
       return;
     }
-    let keeper = null;
-    try { keeper = String(await chain.read(cfg.curve, CURVE_VIEW_ABI, "keeper", [])).toLowerCase(); } catch { keeper = null; }
-    if (keeper === ethers.ZeroAddress) keeper = null;
-    const entries = Object.entries(state.launches);
-    for (let i = 0; i < entries.length; i++) {
-      const [token, launch] = entries[i];
+    const readKeeper = async (curve, abi) => {
+      let k = null;
+      try { k = String(await chain.read(curve, abi, "keeper", [])).toLowerCase(); } catch { k = null; }
+      return k === ethers.ZeroAddress ? null : k;
+    };
+    const keeper = cfg.legacy ? await readKeeper(cfg.curve, CURVE_VIEW_ABI) : null;
+    const keeperV4 = cfg.v4 ? await readKeeper(cfg.curveV4, CURVE_V4_VIEW_ABI) : null;
+    // One ordered job list across both registries so the action budget is shared fairly.
+    const jobs = [
+      ...(cfg.legacy ? Object.entries(state.launches).map(([token, launch]) => ({ token, launch, v4: false })) : []),
+      ...(cfg.v4 ? Object.entries(state.v4.launches).map(([token, launch]) => ({ token, launch, v4: true })) : []),
+    ];
+    const hookClaimsDone = new Set();
+    for (let i = 0; i < jobs.length; i++) {
+      const { token, launch, v4 } = jobs[i];
       // Fair share of the remaining action budget so one launch's holder list cannot starve the rest.
-      const remainingLaunches = entries.length - i;
+      const remainingLaunches = jobs.length - i;
       const pushLimit = Math.min(cfg.pushMaxPerCycle, Math.max(1, Math.floor((budget.max - budget.used) / remainingLaunches)));
       try {
-        await collectStep(token, launch, budget);
-        if (await canOperate(token, launch, keeper)) {
-          await convertStep(token, launch, budget);
-          await distributeStep(token, launch, budget);
+        if (v4) {
+          await graduateStepV4(token, launch, budget);
+          await collectStepV4(token, launch, budget);
+          if (launch.vault !== ethers.ZeroAddress && (await canOperate(token, launch, keeperV4))) await distributeStepV4(token, launch, budget);
+          await hookClaimsStepV4(token, launch, budget, hookClaimsDone);
+        } else {
+          await collectStep(token, launch, budget);
+          if (await canOperate(token, launch, keeper)) {
+            await convertStep(token, launch, budget);
+            await distributeStep(token, launch, budget);
+          }
         }
       } catch (e) {
         await raise("error", `pipeline failed for ${token}`, { message: e.message }, `pipeline:${token}`);
       }
       // Pushes are permissionless and independent of the steps above: their own failure domain.
       try {
-        await pushStep(token, launch, budget, pushLimit);
+        if (v4) await pushStep(token, launch, budget, pushLimit, state.v4.pushOffset, launch.reflectionBps);
+        else await pushStep(token, launch, budget, pushLimit);
       } catch (e) {
         await raise("error", `push failed for ${token}`, { message: e.message }, `push:${token}`);
       }
@@ -494,7 +710,7 @@ function makeKeeper({ cfg, chain, log = console.log, alert = null }) {
     log(`[cycle] done: ${budget.used} action(s)${cfg.dryRun ? " (dry run)" : ""}`);
   }
 
-  return { cycle, state, resolvePending, sendManaged, discover, refreshHolders };
+  return { cycle, state, resolvePending, sendManaged, discover, discoverV4, refreshHolders };
 }
 
 // ---------------------------------------------------------------------------
@@ -526,14 +742,50 @@ function makeChain(cfg) {
   };
 }
 
+// V4 startup wiring. Throws on a mismatched hook/router/pool manager; a keeper mismatch throws when
+// live and only warns in dry run (planning needs no authority). Returns what it read.
+async function verifyV4Wiring(cfg, chain, log = console.log) {
+  const lower = (v) => String(v).toLowerCase();
+  const [registrar, graduator, routerHook] = await Promise.all([
+    chain.read(cfg.hook, HOOK_ABI, "registrar", []),
+    chain.read(cfg.curveV4, CURVE_V4_VIEW_ABI, "graduator", []),
+    chain.read(cfg.v4Router, V4_ROUTER_ABI, "hook", []),
+  ]);
+  if (lower(registrar) !== lower(graduator)) throw new Error(`hook.registrar() ${registrar} does not match curve.graduator() ${graduator}: HOOK_ADDRESS/CURVE_V4_ADDRESS are not one deployment`);
+  if (lower(routerHook) !== lower(cfg.hook)) throw new Error(`router.hook() ${routerHook} does not match HOOK_ADDRESS ${cfg.hook}`);
+  if (cfg.poolManager) {
+    const manager = await chain.read(cfg.hook, HOOK_ABI, "manager", []);
+    if (lower(manager) !== lower(cfg.poolManager)) throw new Error(`hook.manager() ${manager} does not match POOL_MANAGER_ADDRESS ${cfg.poolManager}`);
+  }
+  const keeper = lower(await chain.read(cfg.curveV4, CURVE_V4_VIEW_ABI, "keeper", []));
+  const signer = chain.address ? lower(chain.address) : null;
+  if (keeper !== signer) {
+    const msg = `curve.keeper() ${keeper} is not the signer ${signer ?? "(none)"}; V4 vault distributions are keeper-only and need CensusCurveV4.setKeeper(<signer>)`;
+    if (!cfg.dryRun) throw new Error(msg);
+    log(`[warn] ${msg} (dry run: planning only)`);
+  }
+  return { registrar: lower(registrar), routerHook: lower(routerHook), keeper };
+}
+
 async function main() {
   const cfg = loadConfig();
-  for (const k of ["factory", "curve", "locker"]) if (!cfg[k]) throw new Error(`Missing ${k.toUpperCase()}${k === "factory" ? "_V2" : ""}_ADDRESS`);
+  const legacyKeys = { factory: "FACTORY_V2_ADDRESS", curve: "CURVE_ADDRESS", locker: "LOCKER_ADDRESS" };
+  const v4Keys = { factoryV4: "FACTORY_V4_ADDRESS", hook: "HOOK_ADDRESS", v4Router: "V4_ROUTER_ADDRESS", poolManager: "POOL_MANAGER_ADDRESS" };
+  const legacyAny = Object.keys(legacyKeys).some((k) => cfg[k]);
+  if (legacyAny) for (const [k, name] of Object.entries(legacyKeys)) if (!cfg[k]) throw new Error(`Missing ${name} (legacy V3 cycle needs all of ${Object.values(legacyKeys).join(", ")})`);
+  if (cfg.v4) for (const [k, name] of Object.entries(v4Keys)) if (!cfg[k]) throw new Error(`Missing ${name} (required with CURVE_V4_ADDRESS)`);
+  if (!cfg.legacy && !cfg.v4) throw new Error("Nothing to run: set CURVE_V4_ADDRESS (V4) and/or FACTORY_V2_ADDRESS + CURVE_ADDRESS + LOCKER_ADDRESS (legacy V3)");
   const chain = makeChain(cfg);
   if ((await chain.chainId()) !== cfg.chainId) throw new Error("RPC chain does not match CHAIN_ID");
-  // The locker the curve registers positions with must be the one we collect from.
-  const curveLocker = String(await chain.read(cfg.curve, CURVE_VIEW_ABI, "locker", [])).toLowerCase();
-  if (curveLocker !== cfg.locker.toLowerCase()) throw new Error(`LOCKER_ADDRESS ${cfg.locker} does not match curve.locker() ${curveLocker}`);
+  if (cfg.legacy) {
+    // The locker the curve registers positions with must be the one we collect from.
+    const curveLocker = String(await chain.read(cfg.curve, CURVE_VIEW_ABI, "locker", [])).toLowerCase();
+    if (curveLocker !== cfg.locker.toLowerCase()) throw new Error(`LOCKER_ADDRESS ${cfg.locker} does not match curve.locker() ${curveLocker}`);
+  }
+  if (cfg.v4) {
+    const w = await verifyV4Wiring(cfg, chain);
+    console.log(`[v4] hook ${cfg.hook} registrar ${w.registrar} router.hook ${w.routerHook} curve.keeper ${w.keeper}`);
+  }
   const release = acquireLock(cfg.stateFile);
   for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { release(); process.exit(0); });
   process.on("exit", release);
@@ -541,7 +793,7 @@ async function main() {
     ? (payload) => fetch(cfg.alertWebhook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "census-keeperd", at: new Date().toISOString(), ...payload }), signal: AbortSignal.timeout(10000) })
     : null;
   const keeper = makeKeeper({ cfg, chain, alert });
-  console.log(`=== census keeperd === ${cfg.dryRun ? "[DRY RUN]" : "[LIVE]"} signer=${chain.address ?? "none"} state=${cfg.stateFile} interval=${cfg.intervalMs}ms`);
+  console.log(`=== census keeperd === ${cfg.dryRun ? "[DRY RUN]" : "[LIVE]"} products=${[cfg.legacy && "legacy-v3", cfg.v4 && "v4"].filter(Boolean).join("+")} signer=${chain.address ?? "none"} state=${cfg.stateFile} interval=${cfg.intervalMs}ms`);
   let n = 0;
   for (;;) {
     try { await keeper.cycle(); } catch (e) { console.error("[cycle] fatal:", e.message); if (alert) { try { await alert({ level: "error", message: "keeper cycle crashed", detail: { message: e.message } }); } catch { /* logged */ } } }
@@ -551,5 +803,5 @@ async function main() {
   }
 }
 
-module.exports = { loadConfig, loadState, saveState, acquireLock, makeKeeper, makeChain };
+module.exports = { loadConfig, loadState, saveState, acquireLock, makeKeeper, makeChain, verifyV4Wiring };
 if (require.main === module) main().catch((e) => { console.error("FATAL:", e.message || e); process.exit(1); });

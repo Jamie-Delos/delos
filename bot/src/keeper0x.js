@@ -104,13 +104,21 @@ async function probe() {
 }
 
 // Try a 0x quote for every leg. Returns per-leg calldata + whether ALL legs are available on 0x.
-async function planZeroEx(vault, quote, basket, weights, dec, bal) {
+// `pinned` (lowercase asset -> minOut) marks entries the vault settles on its own canonical venue
+// (the quote asset, a V4 launch's own token): they get empty swapData and the caller's minOut, never
+// a 0x route. Legacy callers omit it.
+async function planZeroEx(vault, quote, basket, weights, dec, bal, pinned = {}) {
   const sellAmounts = [], swapData = [], minOut = [], notes = [];
   const target = (await vault.allowanceHolder()).toLowerCase();
   let allQuotable = true, anyQuotable = false;
   for (let i = 0; i < basket.length; i++) {
     const sell = (bal * BigInt(weights[i])) / 10000n;
     if (sell === 0n) { sellAmounts.push(0n); swapData.push("0x"); minOut.push(0n); continue; }
+    const pin = pinned[basket[i].toLowerCase()];
+    if (pin !== undefined) {
+      sellAmounts.push(sell); swapData.push("0x"); minOut.push(BigInt(pin)); anyQuotable = true;
+      notes.push(`${basket[i].slice(0, 8)} canonical venue (no 0x route), floor ${pin}`); continue;
+    }
     if (quote.toLowerCase() === basket[i].toLowerCase()) {
       sellAmounts.push(sell); swapData.push("0x"); minOut.push(sell); anyQuotable = true;
       notes.push(`${basket[i].slice(0, 8)} same-asset payout (no swap)`); continue;
@@ -134,11 +142,14 @@ async function planZeroEx(vault, quote, basket, weights, dec, bal) {
 }
 
 // Uniswap-path minOut per leg, using the vault's own stored routes via a QuoterV2 static call.
-async function planUniswap(quoter, quote, swapFee, basket, weights, paths, dec, bal) {
+// `pinned` (lowercase asset -> minOut) entries are taken as given (see planZeroEx).
+async function planUniswap(quoter, quote, swapFee, basket, weights, paths, dec, bal, pinned = {}) {
   const minOut = [], notes = [];
   for (let i = 0; i < basket.length; i++) {
     const portion = (bal * BigInt(weights[i])) / 10000n;
     if (portion === 0n) { minOut.push(0n); continue; }
+    const pin = pinned[basket[i].toLowerCase()];
+    if (pin !== undefined) { minOut.push(BigInt(pin)); notes.push(`${basket[i].slice(0, 8)} canonical venue, floor ${pin}`); continue; }
     if (quote.toLowerCase() === basket[i].toLowerCase()) {
       minOut.push(portion); notes.push(`${basket[i].slice(0, 8)} same-asset payout (no swap)`); continue;
     }

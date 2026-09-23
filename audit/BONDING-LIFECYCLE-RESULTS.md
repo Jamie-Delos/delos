@@ -1,6 +1,6 @@
 # Bonding lifecycle rehearsal
 
-Executed 2026-09-17T10:32:51.450Z against implementation d13f3d03f68ec6bd5a1c1c032208c60ad69a143f.
+Executed 2026-09-22T21:50:53.670Z against implementation 2ca17a0611bc70a4a19d8bb4cd01d4e832af2cd8.
 All transactions used fake funds on an isolated local chain with actual Census and Uniswap V3 bytecode. No public-chain transactions.
 This tests contract behavior, not browser UX, live issuer assets, external routing, or production infrastructure.
 

@@ -1,13 +1,20 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+// Keep the audited V3 artifacts on their original compiler/settings during the V4 migration.
+const legacySettings = { optimizer: { enabled: true, runs: 200 }, viaIR: true, debug: { revertStrings: "strip" } };
+const legacyOverrides = Object.fromEntries(fs.readdirSync(path.join(__dirname, "contracts"), { recursive: true })
+  .map(p => p.replaceAll("\\", "/"))
+  .filter(p => p.endsWith(".sol") && !p.startsWith("v4/") && p !== "mocks/V4TestImports.sol")
+  .map(p => [`contracts/${p}`, { version: "0.8.24", settings: legacySettings }]));
 
 const { ROBINHOOD_RPC_URL, ROBINHOOD_TESTNET_RPC_URL, ARC_RPC_URL, BASE_SEPOLIA_RPC_URL, PRIVATE_KEY, BASESCAN_API_KEY } = process.env;
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
-    version: "0.8.24",
-    settings: {
+    compilers: [{ version: "0.8.24", settings: {
       optimizer: { enabled: true, runs: 200 },
       viaIR: true, // the launch flow has many locals; IR pipeline avoids "stack too deep"
       // Strip require() string messages so LaunchFactoryV2 (which embeds the DividendVault creation
@@ -15,15 +22,22 @@ module.exports = {
       // still decode — the router/locker use those for their meaningful failures. (Per-file overrides
       // don't compose with viaIR, so this is applied globally.)
       debug: { revertStrings: "strip" },
+    } }, { version: "0.8.26", settings: { evmVersion: "cancun", optimizer: { enabled: true, runs: 200 }, viaIR: true } }],
+    overrides: {
+      ...legacyOverrides,
+      "contracts/mocks/V4TestImports.sol": {
+        version: "0.8.26",
+        settings: { evmVersion: "cancun", optimizer: { enabled: true, runs: 200 }, viaIR: true },
+      },
     },
   },
   networks: {
-    hardhat: {
-      // Enable forking only when BASE_FORK_RPC_URL is set (used by integration.fork.test.js).
-      forking: process.env.BASE_FORK_RPC_URL
-        ? { url: process.env.BASE_FORK_RPC_URL }
-        : undefined,
-    },
+    // No static fork here. The legacy Base-mainnet suite (test/integration.fork.test.js, retired
+    // 2026-09-22: it targeted the pre-curve LaunchFactory and failed at setup) is replaced by the
+    // target-chain suites, which pin their own fork block at runtime (AUDIT_FORK_BLOCK to reproduce):
+    //   AUDIT_MAINNET_FORK=1 npx hardhat test test/backend.mainnet-fork.test.js --network hardhat
+    //   AUDIT_V4_FORK=1 npx hardhat test test/v4.readiness.test.js --grep "V4 Robinhood fork" --network hardhat
+    hardhat: {},
     robinhood: {
       url: ROBINHOOD_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],

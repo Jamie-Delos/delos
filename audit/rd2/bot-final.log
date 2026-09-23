@@ -1,0 +1,27 @@
+### npm test
+
+> launchpad-bot@0.1.0 test
+> node backend.readiness.cjs && node keeperd.readiness.cjs
+
+PASS: quote-equals-basket payout keeps the asset without requesting a swap.
+PASS dry run: discovery persisted, zero signatures
+PASS live cycle: collect -> convert -> distribute -> push, sequential nonces, thresholds and exclusions respected
+PASS restart: cursor and launch registry resumed from disk, no duplicate work
+PASS pending recovery: mined cleared, superseded cleared with alert, stuck replaced at same nonce under the fee cap
+PASS signer floor: underfunded signer sends nothing and raises an alert
+PASS state file: atomic write, BigInt round-trip
+PASS authority: undelegated vault skips convert/distribute without errors, push still runs; curve keeper authorizes all vaults
+PASS broadcast failure: pending{hash:null} is recovered on the next cycle instead of stalling forever
+PASS busy range: getLogs failures shrink the chunk and discovery completes
+PASS replacement: dry run signs nothing; replaced hashes are retained and a mined original resolves the record
+PASS state safety: corrupt state file is a hard error; lock file rejects a second instance
+PASS cycle failure: alerted via webhook (deduplicated), nothing sent, no crash
+PASS v4 dry run: LaunchedV4 discovery persisted under its own cursor, plan produced, zero signatures
+PASS v4 pre-graduation: distribute minOut = [curve quote - slippage, 0, quoter - slippage], push delivered, no hook work
+PASS v4 graduation + restart: resumed from disk, poolId recorded, hook.claimFor(quote, vault/creator/treasury) once each, V4Quoter minOut, reflection-off launch skipped
+PASS v4 no quoter: graduated launch-token leg is never sent with a guessed minOut; alert raised, other work continues
+PASS v4 authority: undelegated vault skips distribute without errors; permissionless claims and pushes still run
+PASS v4 wiring: hook/router/pool-manager mismatches refused; keeper mismatch warns in dry run and refuses live
+PASS combined: legacy V3 and V4 cycles run in one process with separate registries and a single managed nonce stream
+ALL KEEPERD CHECKS PASSED
+exit=0

@@ -10,17 +10,22 @@ raised quote into a Uniswap V3 pool whose LP NFT is **locked forever** in the `L
 *fees* can ever be collected after that. Every Census token address ends in `…c0de` (a CREATE2
 vanity salt bound to the creator).
 
-## Fee model
+## Fee model (V4 product, every new launch)
 
-- **2% trade fee** (`CensusCurve.FEE_BPS = 200`) on every curve buy and sell.
-- Split **25% protocol / 75% creator side** (`PROTOCOL_BPS = 2500`). On Maxima the creator side is
-  further split between the creator and holders by the coin's `holdersBps`; on Prima `holdersBps = 0`,
-  so the whole 75% goes to the creator.
-- A **buy-only launch penalty** (anti-snipe) starts near 99% and **decays to 0 over 3 seconds**
-  (`SNIPE_TAX_SECONDS = 3`), following the same split. The creator and any declared bundle wallets
-  are exempt.
-- Post-graduation Uniswap V3 LP fees are collected through the `LaunchLocker` on the *same*
-  25/75 split (`PROTOCOL_FEE_BPS = 2500`).
+- **2% base fee** on every buy and sell, on the bonding curve and in the coin's canonical Uniswap V4 pool
+  (charged by the Census hook, so every router pays it; independent hookless pools do not and are disclosed).
+- **On the curve: 90% Census / 10% creator.** **After graduation: 30% Census / 70% creator.**
+- **Optional holder reflection 1-4% on top**, chosen at launch and frozen: paid into the launch's
+  `CensusRewardVault` and distributed pro-rata to holders as up to three QUOTED assets (the pairing asset and/or
+  tokenised stocks listed on-chain; never the coin itself). Custody (PoolManager, curve, vault, router, hook,
+  graduator) never earns.
+- **3-second anti-snipe**: buys in the launch second pay 99% total, decaying to the base rate by +3s; the
+  creator and declared bundle wallets are exempt. The combined charge is capped at 99%.
+- 1B real supply, Pump.fun-style virtual reserve, capped final fill with refund, permanent full-range V4 liquidity.
+
+Contracts: `contracts/contracts/LaunchFactoryV4.sol`, `contracts/contracts/v4/`. Lifecycle proof:
+`contracts/test/v4.lifecycle.test.js`. Deploy: `MAINNET_RUNBOOK_V4.md`. Legacy (V3) launches keep the
+contracts described below.
 
 ## Two flavours
 

@@ -1,32 +1,31 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { useAccount, usePublicClient, useSendTransaction, useSignMessage, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { parseUnits, formatUnits, isAddress, zeroAddress, type Address } from "viem";
-import { CONTRACTS, DEFAULT_FEE, CHAIN, TRADE_FEE_BPS, TRADE_FEE_LABEL } from "../config";
-import { wethAbi, erc20Abi, swapRouterAbi, censusCurveAbi, vaultAbi } from "../abis";
-import { zeroExPrice, zeroExQuote, allowanceSpender, routeSummary } from "../lib/zeroex";
+import { CONTRACTS, CHAIN, TRADE_FEE_BPS, TRADE_FEE_LABEL, LEGACY_V3_POOL_FEE, pctLabel, feeBreakdown } from "../config";
+import { wethAbi, erc20Abi, censusCurveV4Abi, v4RouterAbi, vaultAbi } from "../abis";
 import { cachedQuoteUsd, quoteInfo, type QuoteInfo } from "../lib/anchors";
-import { poolSpotOut, poolQuoteOut, poolTwapDeviationBps } from "../lib/pool";
+import { poolSpotOut } from "../lib/pool";
+import { v4Configured, v4QuoteOut, v4SpotOut, v4SpotPrice, swapRequest } from "../lib/v4pool";
+import { hasAnyCurve } from "../lib/curves";
 import { useCoinQuote } from "../lib/useCoinQuote";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
 import { getMetadata, pendingMetadata, retryPendingMetadata, type CoinMetadata } from "../lib/metadata";
 import { curveSpot } from "../lib/curveOffset";
-import { readRewards, type Rewards } from "../lib/rewards";
+import { readRewards, hasClaimable, type Rewards } from "../lib/rewards";
 import { CxAvatar, AnchorMark, HomeRow, Num, StatBand, PendingPanel, GraduationBar, Icon, fmtUsd, fmtPrice, fmtAmount, shortAddr, reserveCaption, useWalletConnect, type DisplayCoin } from "../census";
 
 const SLIPPAGE_BPS = 200; // 2% — the default minimum-out tolerance; user-adjustable (see SLIPPAGE_PRESETS)
 const SLIPPAGE_PRESETS = [50, 200, 500, 1000]; // 0.5% / 2% / 5% / 10% — a shallow post-graduation pool may need more
-// CX-H1: a graduated pool's minimum-out is derived from the live spot; refuse to trade when the spot has
-// moved more than this from the pool TWAP (manipulation, or a violent move) rather than execute against a
-// number an attacker could have set one block earlier. A warming pool with no TWAP yet is allowed on spot.
-const MAX_POOL_DEVIATION_BPS = 1000; // 10%
 const BUY_PRESETS = ["0.01", "0.1", "0.5", "1"];
 const SELL_PRESETS = [25, 50, 75, 100]; // % of the coins you hold
 
 const friendly = (e: any) => {
   const raw = String(e?.shortMessage ?? e?.message ?? e ?? "");
   if (/reject|denied|cancel/i.test(raw)) return "Cancelled in your wallet.";
+  if (/IncompleteFill/i.test(raw)) return "The pool couldn't fill that amount at once — try a smaller trade.";
+  if (/Slippage|minOut|TooLittleReceived/i.test(raw)) return "Price moved past your slippage — raise it or try again.";
   return raw.slice(0, 140) || "Something went wrong.";
 };
 
@@ -38,7 +37,6 @@ export function Coin() {
   const { connect, signUp, connecting, pending, error: connectError, ensureChain } = useWalletConnect();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
-  const { sendTransactionAsync } = useSendTransaction();
   const { signMessageAsync } = useSignMessage();
   const [retryNonce, setRetryNonce] = useState(0); // bumped by the "couldn't reach the chain" retry
   const [slippageBps, setSlippageBps] = useState(SLIPPAGE_BPS); // user-chosen minimum-out tolerance
@@ -49,7 +47,7 @@ export function Coin() {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [quoteOut, setQuoteOut] = useState<bigint | null>(null); // what you'd receive, raw units of the out-asset
-  const [via, setVia] = useState("");
+  const [via, setVia] = useState<"" | "curve" | "pool" | "pool-spot">("");
   const [gradBps, setGradBps] = useState<number | null>(null);
   const [meta, setMeta] = useState<CoinMetadata | null>(null);
   const [copied, setCopied] = useState(false);
@@ -57,10 +55,11 @@ export function Coin() {
   const [quoteBal, setQuoteBal] = useState<bigint | null>(null);
   const [quoteUsd, setQuoteUsd] = useState<number | null>(null);
   const [qi, setQi] = useState<QuoteInfo | null>(null); // the anchor's symbol/decimals (menu asset or company coin)
-  const [poolPrice, setPoolPrice] = useState<number | null>(null); // quote per coin, graduated coins only
-  const [rewards, setRewards] = useState<Rewards | null>(null); // Maxima: the holder's claimable basket
+  const [poolPrice, setPoolPrice] = useState<number | null>(null); // quote per coin, graduated coins only (spot)
+  const [rewards, setRewards] = useState<Rewards | null>(null); // reflection launches: the holder's basket + claimable
   const [claiming, setClaiming] = useState(false);
-  const [buyFeeBps, setBuyFeeBps] = useState<number | null>(null); // this buyer's current curve buy fee (2% + any launch tax)
+  const [buyFeeBps, setBuyFeeBps] = useState<number | null>(null); // this buyer's current curve buy fee (base + reflection + any launch-window penalty)
+  const [sellFeeBps, setSellFeeBps] = useState<number | null>(null); // the curve's sell fee (base + reflection)
   const [maxIn, setMaxIn] = useState<bigint | null>(null); // gross quote the curve still accepts before it fills
   const [savingMeta, setSavingMeta] = useState(false);
   const [tick, setTick] = useState(0); // bumps after a trade/claim to refresh balances, quote and rewards
@@ -71,22 +70,34 @@ export function Coin() {
   const quoteDec = qi?.decimals ?? 18;
   const anchorIsCoin = !!qi?.isCoin;
   const isWethQuote = quote.toLowerCase() === CONTRACTS.weth.toLowerCase();
-  const hasCurve = CONTRACTS.curve !== zeroAddress;
+  const hasCurve = hasAnyCurve();
   const registered = !!cq.routed;
   const graduated = !!cq.graduated;
-  const onCurve = registered && !graduated; // pre-graduation: every trade is on the CensusCurve
-  const poolFee = cq.routerPoolFee || DEFAULT_FEE;
+  const isV4 = cq.venue === "v4";
+  const curveAddr = cq.curve ?? zeroAddress;
+  const onCurve = registered && !graduated; // pre-graduation: every trade is on the Census curve
+  // Post-graduation a V4 coin trades in its canonical hooked pool through CensusV4Router. A pool id that
+  // doesn't match what the curve registered means our key is wrong for this coin: never trade on it.
+  const onPool = registered && graduated && isV4 && v4Configured() && !cq.poolIdMismatch;
+  const legacyGraduated = registered && graduated && cq.venue === "legacy"; // V3-era coin: priced here, traded on Uniswap
   const coinName = cq.name ?? (cq.resolved ? "Unknown token" : "…");
   const coinSym = cq.symbol ?? "";
-  const tier = cq.isV2 ? "Maxima" : "Prima";
   const hasVault = !!cq.vault && cq.vault !== zeroAddress;
-  const tradeBlock = !hasCurve ? "Trading isn't configured on this deployment." : cq.resolved && !registered ? "This address isn't a Census coin." : "";
-  const canTrade = hasCurve && cq.resolved && registered && !!qi;
+  const reflectionBps = cq.reflectionBps ?? 0;
+  const standingFeeBps = TRADE_FEE_BPS + reflectionBps; // base + reflection: the fee outside the launch window, on the curve and in the pool
+  const tradeBlock = !hasCurve ? "Trading isn't configured on this deployment."
+    : cq.resolved && !registered ? "This address isn't a Census coin."
+    : legacyGraduated ? "Graduated to a Uniswap V3 pool under the previous Census release. Trade it on Uniswap."
+    : graduated && isV4 && !v4Configured() ? "Pool trading isn't configured on this deployment."
+    : graduated && isV4 && cq.poolIdMismatch ? "The pool doesn't match the coin's registration — trading is paused here."
+    : "";
+  const canTrade = hasCurve && cq.resolved && registered && !!qi && (onCurve || onPool);
 
   // Coins anchored to THIS coin (only possible once it has graduated — its pool is what they trade through).
-  const { coins: allCoins, loading: ecoLoading } = useLaunches(graduated);
-  const ecoStats = useCurveStats(graduated ? allCoins.map((c) => c.address) : []);
-  const paired: DisplayCoin[] = graduated && coinAddr
+  const pairable = graduated && isV4;
+  const { coins: allCoins, loading: ecoLoading } = useLaunches(pairable);
+  const ecoStats = useCurveStats(pairable ? allCoins.map((c) => c.address) : []);
+  const paired: DisplayCoin[] = pairable && coinAddr
     ? allCoins.filter((c) => ecoStats[c.address.toLowerCase()]?.quoteAddress?.toLowerCase() === coinAddr.toLowerCase()).map((c) => {
         const s = ecoStats[c.address.toLowerCase()];
         return { address: c.address, name: c.name, symbol: c.symbol, creator: c.creator, age: c.age, anchor: s?.anchor, anchorIsCoin: s?.anchorIsCoin, marketCap: s?.mcapUsd ?? null, graduation: s?.gradPct ?? 0, graduated: s?.graduated, reserve: s?.reserve, graduationTarget: s?.graduationTarget };
@@ -95,8 +106,9 @@ export function Coin() {
   const ecoReady = !ecoLoading && (allCoins.length === 0 || Object.keys(ecoStats).length > 0);
 
   // Price + market cap. On the curve: spot = virtualQuote / (tokenReserve + virtualTokenOffset), the PF
-  // pricing offset being an unminted term the curve exposes. Graduated: the pool's spot. USD via the
-  // anchor's live price (null => shown in anchor units, never a made-up dollar figure).
+  // pricing offset being an unminted term the curve exposes. Graduated: the pool's spot (V4 has no TWAP,
+  // so it is labelled as spot). USD via the anchor's live price (null => shown in anchor units, never a
+  // made-up dollar figure).
   const curvePrice = onCurve && cq.virtualQuote != null && cq.tokenReserve != null && cq.tokenReserve > 0n
     ? curveSpot(cq.virtualQuote, cq.tokenReserve, cq.virtualTokenOffset ?? null, quoteDec) : null;
   const priceQuote = onCurve ? curvePrice : graduated ? poolPrice : null;
@@ -105,7 +117,7 @@ export function Coin() {
   const mcapUsd = priceUsd != null && supply != null ? priceUsd * supply : null;
   const priceDisp = priceUsd != null ? fmtPrice(priceUsd) : priceQuote != null ? `${priceQuote.toPrecision(3)} ${anchor}` : "—";
   const mcapDisp = mcapUsd != null ? fmtUsd(mcapUsd) : priceQuote != null && supply != null ? `${fmtAmount(priceQuote * supply, 2)} ${anchor}` : "—";
-  const liveNote = onCurve ? "Live from the curve" : graduated ? "Live from the pool" : "—";
+  const liveNote = onCurve ? "Live from the curve" : graduated ? (isV4 ? "Spot from the canonical pool" : "Spot from its V3 pool") : "—";
   const reserve = cq.realQuote != null ? Number(cq.realQuote) / 10 ** quoteDec : 0;
   const graduationTarget = cq.graduationQuote != null && cq.graduationQuote > 0n ? Number(cq.graduationQuote) / 10 ** quoteDec : null;
   const gradPct = graduated ? 100 : gradBps != null ? Math.min(100, Math.round(gradBps / 100)) : 0;
@@ -119,17 +131,23 @@ export function Coin() {
     return () => { cancelled = true; };
   }, [publicClient, quote, cq.resolved]);
 
-  // Graduated coins: spot price from the locked pool (1 anchor unit -> coins).
+  // Graduated coins: spot price from the pool (quote per coin). V4: StateView slot0 of the canonical
+  // pool; legacy: the V3 pool the old curve minted.
   useEffect(() => {
     let cancelled = false;
     setPoolPrice(null);
     if (!publicClient || !coinAddr || !graduated || !qi) return;
-    poolSpotOut(publicClient, quote, coinAddr, parseUnits("1", quoteDec), poolFee).then((out) => {
-      if (cancelled || out == null || out <= 0n) return;
-      setPoolPrice(1 / (Number(out) / 1e18));
-    });
+    (async () => {
+      if (isV4) {
+        const p = await v4SpotPrice(publicClient, coinAddr, quote, quoteDec);
+        if (!cancelled) setPoolPrice(p);
+      } else {
+        const out = await poolSpotOut(publicClient, quote, coinAddr, parseUnits("1", quoteDec), cq.legacyPoolFee || LEGACY_V3_POOL_FEE);
+        if (!cancelled && out != null && out > 0n) setPoolPrice(1 / (Number(out) / 1e18));
+      }
+    })();
     return () => { cancelled = true; };
-  }, [publicClient, coinAddr, graduated, quote, quoteDec, poolFee, qi, tick]);
+  }, [publicClient, coinAddr, graduated, isV4, quote, quoteDec, cq.legacyPoolFee, qi, tick]);
 
   // Off-chain details from the launch wizard (thesis, description, logo) — null until the store is live.
   useEffect(() => {
@@ -157,52 +175,55 @@ export function Coin() {
     return () => { cancelled = true; };
   }, [publicClient, coinAddr, me, quote, isWethQuote, cq.resolved, tick]);
 
-  // Maxima: what the connected wallet can claim from the rewards vault, and what's waiting to be distributed.
+  // Reflection launches: the basket, what the connected wallet can claim from the vault, and what's
+  // waiting to be distributed.
   useEffect(() => {
     let cancelled = false;
     setRewards(null);
-    if (!publicClient || !cq.resolved || !hasVault || !cq.vault) return;
+    if (!publicClient || !cq.resolved || !hasVault || !cq.vault || !coinAddr) return;
     readRewards(publicClient, cq.vault, quote, me).then((r) => { if (!cancelled) setRewards(r); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [publicClient, cq.resolved, hasVault, cq.vault, quote, me, tick]);
+  }, [publicClient, cq.resolved, hasVault, cq.vault, quote, me, coinAddr, tick]);
 
-  // This buyer's curve buy fee and the room left before the curve fills. In the three seconds after a
-  // launch the buy fee decays from 99% to 2% (creator and bundle wallets exempt), so poll every second
-  // while a launch window could be open; otherwise read once per refresh.
+  // This buyer's curve buy fee, the sell fee, and the room left before the curve fills. In the three
+  // seconds after a launch the buy fee decays from 99% to base + reflection (creator and bundle wallets
+  // exempt), so poll every second while a launch window could be open; otherwise read once per refresh.
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    setBuyFeeBps(null); setMaxIn(null);
-    if (!publicClient || !coinAddr || !onCurve) return;
+    setBuyFeeBps(null); setSellFeeBps(null); setMaxIn(null);
+    if (!publicClient || !coinAddr || !onCurve || curveAddr === zeroAddress) return;
     const buyer = me ?? zeroAddress;
     const read = async () => {
       try {
-        const [fee, room] = await Promise.all([
-          publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "buyFeeBps", args: [coinAddr, buyer] }),
-          publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "maxQuoteInFor", args: [coinAddr, buyer] }),
+        const [fee, room, sellFee] = await Promise.all([
+          publicClient.readContract({ address: curveAddr, abi: censusCurveV4Abi, functionName: "buyFeeBps", args: [coinAddr, buyer] }),
+          publicClient.readContract({ address: curveAddr, abi: censusCurveV4Abi, functionName: "maxQuoteInFor", args: [coinAddr, buyer] }),
+          publicClient.readContract({ address: curveAddr, abi: censusCurveV4Abi, functionName: "sellFeeBps", args: [coinAddr] }).catch(() => BigInt(standingFeeBps)), // legacy curve: base only
         ]);
         if (cancelled) return;
-        setBuyFeeBps(Number(fee)); setMaxIn(room);
-        if (Number(fee) > TRADE_FEE_BPS) timer = setTimeout(read, 1000); // launch window: keep the label live
-      } catch { if (!cancelled) { setBuyFeeBps(TRADE_FEE_BPS); setMaxIn(null); } } // legacy curve: flat 2%, no cap
+        setBuyFeeBps(Number(fee)); setMaxIn(room); setSellFeeBps(Number(sellFee));
+        if (Number(fee) > standingFeeBps) timer = setTimeout(read, 1000); // launch window: keep the label live
+      } catch { if (!cancelled) { setBuyFeeBps(standingFeeBps); setSellFeeBps(standingFeeBps); setMaxIn(null); } } // legacy curve: flat fee, no cap
     };
     read();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [publicClient, coinAddr, onCurve, me, tick]);
+  }, [publicClient, coinAddr, onCurve, curveAddr, me, standingFeeBps, tick]);
 
   // Live graduation progress (bps 0..10000) straight off the curve.
   useEffect(() => {
     let cancelled = false;
-    if (!publicClient || !hasCurve || !coinAddr || !registered || graduated) { setGradBps(null); return; }
-    publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "graduationProgress", args: [coinAddr] })
+    if (!publicClient || !hasCurve || !coinAddr || !registered || graduated || curveAddr === zeroAddress) { setGradBps(null); return; }
+    publicClient.readContract({ address: curveAddr, abi: censusCurveV4Abi, functionName: "graduationProgress", args: [coinAddr] })
       .then((bps) => { if (!cancelled) setGradBps(Number(bps)); })
       .catch(() => { if (!cancelled) setGradBps(null); });
     return () => { cancelled = true; };
-  }, [publicClient, coinAddr, hasCurve, registered, graduated, tick]);
+  }, [publicClient, coinAddr, hasCurve, registered, graduated, curveAddr, tick]);
 
-  // Indicative "you receive ~" as the user types (debounced). On the curve this is quoteBuy/quoteSell
-  // (fee-net) straight off the contract; graduated WETH-anchored coins ask 0x, everything else reads
-  // the pool's spot. Blank when there's no price for the amount.
+  // Indicative "you receive ~" as the user types (debounced). On the curve this is quoteBuyFor/quoteSell
+  // (fee-net) straight off the contract. In the canonical pool it's the V4Quoter's simulated output
+  // (hook fee included, price impact included); without a quoter, a spot estimate net of the hook fee
+  // that the user's slippage has to cover. Blank when there's no price for the amount.
   useEffect(() => {
     let cancelled = false;
     setQuoteOut(null); setVia("");
@@ -213,35 +234,32 @@ export function Coin() {
       try {
         const amt = parseUnits(amount, buy ? quoteDec : 18);
         if (onCurve) {
-          // Buys quote for THIS buyer (launch tax + exemptions) and are capped at what the curve still
+          // Buys quote for THIS buyer (launch window + exemptions) and are capped at what the curve still
           // accepts; a legacy curve without quoteBuyFor falls back to the plain quote.
           const out = buy
-            ? await publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "quoteBuyFor", args: [coinAddr, amt, me ?? zeroAddress] })
-                .catch(() => publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "quoteBuy", args: [coinAddr, amt] }))
-            : await publicClient.readContract({ address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "quoteSell", args: [coinAddr, amt] });
+            ? await publicClient.readContract({ address: curveAddr, abi: censusCurveV4Abi, functionName: "quoteBuyFor", args: [coinAddr, amt, me ?? zeroAddress] })
+                .catch(() => publicClient.readContract({ address: curveAddr, abi: censusCurveV4Abi, functionName: "quoteBuy", args: [coinAddr, amt] }))
+            : await publicClient.readContract({ address: curveAddr, abi: censusCurveV4Abi, functionName: "quoteSell", args: [coinAddr, amt] });
           if (!cancelled) { setQuoteOut(out > 0n ? out : null); setVia(out > 0n ? "curve" : ""); }
           return;
         }
-        const sellToken = buy ? quote : coinAddr, buyToken = buy ? coinAddr : quote;
-        if (isWethQuote) {
-          try {
-            const q = await zeroExPrice({ sellToken, buyToken, sellAmount: amt, taker: me, slippageBps: SLIPPAGE_BPS });
-            if (cancelled) return;
-            if (q.liquidityAvailable !== false && q.buyAmount) { setQuoteOut(BigInt(q.buyAmount)); setVia(routeSummary(q)); return; }
-          } catch { /* fall through to the pool */ }
-        }
-        // "You receive ~" for a direct-pool trade: prefer QuoterV2 (real, price-impact-aware) so the
-        // estimate — and the minimum-out derived from it — reflect a shallow pool and don't revert a
-        // normal trade. Fall back to the impact-free spot estimate when no quoter is configured; the
-        // user's slippage then covers the impact. Headline price/mcap still use the TWAP; spot
-        // manipulation is caught by the deviation guard in trade().
-        const quoted = await poolQuoteOut(publicClient, sellToken, buyToken, amt, poolFee);
-        const out = quoted ?? (await poolSpotOut(publicClient, sellToken, buyToken, amt, poolFee, true));
-        if (!cancelled) { setQuoteOut(out); setVia(out ? (quoted != null ? "pool" : "pool (est.)") : ""); }
+        const quoted = await v4QuoteOut(publicClient, coinAddr, quote, buy, amt);
+        const out = quoted ?? (await v4SpotOut(publicClient, coinAddr, quote, buy, amt, standingFeeBps));
+        if (!cancelled) { setQuoteOut(out); setVia(out ? (quoted != null ? "pool" : "pool-spot") : ""); }
       } catch { if (!cancelled) { setQuoteOut(null); setVia(""); } }
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [amount, buy, coinAddr, me, quote, onCurve, canTrade, publicClient, quoteDec, isWethQuote, poolFee, tick]);
+  }, [amount, buy, coinAddr, me, quote, onCurve, canTrade, curveAddr, standingFeeBps, publicClient, quoteDec, tick]);
+
+  // Approve `spender` for `amountIn` of `token` unless the allowance already covers it.
+  async function ensureAllowance(token: Address, spender: Address, amountIn: bigint) {
+    if (!publicClient || !me) return;
+    const current = await publicClient.readContract({ address: token, abi: erc20Abi, functionName: "allowance", args: [me, spender] }).catch(() => 0n);
+    if (current >= amountIn) return;
+    setStatus("Approving…");
+    const a = await writeContractAsync({ chainId: CHAIN.id, address: token, abi: erc20Abi, functionName: "approve", args: [spender, amountIn] });
+    await publicClient.waitForTransactionReceipt({ hash: a });
+  }
 
   async function trade() {
     if (!coinAddr || !publicClient || busy) return;
@@ -254,41 +272,36 @@ export function Coin() {
     if (!buy && coinBal != null && amountIn > coinBal) { setStatus(`You hold ${fmtAmount(Number(formatUnits(coinBal, 18)))} ${coinSym}.`); return; }
     if (quoteOut == null) { setStatus("No price for this amount right now — adjust it or try again."); return; }
     const minOut = (quoteOut * BigInt(10000 - slippageBps)) / 10000n; // never trade unprotected (user slippage)
+    if (minOut <= 0n) { setStatus("That amount is too small to protect with a minimum — try a larger one."); return; }
     setBusy(true);
     try {
       // On the right network first — otherwise the trade goes to whatever chain the wallet is on and fails.
       if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then trade.`); return; }
-      const sellToken = buy ? quote : coinAddr;
-      const buyToken = buy ? coinAddr : quote;
 
       if (onCurve) {
-        // Pre-graduation: trade against the CensusCurve (the fee is taken on-chain). BUY: an ETH-anchored
+        // Pre-graduation: trade against the Census curve (the fee is taken on-chain). BUY: an ETH-anchored
         // coin takes native ETH in one tx (buyWithETH wraps for you); another anchor means approving that
         // token, then curve.buy. SELL approves the coin, then sells — ETH-anchored coins pay out native ETH.
         if (buy) {
           if (isWethQuote) {
             setStatus("Confirm in your wallet…");
-            const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "buyWithETH", args: [coinAddr, minOut], value: amountIn });
+            const h = await writeContractAsync({ chainId: CHAIN.id, address: curveAddr, abi: censusCurveV4Abi, functionName: "buyWithETH", args: [coinAddr, minOut], value: amountIn });
             setStatus("Buying…");
             await publicClient.waitForTransactionReceipt({ hash: h });
             setStatus("Bought ✓");
           } else {
             if (quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${anchor} in your wallet to buy this coin.`); return; }
-            setStatus("Approving…");
-            const a = await writeContractAsync({ chainId: CHAIN.id, address: quote, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.curve, amountIn] });
-            await publicClient.waitForTransactionReceipt({ hash: a });
+            await ensureAllowance(quote, curveAddr, amountIn);
             setStatus("Confirm in your wallet…");
-            const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.curve, abi: censusCurveAbi, functionName: "buy", args: [coinAddr, amountIn, minOut] });
+            const h = await writeContractAsync({ chainId: CHAIN.id, address: curveAddr, abi: censusCurveV4Abi, functionName: "buy", args: [coinAddr, amountIn, minOut] });
             setStatus("Buying…");
             await publicClient.waitForTransactionReceipt({ hash: h });
             setStatus("Bought ✓");
           }
         } else {
-          setStatus("Approving…");
-          const a = await writeContractAsync({ chainId: CHAIN.id, address: coinAddr, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.curve, amountIn] });
-          await publicClient.waitForTransactionReceipt({ hash: a });
+          await ensureAllowance(coinAddr, curveAddr, amountIn);
           setStatus("Confirm in your wallet…");
-          const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.curve, abi: censusCurveAbi, functionName: isWethQuote ? "sellForETH" : "sell", args: [coinAddr, amountIn, minOut] });
+          const h = await writeContractAsync({ chainId: CHAIN.id, address: curveAddr, abi: censusCurveV4Abi, functionName: isWethQuote ? "sellForETH" : "sell", args: [coinAddr, amountIn, minOut] });
           setStatus("Selling…");
           await publicClient.waitForTransactionReceipt({ hash: h });
           setStatus(isWethQuote ? "Sold ✓ — paid out in ETH" : "Sold ✓");
@@ -296,48 +309,32 @@ export function Coin() {
         return;
       }
 
-      // Graduated: the coin trades on its permanently locked Uniswap pool. WETH-anchored coins try 0x
-      // first (best execution; 0x won't route tokenised-stock anchors like HOOD), else the pool directly.
-      if (buy && !isWethQuote && quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${anchor} in your wallet to buy this coin.`); return; }
-      if (buy && isWethQuote) {
-        setStatus("Wrapping ETH…");
-        const w = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.weth, abi: wethAbi, functionName: "deposit", value: amountIn });
-        await publicClient.waitForTransactionReceipt({ hash: w });
-      }
-      if (isWethQuote) {
-        const q = await zeroExQuote({ sellToken, buyToken, sellAmount: amountIn, taker: me, slippageBps }).catch(() => undefined);
-        if (q && q.liquidityAvailable !== false && q.transaction?.data) {
-          const spender = allowanceSpender(q);
-          if (spender) {
-            const current = await publicClient.readContract({ address: sellToken, abi: erc20Abi, functionName: "allowance", args: [me, spender] });
-            if (current < amountIn) {
-              setStatus("Approving…");
-              const a = await writeContractAsync({ chainId: CHAIN.id, address: sellToken, abi: erc20Abi, functionName: "approve", args: [spender, amountIn] });
-              await publicClient.waitForTransactionReceipt({ hash: a });
-            }
-          }
-          setStatus(`Swapping via ${routeSummary(q)}…`);
-          const h = await sendTransactionAsync({ chainId: CHAIN.id, to: q.transaction.to, data: q.transaction.data, value: BigInt(q.transaction.value || "0") });
-          await publicClient.waitForTransactionReceipt({ hash: h });
-          setStatus(buy ? "Bought ✓" : "Sold ✓");
-          return;
+      // Graduated: the coin trades in its canonical hooked V4 pool through CensusV4Router (ERC20 exact
+      // input). BUY: an ETH-anchored coin wraps ETH to WETH first, then approves the router and swaps;
+      // SELL approves the coin to the router and swaps. The hook charges the fee inside the swap; the
+      // quoter's number already includes it.
+      if (buy) {
+        if (quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${anchor} in your wallet to buy this coin.`); return; }
+        if (isWethQuote) {
+          setStatus("Wrapping ETH…");
+          const w = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.weth, abi: wethAbi, functionName: "deposit", value: amountIn });
+          await publicClient.waitForTransactionReceipt({ hash: w });
         }
+        await ensureAllowance(quote, CONTRACTS.v4Router, amountIn);
+      } else {
+        await ensureAllowance(coinAddr, CONTRACTS.v4Router, amountIn);
       }
-      // CX-H1: the pool path's minOut came from the live spot. Before trading against it, refuse if the
-      // spot has swung far from the pool TWAP — an attacker who moved the pool one block earlier can't
-      // set the reference our own minOut is measured against. A warming pool (no TWAP) is allowed on spot.
-      const dev = await poolTwapDeviationBps(publicClient, sellToken, buyToken, poolFee);
-      if (dev != null && dev > MAX_POOL_DEVIATION_BPS) { setStatus("This coin's pool price is swinging right now — wait a moment and try again."); return; }
-      setStatus("Approving…");
-      const a2 = await writeContractAsync({ chainId: CHAIN.id, address: sellToken, abi: erc20Abi, functionName: "approve", args: [CONTRACTS.swapRouter, amountIn] });
-      await publicClient.waitForTransactionReceipt({ hash: a2 });
-      setStatus("Swapping on the pool…");
-      const h2 = await writeContractAsync({
-        chainId: CHAIN.id, address: CONTRACTS.swapRouter, abi: swapRouterAbi, functionName: "exactInputSingle",
-        args: [{ tokenIn: sellToken, tokenOut: buyToken, fee: poolFee, recipient: me, amountIn, amountOutMinimum: minOut, sqrtPriceLimitX96: 0n }],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: h2 });
-      setStatus(buy ? "Bought ✓" : "Sold ✓");
+      setStatus("Confirm in your wallet…");
+      const req = swapRequest({ coin: coinAddr, quote, buy, amountIn, minOut, recipient: me });
+      // Gas buffer: other trades can move the pool between this estimate and inclusion, and a V4 swap that
+      // runs out of gas inside the final token transfer surfaces as an opaque failure. Found in the testnet
+      // stress harness; 30% headroom on the wallet's own estimate keeps the swap alive.
+      let gas: bigint | undefined;
+      try { gas = ((await publicClient.estimateContractGas({ address: CONTRACTS.v4Router, abi: v4RouterAbi, functionName: "swapExactInput", args: [req], account: me })) * 13n) / 10n; } catch { gas = undefined; }
+      const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.v4Router, abi: v4RouterAbi, functionName: "swapExactInput", args: [req], ...(gas ? { gas } : {}) });
+      setStatus("Swapping in the pool…");
+      await publicClient.waitForTransactionReceipt({ hash: h });
+      setStatus(buy ? "Bought ✓" : isWethQuote ? "Sold ✓ — paid out in WETH" : "Sold ✓");
     } catch (e: any) {
       setStatus(friendly(e));
     } finally {
@@ -360,7 +357,7 @@ export function Coin() {
     } finally { setSavingMeta(false); }
   }
 
-  // Maxima: pull the whole claimable basket in one call.
+  // Pull the whole claimable basket from the vault in one call.
   async function claim() {
     if (!publicClient || !cq.vault || claiming) return;
     setStatus("");
@@ -415,23 +412,29 @@ export function Coin() {
 
   const copy = () => { navigator.clipboard?.writeText(coinAddr); setCopied(true); setTimeout(() => setCopied(false), 1200); };
   const metaNote = pendingMeta && isCreator ? "Your coin's thesis and logo haven't been saved yet." : (loc.state as any)?.metaSaved === false && !meta ? "Launched. Your coin's details weren't saved; connect as the creator to save them." : "";
-  const launchTaxBps = onCurve && buyFeeBps != null && buyFeeBps > TRADE_FEE_BPS ? buyFeeBps - TRADE_FEE_BPS : 0;
-  const feeRate = onCurve ? (buy ? (buyFeeBps ?? TRADE_FEE_BPS) : TRADE_FEE_BPS) / 10000 : poolFee / 1e6;
+  // Fee presentation: "Fee X%" where X is the live curve buy fee for buys (shows the launch-window penalty),
+  // the curve sell fee for sells, and base + reflection in the canonical pool. Never a Uniswap tier.
+  const launchTaxBps = onCurve && buy && buyFeeBps != null && buyFeeBps > standingFeeBps ? buyFeeBps - standingFeeBps : 0;
+  const feeBps = onCurve ? (buy ? (buyFeeBps ?? standingFeeBps) : (sellFeeBps ?? standingFeeBps)) : standingFeeBps;
+  const feeRate = feeBps / 10000;
   let amountInRaw: bigint | null = null;
   try { amountInRaw = amount ? parseUnits(amount, buy ? quoteDec : 18) : null; } catch { amountInRaw = null; }
   const overRoom = buy && onCurve && maxIn != null && amountInRaw != null && amountInRaw > maxIn;
-  const feePctLabel = `${+(feeRate * 100).toFixed(2)}%`;
+  const feePctLabel = pctLabel(feeBps);
+  const standingFeeLabel = pctLabel(standingFeeBps);
+  const feeNote = launchTaxBps > 0 ? `${feeBreakdown(reflectionBps)} + ${pctLabel(launchTaxBps)} launch window` : feeBreakdown(reflectionBps);
   const outUnits = buy ? 18 : quoteDec;
   const outHuman = quoteOut != null ? Number(formatUnits(quoteOut, outUnits)) : null;
   const feeDisp = buy
     ? `${fmtAmount((Number(amount) || 0) * feeRate, 5)} ${anchor}`
     : outHuman != null ? `${fmtAmount((outHuman * feeRate) / (1 - feeRate), 5)} ${anchor}` : "—";
-  const routeDisp = onCurve ? "The Census curve" : graduated ? (via && via !== "pool" ? `0x · ${via}` : "Locked Uniswap pool") : "—";
+  const routeDisp = onCurve ? "The Census curve" : graduated ? (isV4 ? (via === "pool-spot" ? "Canonical pool (spot est.)" : "Canonical pool") : "Uniswap V3 pool (legacy)") : "—";
   const balDisp = !me ? "" : buy
     ? quoteBal != null ? `Balance ${fmtAmount(Number(formatUnits(quoteBal, quoteDec)))} ${anchor}` : ""
     : coinBal != null ? `Balance ${fmtAmount(Number(formatUnits(coinBal, 18)), 2)} ${coinSym}` : "";
   const sellPreset = (pct: number) => { if (coinBal == null) return; setAmount(formatUnits((coinBal * BigInt(pct)) / 100n, 18)); };
-  const claimable = rewards?.stocks.some((s) => s.amount > 0n) ?? false;
+  const claimable = hasClaimable(rewards);
+  const basketDisp = rewards?.assets.map((a) => `${a.ticker} ${Math.round(a.weightBps / 100)}%`).join(", ");
   const anchorNode = anchorIsCoin
     ? <Link to={`/coin/${quote}`} className="cx-link-control" style={{ padding: 0, fontSize: "inherit", letterSpacing: "inherit", textTransform: "inherit" }}>${anchor}</Link>
     : <>{anchor}</>;
@@ -449,7 +452,7 @@ export function Coin() {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
           <CxAvatar name={coinName} image={meta?.image} size={80} />
           <div style={{ minWidth: 0 }}>
-            <div className="cx-label">{cq.resolved ? <>{tier} · anchored to {anchorNode}{graduated ? " · Company coin" : ""}</> : "Loading"}</div>
+            <div className="cx-label">{cq.resolved ? <>{isV4 ? "Census coin" : "Legacy coin"} · anchored to {anchorNode}{reflectionBps > 0 ? ` · ${pctLabel(reflectionBps)} holder reflection` : ""}{pairable ? " · Company coin" : ""}</> : "Loading"}</div>
             <h1 className="cx-h1" style={{ fontSize: 40, marginTop: 10 }}>{coinName}</h1>
             {meta?.thesis && <p style={{ margin: "10px 0 0", fontSize: 15, color: "var(--census-text-secondary)" }}>{meta.thesis}</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
@@ -494,13 +497,15 @@ export function Coin() {
         </div>
         <p style={{ margin: "16px 0 0", fontSize: 14, color: "var(--census-text-secondary)" }}>
           {graduated
-            ? "The curve closed. Liquidity is locked permanently in a Uniswap V3 pool."
+            ? isV4
+              ? `The curve closed. Liquidity is locked permanently in the canonical Census pool, where the Census hook keeps charging the ${standingFeeLabel} fee.`
+              : "The curve closed. Liquidity is locked permanently in a Uniswap V3 pool (previous Census release)."
             : graduationTarget != null
-              ? `At ${fmtAmount(graduationTarget, 2)} ${anchor} the curve closes and liquidity moves to a permanently locked Uniswap V3 pool.`
-              : "When the curve fills, liquidity moves to a permanently locked Uniswap V3 pool."}
+              ? `At ${fmtAmount(graduationTarget, 2)} ${anchor} the curve closes and liquidity moves to the canonical Census pool, locked permanently. The same ${standingFeeLabel} fee applies there.`
+              : `When the curve fills, liquidity moves to the canonical Census pool, locked permanently. The same ${standingFeeLabel} fee applies there.`}
         </p>
 
-        {graduated && (
+        {pairable && (
           <>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, margin: "44px 0 16px", flexWrap: "wrap" }}>
               <div className="cx-section-title">Ecosystem</div>
@@ -521,30 +526,36 @@ export function Coin() {
           <>
             <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Your rewards</div>
             <div className="cx-panel cx-panel--plain">
-              {!isConnected ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                  <div className="cx-stat__note" style={{ marginTop: 0 }}>Holders of ${coinSym || "this coin"} earn a share of every trade, paid in {rewards?.stocks.map((s) => s.ticker).join(", ") || "the stock basket"}. Connect to see yours.</div>
-                  <button className="cx-cta" onClick={connect} disabled={connecting}>{connecting ? "Connecting…" : "Connect wallet"}</button>
-                </div>
-              ) : rewards == null ? (
+              {rewards == null ? (
                 <div className="cx-stat__note" style={{ marginTop: 0 }}>Reading the vault…</div>
               ) : (
                 <>
+                  <div className="cx-stat__note" style={{ marginTop: 0, marginBottom: 14 }}>
+                    Holders of ${coinSym || "this coin"} earn a {pctLabel(reflectionBps)} reflection on every trade, paid in {basketDisp || "the reward basket"}. Rewards are paid in {anchor} and listed stocks, never in the coin. Basket and reflection were fixed at launch.
+                  </div>
                   <div style={{ display: "grid", gap: 10 }}>
-                    {rewards.stocks.map((s) => (
-                      <div key={s.stock} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 14 }}><AnchorMark anchor={s.ticker} size={18} /> {s.ticker}</span>
-                        <Num kind={s.amount > 0n ? "key" : "value"}>{s.amount > 0n ? fmtAmount(Number(formatUnits(s.amount, s.decimals)), 6) : "—"}</Num>
+                    {rewards.assets.map((a) => (
+                      <div key={a.asset} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 14 }}>
+                          <AnchorMark anchor={a.ticker} isCoin={a.isQuote && anchorIsCoin} size={18} />
+                          {a.ticker}
+                          <span className="cx-label">{Math.round(a.weightBps / 100)}%</span>
+                        </span>
+                        <Num kind={a.amount > 0n ? "key" : "value"}>{!isConnected ? "—" : a.amount > 0n ? fmtAmount(Number(formatUnits(a.amount, a.decimals)), 6) : "—"}</Num>
                       </div>
                     ))}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
                     <div className="cx-stat__note" style={{ marginTop: 0 }}>
-                      {rewards.undistributed > 0n
-                        ? `${fmtAmount(Number(formatUnits(rewards.undistributed, quoteDec)), 5)} ${anchor} of fees are waiting to be swapped into the basket.`
-                        : "Fees are swapped into the basket as they arrive."}
+                      {!isConnected
+                        ? "Connect to see what you can claim."
+                        : rewards.undistributed > 0n
+                          ? `${fmtAmount(Number(formatUnits(rewards.undistributed, quoteDec)), 5)} ${anchor} of fees are waiting to be distributed into the basket.`
+                          : "Fees are distributed into the basket as they arrive."}
                     </div>
-                    <button className="cx-cta" onClick={claim} disabled={!claimable || claiming} title={claimable ? undefined : "Nothing to claim yet"}>{claiming ? "Claiming…" : "Claim"}</button>
+                    {isConnected
+                      ? <button className="cx-cta" onClick={claim} disabled={!claimable || claiming} title={claimable ? undefined : "Nothing to claim yet"}>{claiming ? "Claiming…" : "Claim"}</button>
+                      : <button className="cx-cta" onClick={connect} disabled={connecting}>{connecting ? "Connecting…" : "Connect wallet"}</button>}
                   </div>
                 </>
               )}
@@ -603,7 +614,7 @@ export function Coin() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 28 }}>
             <QuoteRow label="You receive ~" value={outHuman != null ? `${fmtAmount(outHuman, 6)} ${buy ? coinSym : anchor}` : "—"} bright />
-            <QuoteRow label={`Fee (${feePctLabel})`} value={feeDisp} />
+            <QuoteRow label={`Fee ${feePctLabel}`} value={feeDisp} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span className="cx-label">Max slippage</span>
               <div style={{ display: "flex", gap: 8 }}>
@@ -614,14 +625,19 @@ export function Coin() {
             </div>
             <QuoteRow label="Route" value={routeDisp} />
           </div>
-          {launchTaxBps > 0 && buy && (
+          {launchTaxBps > 0 && (
             <div className="cx-label" style={{ marginTop: 12, color: "var(--census-text-secondary)" }}>
-              Launch window: buys pay {feePctLabel} right now, falling to {TRADE_FEE_LABEL} within three seconds of launch. The block your trade lands in sets the rate.
+              Launch window: buys pay {feePctLabel} right now, falling to {standingFeeLabel} within three seconds of launch. The block your trade lands in sets the rate.
             </div>
           )}
           {overRoom && maxIn != null && (
             <div className="cx-label" style={{ marginTop: 12, color: "var(--census-text-secondary)" }}>
               Only {fmtAmount(Number(formatUnits(maxIn, quoteDec)), 5)} {anchor} of room is left before the curve fills; anything above that is refunded in the same transaction.
+            </div>
+          )}
+          {onPool && via === "pool-spot" && (
+            <div className="cx-label" style={{ marginTop: 12, color: "var(--census-text-secondary)" }}>
+              Estimated from the pool's spot price, before price impact — your slippage setting covers the difference.
             </div>
           )}
 
@@ -641,7 +657,14 @@ export function Coin() {
               )}
             </>
           )}
-          <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>{onCurve ? (launchTaxBps > 0 && buy ? `${feePctLabel} during the launch window` : `${TRADE_FEE_LABEL} trade fee`) : graduated ? `${feePctLabel} pool fee` : "—"}</div>
+          <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>
+            {onCurve ? `Fee ${feePctLabel} · ${feeNote}` : onPool ? `Fee ${standingFeeLabel} · ${feeBreakdown(reflectionBps)}` : "—"}
+          </div>
+          {onPool && (
+            <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>
+              Charged by the Census hook in the canonical pool. Trades in other venues aren't charged and don't fund creator or holder rewards.
+            </div>
+          )}
           {anchorIsCoin && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>Trades settle in ${anchor} — hold some to buy.</div>}
           {!isConnected && connectError && <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: "#e06c60" }}>{connectError}</div>}
           {isConnected && tradeBlock && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{tradeBlock}</div>}
@@ -653,8 +676,9 @@ export function Coin() {
           <CurveRow k="Supply" v={supply != null ? fmtAmount(supply, 0) : "—"} />
           <CurveRow k="Anchored to" v={cq.resolved ? anchor : "—"} />
           <CurveRow k="Graduation at" v={graduationTarget != null ? `${fmtAmount(graduationTarget, 2)} ${anchor}` : "—"} />
-          <CurveRow k="Trade fee" v={graduated ? `${feePctLabel} (pool)` : TRADE_FEE_LABEL} />
-          {hasVault && cq.holdersBps != null && <CurveRow k="Holders' share" v={`${Math.round(cq.holdersBps / 100)}% of creator rewards`} />}
+          <CurveRow k="Trade fee" v={cq.resolved ? `${standingFeeLabel} (${feeBreakdown(reflectionBps)})` : TRADE_FEE_LABEL} />
+          {hasVault && <CurveRow k="Holder reflection" v={`${pctLabel(reflectionBps)} → ${basketDisp || "reward basket"}`} />}
+          <CurveRow k="Trades on" v={onCurve ? "The Census curve" : graduated ? (isV4 ? "Canonical pool · Census hook" : "Uniswap V3 pool (legacy)") : "—"} />
         </div>
       </div>
     </div>

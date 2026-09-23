@@ -1,11 +1,44 @@
-import { useState } from "react";
-import { useParams } from "react-router-dom";
-import { useAccount, useBalance } from "wagmi";
-import { type Address } from "viem";
-import { useLaunches } from "../lib/useLaunches";
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { useAccount, useBalance, usePublicClient, useWriteContract } from "wagmi";
+import { formatUnits, type Address } from "viem";
+import { useLaunches, type LaunchedCoin } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
-import { CxAvatar, HomeRow, StatBand, PendingPanel, EmptyPanel, Icon, fmtUsd, shortAddr, CHAIN, useWalletConnect, type DisplayCoin } from "../census";
-import { IS_MAINNET } from "../config";
+import { readRewards, hasClaimable, type Rewards } from "../lib/rewards";
+import { readCurve } from "../lib/curves";
+import { vaultAbi } from "../abis";
+import { CxAvatar, HomeRow, StatBand, PendingPanel, EmptyPanel, Icon, Num, fmtUsd, fmtAmount, shortAddr, CHAIN, useWalletConnect, type DisplayCoin } from "../census";
+import { IS_MAINNET, pctLabel } from "../config";
+
+type WalletReward = { coin: LaunchedCoin; rewards: Rewards };
+
+// Claimable holder rewards for a wallet across the V4 launches that have a reflection vault: one
+// withdrawableOf read per basket asset per vault, straight off the vaults (no indexer needed).
+function useWalletRewards(addr: Address | undefined, coins: LaunchedCoin[], nonce: number): { rewards: WalletReward[] | null; vaults: number } {
+  const pc = usePublicClient();
+  const [rewards, setRewards] = useState<WalletReward[] | null>(null);
+  const vaultCoins = coins.filter((c) => c.venue === "v4" && !!c.vault);
+  const key = vaultCoins.map((c) => c.address.toLowerCase()).sort().join(",");
+  useEffect(() => {
+    let cancelled = false;
+    setRewards(null);
+    if (!pc || !addr) return;
+    if (!vaultCoins.length) { setRewards([]); return; }
+    (async () => {
+      const found = await Promise.all(vaultCoins.map(async (coin): Promise<WalletReward | null> => {
+        try {
+          const quote = coin.quote ?? (await readCurve(pc, coin.address))?.quote;
+          if (!quote || !coin.vault) return null;
+          const r = await readRewards(pc, coin.vault, quote, addr);
+          return hasClaimable(r) ? { coin, rewards: r } : null;
+        } catch { return null; }
+      }));
+      if (!cancelled) setRewards(found.filter((x): x is WalletReward => !!x));
+    })();
+    return () => { cancelled = true; };
+  }, [pc, addr, key, nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { rewards, vaults: vaultCoins.length };
+}
 
 const TABS = [
   { key: "created", label: "Created" },
@@ -18,7 +51,7 @@ const TABS = [
 export function Profile() {
   const { address: param } = useParams();
   const { address: me } = useAccount();
-  const { connect, signUp, connecting, pending, error: connectError, signOut, session, exportWallet } = useWalletConnect();
+  const { connect, signUp, connecting, pending, error: connectError, signOut, session, exportWallet, ensureChain } = useWalletConnect();
   const [exporting, setExporting] = useState(false);
   const addr = (param || me) as Address | undefined;
   const isMine = !!me && (!param || param.toLowerCase() === me.toLowerCase());
@@ -29,6 +62,26 @@ export function Profile() {
   const mine = addr ? coins.filter((c) => c.creator.toLowerCase() === addr.toLowerCase()) : [];
   const stats = useCurveStats(mine.map((c) => c.address));
   const bal = useBalance({ address: addr });
+  // Claimable reflection rewards across V4 launches this wallet holds (any vault with withdrawableOf > 0).
+  const [rewardNonce, setRewardNonce] = useState(0);
+  const { rewards: claimables, vaults } = useWalletRewards(addr, coins, rewardNonce);
+  const publicClient = usePublicClient();
+  const { writeContractAsync } = useWriteContract();
+  const [claimingVault, setClaimingVault] = useState<string | null>(null);
+  const [claimStatus, setClaimStatus] = useState("");
+  async function claimFrom(vault: Address) {
+    if (!publicClient || claimingVault) return;
+    setClaimStatus(""); setClaimingVault(vault);
+    try {
+      if (!(await ensureChain())) { setClaimStatus(`Switch your wallet to ${CHAIN.name}, then claim.`); return; }
+      const h = await writeContractAsync({ chainId: CHAIN.id, address: vault, abi: vaultAbi, functionName: "claim" });
+      await publicClient.waitForTransactionReceipt({ hash: h });
+      setClaimStatus("Claimed ✓");
+    } catch (e: any) {
+      const raw = String(e?.shortMessage ?? e?.message ?? e ?? "");
+      setClaimStatus(/reject|denied|cancel/i.test(raw) ? "Cancelled in your wallet." : raw.slice(0, 140) || "Something went wrong.");
+    } finally { setClaimingVault(null); setRewardNonce((n) => n + 1); }
+  }
 
   if (!addr) {
     return (
@@ -85,6 +138,42 @@ export function Profile() {
               : `This is ${CHAIN.name}. Get test ETH from the Robinhood Chain testnet faucet and send it to your address above.`}
           </div>
           <button className="cx-quiet" style={{ marginTop: 14 }} onClick={copy}>{copied ? "Address copied" : "Copy my address"}</button>
+        </div>
+      )}
+
+      {/* Claimable holder rewards across the V4 launches this wallet holds — read straight off the vaults. */}
+      {vaults > 0 && (
+        <div className="cx-panel cx-panel--plain" style={{ marginTop: 28 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
+            <div className="cx-section-title">Claimable rewards</div>
+            <span className="cx-label">{claimables == null ? "Reading vaults…" : `${claimables.length} of ${vaults} reflection ${vaults === 1 ? "launch" : "launches"}`}</span>
+          </div>
+          {claimables == null ? (
+            <div className="cx-stat__note" style={{ marginTop: 0 }}>Checking what this wallet can claim…</div>
+          ) : claimables.length === 0 ? (
+            <div className="cx-stat__note" style={{ marginTop: 0 }}>Nothing to claim right now. Hold a coin with a holder reflection and its trade fees accrue to you here.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              {claimables.map(({ coin, rewards }) => (
+                <div key={coin.address} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                    <CxAvatar name={coin.name} size={34} />
+                    <div style={{ minWidth: 0 }}>
+                      <Link to={`/coin/${coin.address}`} className="cx-link-control" style={{ padding: 0, fontSize: 14, letterSpacing: "inherit", textTransform: "inherit" }}>{coin.name} <span className="cx-num" style={{ color: "var(--census-lime)" }}>${coin.symbol}</span></Link>
+                      <div className="cx-label" style={{ marginTop: 4 }}>
+                        {coin.reflectionBps != null ? `${pctLabel(coin.reflectionBps)} reflection · ` : ""}
+                        {rewards.assets.filter((a) => a.amount > 0n).map((a) => `${fmtAmount(Number(formatUnits(a.amount, a.decimals)), 6)} ${a.ticker}`).join(" · ")}
+                      </div>
+                    </div>
+                  </div>
+                  {isMine
+                    ? <button className="cx-cta" disabled={!!claimingVault} onClick={() => claimFrom(rewards.vault)}>{claimingVault === rewards.vault ? "Claiming…" : "Claim"}</button>
+                    : <Num kind="key">claimable</Num>}
+                </div>
+              ))}
+            </div>
+          )}
+          {claimStatus && <div className="cx-label" style={{ marginTop: 12, color: "var(--census-text-secondary)" }}>{claimStatus}</div>}
         </div>
       )}
 

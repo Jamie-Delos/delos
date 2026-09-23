@@ -1,5 +1,6 @@
-// Direct reads of a coin's graduated Uniswap V3 pool. Only used after graduation, when the curve no
-// longer prices the coin: an indicative "you receive ~", the displayed price/mcap, and the trade bound.
+// Direct reads of Uniswap V3 pools. Two remaining uses: the anchor/USDG price pools that give ETH and
+// HOOD their USD price, and the graduated pools of LEGACY (V3-era) coins. New launches graduate into a
+// hooked Uniswap V4 pool instead — see lib/v4pool.ts.
 //
 // Pricing is TWAP-first (CX-H1). A one-block Uniswap spot (slot0) is trivially manipulable on a shallow
 // full-range position, and it used to drive displayed price, market cap AND the on-chain amountOutMinimum.
@@ -8,14 +9,14 @@
 // fresh pool's buffer is still warming. Display/mcap use the TWAP; the trade estimate uses the executable
 // spot but is gated by poolTwapDeviationBps (a spot far from the TWAP = manipulation/instability → block).
 import { zeroAddress, type Address, type PublicClient } from "viem";
-import { CONTRACTS, DEFAULT_FEE } from "../config";
+import { CONTRACTS, LEGACY_V3_POOL_FEE } from "../config";
 import { v3FactoryAbi, poolAbi, quoterV2Abi } from "../abis";
 
 type PoolInfo = { pool: Address; token0: Address };
 const cache = new Map<string, PoolInfo | null>();
 
 // The pool for a token pair at a fee tier (null when the factory isn't configured or no pool exists).
-export async function poolFor(pc: PublicClient, a: Address, b: Address, fee = DEFAULT_FEE): Promise<PoolInfo | null> {
+export async function poolFor(pc: PublicClient, a: Address, b: Address, fee = LEGACY_V3_POOL_FEE): Promise<PoolInfo | null> {
   if (CONTRACTS.v3Factory === zeroAddress) return null;
   const key = [a.toLowerCase(), b.toLowerCase()].sort().join("/") + ":" + fee;
   if (cache.has(key)) return cache.get(key)!;
@@ -78,7 +79,7 @@ function outFromRaw(raw: number, tokenIn: Address, token0: Address, amountIn: bi
 // Estimated out for swapping `amountIn` of tokenIn for tokenOut (net of the pool fee). Prices off the
 // pool TWAP by default so display/mcap can't be moved by a one-block spot; pass spotOnly=true for an
 // executable trade estimate. Price impact is ignored — a larger trade simply misses its minimum-out.
-export async function poolSpotOut(pc: PublicClient, tokenIn: Address, tokenOut: Address, amountIn: bigint, fee = DEFAULT_FEE, spotOnly = false): Promise<bigint | null> {
+export async function poolSpotOut(pc: PublicClient, tokenIn: Address, tokenOut: Address, amountIn: bigint, fee = LEGACY_V3_POOL_FEE, spotOnly = false): Promise<bigint | null> {
   const p = await poolFor(pc, tokenIn, tokenOut, fee);
   if (!p) return null;
   const r = await poolRawPrice(pc, p.pool, spotOnly);
@@ -91,7 +92,7 @@ export async function poolSpotOut(pc: PublicClient, tokenIn: Address, tokenOut: 
 // trade on a shallow pool to revert against a too-tight buffer. null when no QuoterV2 is configured
 // (see CONTRACTS.quoter) or the quote reverts (no route / no liquidity) — the caller then falls back to
 // the impact-free estimate, protected by the user's slippage.
-export async function poolQuoteOut(pc: PublicClient, tokenIn: Address, tokenOut: Address, amountIn: bigint, fee = DEFAULT_FEE): Promise<bigint | null> {
+export async function poolQuoteOut(pc: PublicClient, tokenIn: Address, tokenOut: Address, amountIn: bigint, fee = LEGACY_V3_POOL_FEE): Promise<bigint | null> {
   if (CONTRACTS.quoter === zeroAddress || amountIn <= 0n) return null;
   try {
     const res = await pc.readContract({
@@ -110,7 +111,7 @@ export async function poolQuoteOut(pc: PublicClient, tokenIn: Address, tokenOut:
 // How far the live spot has moved from the TWAP, in bps — the instability/manipulation signal used to
 // gate a pool trade. null when no TWAP is available yet (a warming pool: the caller decides whether to
 // allow the trade on spot alone).
-export async function poolTwapDeviationBps(pc: PublicClient, tokenIn: Address, tokenOut: Address, fee = DEFAULT_FEE): Promise<number | null> {
+export async function poolTwapDeviationBps(pc: PublicClient, tokenIn: Address, tokenOut: Address, fee = LEGACY_V3_POOL_FEE): Promise<number | null> {
   const p = await poolFor(pc, tokenIn, tokenOut, fee);
   if (!p) return null;
   const [t, s] = await Promise.all([poolTwapRaw(pc, p.pool), poolSpotRaw(pc, p.pool)]);

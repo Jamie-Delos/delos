@@ -1,0 +1,51 @@
+### Robinhood V3 fork (AUDIT_MAINNET_FORK=1)
+
+
+  Local fork lifecycle against configured mainnet Uniswap dependencies
+      mainnet dependency state pinned at block 69778521 ; transactions LOCAL ONLY
+      lifecycle and repaired platform/holder split verified
+    ✔ launches, trades, claims a dividend, graduates and trades the migrated pool locally (26708ms)
+
+
+  1 passing (27s)
+
+exit=0
+### Robinhood V4 fork (AUDIT_V4_FORK=1)
+
+
+  V4 Robinhood fork: deployed PoolManager compatibility
+      V4 dependency block=69778903; deployments and trades LOCAL ONLY
+    ✔ registers a Census hook, graduates and swaps against the actual deployed manager on a LOCAL fork (20715ms)
+
+
+  1 passing (21s)
+
+exit=0
+### Base legacy fork (BASE_FORK_RPC_URL=https://mainnet.base.org)
+[33mYou're running a network fork starting from the latest block.
+Performance may degrade due to fetching data from the network with each run.
+If connecting to an archival node (e.g. Alchemy), we strongly recommend setting
+blockNumber to a fixed value to increase performance with a local cache.[39m
+
+
+  launch -> buy -> collect fees, with graduation split (Base fork)
+    1) "before all" hook for "pre-graduation: creator keeps 100%, vault gets nothing"
+
+
+  0 passing (3s)
+  1 failing
+
+  1) launch -> buy -> collect fees, with graduation split (Base fork)
+       "before all" hook for "pre-graduation: creator keeps 100%, vault gets nothing":
+     TypeError: invalid overrides parameter (argument="overrides", value="0xFf32E1dd5661b6f3d31aA9853d1f678e9F45c175", code=INVALID_ARGUMENT, version=6.17.0)
+      at makeError (node_modules\ethers\src.ts\utils\errors.ts:691:21)
+      at assert (node_modules\ethers\src.ts\utils\errors.ts:719:25)
+      at assertArgument (node_modules\ethers\src.ts\utils\errors.ts:731:5)
+      at copyOverrides (node_modules\ethers\src.ts\contract\contract.ts:146:19)
+      at ContractFactory.getDeployTransaction (node_modules\ethers\src.ts\contract\factory.ts:83:44)
+      at ContractFactory.deploy (node_modules\ethers\src.ts\contract\factory.ts:105:31)
+      at Context.<anonymous> (test\integration.fork.test.js:49:35)
+
+
+
+exit=1

@@ -1,0 +1,233 @@
+### prisma generate + typecheck + build
+
+> census-indexer@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+
+> census-indexer@0.1.0 build
+> tsc -p tsconfig.json
+
+exit=0
+### npm test
+
+> census-indexer@0.1.0 test
+> node backend.readiness.cjs
+
+PASS API: validation, DB/worker health, recent chart, rate limit; 1000 stub-DB requests at concurrency 50 (82ms including rate-limit checks).
+PASS ingest: RPC/write rollback, post-commit notifications, replay, missing registration, reorg/hash rejection, no RPC inside transactions, adaptive log paging; 10000 unique + 1000 duplicate events applied once (271ms, in-memory adapters).
+PASS pricing: USD fields are null (never 0/placeholder) without a configured ETH_USD/QUOTE_USD; exact when configured; unknown volume never becomes a partial sum.
+PASS v4: reflection registration, FeeAllocated split (incl. anti-snipe penalty), Graduated(poolId), PoolManager Swap + hook FeeAccrued for both currency orderings (gross volume, net sell output, oriented price), vault/hook rewards, foreign pools ignored, exactly-once replay, fail-closed fee pairing, API fields; V3 curve indexed alongside.
+exit=0
+### npm run test:pg
+
+> census-indexer@0.1.0 test:pg
+> node postgres.readiness.cjs
+
+The files belonging to this database system will be owned by user "neilr".
+This user must also own the server process.
+
+
+The database cluster will be initialized with this locale configuration:
+  locale provider:   libc
+  LC_COLLATE:  English_United States.1252
+  LC_CTYPE:    English_United States.1252
+  LC_MESSAGES: C
+  LC_MONETARY: English_United States.1252
+  LC_NUMERIC:  English_United States.1252
+  LC_TIME:     English_United States.1252
+The default database encoding has accordingly been set to "WIN1252".
+
+The default text search configuration will be set to "english".
+
+Data page checksums are enabled.
+
+creating directory C:/Users/neilr/AppData/Local/Temp/census-pg-zGVQPM/main ... 
+ok
+
+creating subdirectories ... 
+ok
+
+selecting dynamic shared memory implementation ... windows
+selecting default "max_connections" ... 
+100
+selecting default "shared_buffers" ... 
+128MB
+selecting default time zone ... 
+Europe/Berlin
+
+creating configuration files ... 
+ok
+running bootstrap script ... 
+ok
+
+performing post-bootstrap initialization ... 
+ok
+syncing data to disk ... 
+ok
+
+Success. You can now start the database server using:
+
+    ^"C^:^\Users^\neilr^\OneDrive^\Documents^\ChatGPT^\Boxabl^\Census^-Core^-Repo^\indexer^\node^_modules^\^@embedded^-postgres^\windows^-x64^\native^\bin^\pg^_ctl^" -D ^"C^:^\Users^\neilr^\AppData^\Local^\Temp^\census^-pg^-zGVQPM^\main^" -l logfile start
+
+
+2026-09-22 22:42:27.435 CEST [21036] LOG:  starting PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit
+
+2026-09-22 22:42:27.441 CEST [21036] LOG:  listening on IPv6 address "::1", port 55606
+2026-09-22 22:42:27.441 CEST [21036] LOG:  listening on IPv4 address "127.0.0.1", port 55606
+
+2026-09-22 22:42:27.926 CEST [19800] LOG:  database system was shut down at 2026-09-22 22:42:24 CEST
+
+2026-09-22 22:42:27.936 CEST [21036] LOG:  database system is ready to accept connections
+
+PASS migrate: committed migrations deploy cleanly onto 5 fresh real databases
+(node:51192) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-22 22:42:33.955 CEST [48844] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+2026-09-22 22:42:34.203 CEST [56276] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 22:42:36.714 CEST [39752] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+2026-09-22 22:42:36.940 CEST [54448] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 22:42:39.714 CEST [46684] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+2026-09-22 22:42:39.935 CEST [43208] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 22:42:44.967 CEST [27236] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 22:42:45.220 CEST [56616] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 22:42:48.091 CEST [41260] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 22:42:48.352 CEST [24808] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+
+PASS reference: 2000 V3 trades + 200 duplicate replays + graduation + pool swaps + reward events, plus a V4 coin (reflection, FeeAllocated split, poolId graduation, PoolManager/hook swaps, vault/hook rewards) applied exactly once on real Postgres (12949ms); full-range replay is a no-op
+PASS recovery: RPC outage mid-run left only whole committed pages; resume from the durable cursor reaches the reference digest
+2026-09-22 22:43:16.505 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:16.505 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("logIndex","block","blockHash","txHash","chainId") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:17.476 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:17.476 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("block","blockHash","txHash","chainId","logIndex") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:18.361 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:18.361 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("logIndex","blockHash","txHash","chainId","block") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:19.446 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:19.446 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("txHash","blockHash","logIndex","block","chainId") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:20.783 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:20.783 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("chainId","logIndex","txHash","block","blockHash") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:21.932 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:21.932 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("logIndex","chainId","block","blockHash","txHash") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:23.029 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:23.029 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("blockHash","txHash","logIndex","block","chainId") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:23.913 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:23.913 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("chainId","block","blockHash","logIndex","txHash") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:24.781 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:24.781 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("txHash","blockHash","block","logIndex","chainId") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:25.762 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:25.762 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("chainId","block","blockHash","logIndex","txHash") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 22:43:25.933 CEST [43664] ERROR:  could not serialize access due to concurrent update
+2026-09-22 22:43:25.933 CEST [43664] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("txHash","logIndex","blockHash","block","chainId") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+PASS concurrency: two workers over the same range on one real database applied every event exactly once (11736ms)
+The files belonging to this database system will be owned by user "neilr".
+This user must also own the server process.
+
+
+The database cluster will be initialized with this locale configuration:
+  locale provider:   libc
+  LC_COLLATE:  English_United States.1252
+  LC_CTYPE:    English_United States.1252
+  LC_MESSAGES: C
+  LC_MONETARY: English_United States.1252
+  LC_NUMERIC:  English_United States.1252
+  LC_TIME:     English_United States.1252
+
+The default database encoding has accordingly been set to "WIN1252".
+The default text search configuration will be set to "english".
+
+Data page checksums are enabled.
+
+
+creating directory C:/Users/neilr/AppData/Local/Temp/census-pg-zGVQPM/crash ... 
+ok
+creating subdirectories ... 
+ok
+
+selecting dynamic shared memory implementation ... windows
+selecting default "max_connections" ... 
+100
+selecting default "shared_buffers" ... 
+128MB
+selecting default time zone ... 
+Europe/Berlin
+creating configuration files ... 
+ok
+running bootstrap script ... 
+ok
+
+performing post-bootstrap initialization ... 
+ok
+syncing data to disk ... 
+ok
+
+Success. You can now start the database server using:
+
+    ^"C^:^\Users^\neilr^\OneDrive^\Documents^\ChatGPT^\Boxabl^\Census^-Core^-Repo^\indexer^\node^_modules^\^@embedded^-postgres^\windows^-x64^\native^\bin^\pg^_ctl^" -D ^"C^:^\Users^\neilr^\AppData^\Local^\Temp^\census^-pg^-zGVQPM^\crash^" -l logfile start
+
+
+2026-09-22 22:43:34.465 CEST [55744] LOG:  starting PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit
+
+2026-09-22 22:43:34.469 CEST [55744] LOG:  listening on IPv6 address "::1", port 55607
+
+2026-09-22 22:43:34.469 CEST [55744] LOG:  listening on IPv4 address "127.0.0.1", port 55607
+
+2026-09-22 22:43:35.015 CEST [64272] LOG:  database system was shut down at 2026-09-22 22:43:31 CEST
+
+2026-09-22 22:43:35.028 CEST [55744] LOG:  database system is ready to accept connections
+
+2026-09-22 22:43:38.957 CEST [12628] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 22:43:39.847 CEST [48156] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+
+2026-09-22 22:43:42.625 CEST [63016] LOG:  starting PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit
+
+2026-09-22 22:43:42.630 CEST [63016] LOG:  listening on IPv6 address "::1", port 55607
+
+2026-09-22 22:43:42.630 CEST [63016] LOG:  listening on IPv4 address "127.0.0.1", port 55607
+
+2026-09-22 22:43:44.371 CEST [52048] LOG:  database system was interrupted; last known up at 2026-09-22 22:43:35 CEST
+
+2026-09-22 22:43:45.962 CEST [52048] LOG:  database system was not properly shut down; automatic recovery in progress
+
+2026-09-22 22:43:45.968 CEST [52048] LOG:  redo starts at 0/17F16E0
+
+2026-09-22 22:43:46.063 CEST [52048] LOG:  invalid magic number 0000 in WAL segment 000000010000000000000001, LSN 0/1D32000, offset 13836288
+
+2026-09-22 22:43:46.063 CEST [52048] LOG:  redo done at 0/1D31FA8 system usage: CPU: user: 0.00 s, system: 0.07 s, elapsed: 0.09 s
+
+2026-09-22 22:43:46.098 CEST [49636] LOG:  checkpoint starting: end-of-recovery immediate wait
+
+2026-09-22 22:43:46.863 CEST [49636] LOG:  checkpoint complete: wrote 1084 buffers (6.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.051 s, sync=0.703 s, total=0.768 s; sync files=348, longest=0.007 s, average=0.003 s; distance=5378 kB, estimate=5378 kB; lsn=0/1D32048, redo lsn=0/1D32048
+
+2026-09-22 22:43:46.877 CEST [63016] LOG:  database system is ready to accept connections
+
+PASS crash: postgres hard-killed mid-ingest at block 20; WAL recovery + resume reached the reference digest
+PASS restore: logical export into a freshly-migrated database matches the reference digest and remains a valid live target (pg_dump rehearsal on production tooling remains a release gate)
+PASS load: 10000 unique + 1000 duplicate events through real serializable transactions in 43472ms (253 events/s incl. duplicates; local single-node, not a production capacity claim)
+PASS api: actual Fastify handlers on real Postgres — health (products), board, V3 + V4 coin detail (product/reflectionBps/poolId), trades with fee split, rewards, recent chart, validation; 1000 requests at concurrency 50 in 1039ms (in-process transport)
+ALL REAL-POSTGRES CHECKS PASSED
+exit=0
+### parity
+PASS PF contract/indexer parity: 121 real trades, partial-fill fees, exact reserves, price, supply, new + legacy event topics.
+exit=0

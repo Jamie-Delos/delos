@@ -1,0 +1,2364 @@
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/contracts/hardhat.config.js b/contracts/hardhat.config.js
+--- a/contracts/hardhat.config.js	2026-09-20 23:23:21.323485200 +0200
++++ b/contracts/hardhat.config.js	2026-09-22 18:07:17.138239300 +0200
+@@ -32,12 +32,12 @@
+     },
+   },
+   networks: {
+-    hardhat: {
+-      // Enable forking only when BASE_FORK_RPC_URL is set (used by integration.fork.test.js).
+-      forking: process.env.BASE_FORK_RPC_URL
+-        ? { url: process.env.BASE_FORK_RPC_URL }
+-        : undefined,
+-    },
++    // No static fork here. The legacy Base-mainnet suite (test/integration.fork.test.js, retired
++    // 2026-09-22: it targeted the pre-curve LaunchFactory and failed at setup) is replaced by the
++    // target-chain suites, which pin their own fork block at runtime (AUDIT_FORK_BLOCK to reproduce):
++    //   AUDIT_MAINNET_FORK=1 npx hardhat test test/backend.mainnet-fork.test.js --network hardhat
++    //   AUDIT_V4_FORK=1 npx hardhat test test/v4.readiness.test.js --grep "V4 Robinhood fork" --network hardhat
++    hardhat: {},
+     robinhood: {
+       url: ROBINHOOD_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
+       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/contracts/package.json b/contracts/package.json
+--- a/contracts/package.json	2026-09-21 22:27:57.044203700 +0200
++++ b/contracts/package.json	2026-09-22 18:13:54.516047200 +0200
+@@ -6,7 +6,7 @@
+   "scripts": {
+     "compile": "hardhat compile",
+     "test": "hardhat test",
+-    "test:v4": "hardhat test test/v4.fees.test.js test/v4.readiness.test.js",
++    "test:v4": "hardhat test test/v4.fees.test.js test/v4.readiness.test.js test/v4.adversarial.test.js",
+     "rehearse:bonding": "hardhat run scripts/rehearseBondingLifecycle.js --network hardhat",
+     "devnet": "hardhat run scripts/devnetLaunch.js",
+     "devnet:v2": "hardhat run scripts/devnetCurveV2.js --network hardhat",
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/contracts/package-lock.json b/contracts/package-lock.json
+--- a/contracts/package-lock.json	2026-09-20 23:22:38.043868400 +0200
++++ b/contracts/package-lock.json	2026-09-22 18:13:51.276912500 +0200
+@@ -894,6 +894,109 @@
+         "node": ">=14"
+       }
+     },
++    "node_modules/@isaacs/cliui": {
++      "version": "8.0.2",
++      "resolved": "https://registry.npmjs.org/@isaacs/cliui/-/cliui-8.0.2.tgz",
++      "integrity": "sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "string-width": "^5.1.2",
++        "string-width-cjs": "npm:string-width@^4.2.0",
++        "strip-ansi": "^7.0.1",
++        "strip-ansi-cjs": "npm:strip-ansi@^6.0.1",
++        "wrap-ansi": "^8.1.0",
++        "wrap-ansi-cjs": "npm:wrap-ansi@^7.0.0"
++      },
++      "engines": {
++        "node": ">=12"
++      }
++    },
++    "node_modules/@isaacs/cliui/node_modules/ansi-regex": {
++      "version": "6.3.0",
++      "resolved": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-6.3.0.tgz",
++      "integrity": "sha512-WpDfL7NO6j7tH88IDBNVdUJxDh9nmCteAVW9dsep846XdwF4naCBK+/tGLX3KJgcpgMRXCFlTM2hKGoK9FsdrQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/chalk/ansi-regex?sponsor=1"
++      }
++    },
++    "node_modules/@isaacs/cliui/node_modules/ansi-styles": {
++      "version": "6.2.3",
++      "resolved": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-6.2.3.tgz",
++      "integrity": "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/chalk/ansi-styles?sponsor=1"
++      }
++    },
++    "node_modules/@isaacs/cliui/node_modules/emoji-regex": {
++      "version": "9.2.2",
++      "resolved": "https://registry.npmjs.org/emoji-regex/-/emoji-regex-9.2.2.tgz",
++      "integrity": "sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/@isaacs/cliui/node_modules/string-width": {
++      "version": "5.1.2",
++      "resolved": "https://registry.npmjs.org/string-width/-/string-width-5.1.2.tgz",
++      "integrity": "sha512-HnLOCR3vjcY8beoNLtcjZ5/nxn2afmME6lhrDrebokqMap+XbeW8n9TXpPDOqdGK5qcI3oT0GKTW6wC7EMiVqA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "eastasianwidth": "^0.2.0",
++        "emoji-regex": "^9.2.2",
++        "strip-ansi": "^7.0.1"
++      },
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/sindresorhus"
++      }
++    },
++    "node_modules/@isaacs/cliui/node_modules/strip-ansi": {
++      "version": "7.2.0",
++      "resolved": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-7.2.0.tgz",
++      "integrity": "sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "ansi-regex": "^6.2.2"
++      },
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/chalk/strip-ansi?sponsor=1"
++      }
++    },
++    "node_modules/@isaacs/cliui/node_modules/wrap-ansi": {
++      "version": "8.1.0",
++      "resolved": "https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-8.1.0.tgz",
++      "integrity": "sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "ansi-styles": "^6.1.0",
++        "string-width": "^5.0.1",
++        "strip-ansi": "^7.0.1"
++      },
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/chalk/wrap-ansi?sponsor=1"
++      }
++    },
+     "node_modules/@jridgewell/resolve-uri": {
+       "version": "3.1.2",
+       "resolved": "https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz",
+@@ -1399,6 +1502,17 @@
+       "integrity": "sha512-Ly6SlsVJ3mj+b18W3R8gNufB7dTICT105fJhodGAGgyC2oqnBAhqSiNDJ8V8DLY05cCz81GLI0CU5vNYA1EC/w==",
+       "license": "MIT"
+     },
++    "node_modules/@pkgjs/parseargs": {
++      "version": "0.11.0",
++      "resolved": "https://registry.npmjs.org/@pkgjs/parseargs/-/parseargs-0.11.0.tgz",
++      "integrity": "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==",
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "engines": {
++        "node": ">=14"
++      }
++    },
+     "node_modules/@scure/base": {
+       "version": "1.2.6",
+       "resolved": "https://registry.npmjs.org/@scure/base/-/base-1.2.6.tgz",
+@@ -2242,17 +2356,17 @@
+       }
+     },
+     "node_modules/@uniswap/swap-router-contracts": {
+-      "version": "1.3.0",
+-      "resolved": "https://registry.npmjs.org/@uniswap/swap-router-contracts/-/swap-router-contracts-1.3.0.tgz",
+-      "integrity": "sha512-iKvCuRkHXEe0EMjOf8HFUISTIhlxI57kKFllf3C3PUIE0HmwxrayyoflwAz5u/TRsFGYqJ9IjX2UgzLCsrNa5A==",
++      "version": "1.3.1",
++      "resolved": "https://registry.npmjs.org/@uniswap/swap-router-contracts/-/swap-router-contracts-1.3.1.tgz",
++      "integrity": "sha512-mh/YNbwKb7Mut96VuEtL+Z5bRe0xVIbjjiryn+iMMrK2sFKhR4duk/86mEz0UO5gSx4pQIw9G5276P5heY/7Rg==",
+       "deprecated": "Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.",
+       "dev": true,
+       "license": "GPL-2.0-or-later",
+       "dependencies": {
+         "@openzeppelin/contracts": "3.4.2-solc-0.7",
+-        "@uniswap/v2-core": "1.0.1",
+-        "@uniswap/v3-core": "1.0.0",
+-        "@uniswap/v3-periphery": "1.4.1",
++        "@uniswap/v2-core": "^1.0.1",
++        "@uniswap/v3-core": "^1.0.0",
++        "@uniswap/v3-periphery": "^1.4.4",
+         "dotenv": "^14.2.0",
+         "hardhat-watcher": "^2.1.1"
+       },
+@@ -2267,34 +2381,6 @@
+       "dev": true,
+       "license": "MIT"
+     },
+-    "node_modules/@uniswap/swap-router-contracts/node_modules/@uniswap/v3-core": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/@uniswap/v3-core/-/v3-core-1.0.0.tgz",
+-      "integrity": "sha512-kSC4djMGKMHj7sLMYVnn61k9nu+lHjMIxgg9CDQT+s2QYLoA56GbSK9Oxr+qJXzzygbkrmuY6cwgP6cW2JXPFA==",
+-      "dev": true,
+-      "license": "BUSL-1.1",
+-      "engines": {
+-        "node": ">=10"
+-      }
+-    },
+-    "node_modules/@uniswap/swap-router-contracts/node_modules/@uniswap/v3-periphery": {
+-      "version": "1.4.1",
+-      "resolved": "https://registry.npmjs.org/@uniswap/v3-periphery/-/v3-periphery-1.4.1.tgz",
+-      "integrity": "sha512-Ab0ZCKOQrQMKIcpBTezTsEhWfQjItd0TtkCG8mPhoQu+wC67nPaf4hYUhM6wGHeFUmDiYY5MpEQuokB0ENvoTg==",
+-      "dev": true,
+-      "license": "GPL-2.0-or-later",
+-      "dependencies": {
+-        "@openzeppelin/contracts": "3.4.2-solc-0.7",
+-        "@uniswap/lib": "^4.0.1-alpha",
+-        "@uniswap/v2-core": "1.0.1",
+-        "@uniswap/v3-core": "1.0.0",
+-        "base64-sol": "1.0.1",
+-        "hardhat-watcher": "^2.1.1"
+-      },
+-      "engines": {
+-        "node": ">=10"
+-      }
+-    },
+     "node_modules/@uniswap/swap-router-contracts/node_modules/dotenv": {
+       "version": "14.3.2",
+       "resolved": "https://registry.npmjs.org/dotenv/-/dotenv-14.3.2.tgz",
+@@ -2784,9 +2870,9 @@
+       }
+     },
+     "node_modules/brace-expansion": {
+-      "version": "2.1.2",
+-      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-2.1.2.tgz",
+-      "integrity": "sha512-w5JZcKgdhDOgOwm8H+KgbosopHMuGcl6qbulwjtz3SM7I7P3yW1eAjzMPLrIE+NQ9vjgANKHWeMHnrT0OXW1oA==",
++      "version": "2.1.7",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-2.1.7.tgz",
++      "integrity": "sha512-uZbew1NqdmPDTMJ8ah1y+b+9QEJrfkXFk3RcTQw3X0jW/xRUvFKsg1CfQdSYGdTbXZWExtU3J3ccxtnfw1Fi0g==",
+       "dev": true,
+       "license": "MIT",
+       "dependencies": {
+@@ -3186,6 +3272,7 @@
+       "integrity": "sha512-OcRE68cOsVMXp1Yvonl/fzkQOyjLSu/8bhPDfQt0e0/Eb283TKP20Fs2MqoPsr9SwA595rRCA+QMzYc9nBP+JQ==",
+       "dev": true,
+       "license": "ISC",
++      "peer": true,
+       "dependencies": {
+         "string-width": "^4.2.0",
+         "strip-ansi": "^6.0.0",
+@@ -3521,6 +3608,37 @@
+       "license": "MIT",
+       "peer": true
+     },
++    "node_modules/cross-spawn": {
++      "version": "7.0.6",
++      "resolved": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz",
++      "integrity": "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "path-key": "^3.1.0",
++        "shebang-command": "^2.0.0",
++        "which": "^2.0.1"
++      },
++      "engines": {
++        "node": ">= 8"
++      }
++    },
++    "node_modules/cross-spawn/node_modules/which": {
++      "version": "2.0.2",
++      "resolved": "https://registry.npmjs.org/which/-/which-2.0.2.tgz",
++      "integrity": "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "isexe": "^2.0.0"
++      },
++      "bin": {
++        "node-which": "bin/node-which"
++      },
++      "engines": {
++        "node": ">= 8"
++      }
++    },
+     "node_modules/crypt": {
+       "version": "0.0.2",
+       "resolved": "https://registry.npmjs.org/crypt/-/crypt-0.0.2.tgz",
+@@ -3649,6 +3767,7 @@
+       "integrity": "sha512-vtcDfH3TOjP8UekytvnHH1o1P4FcUdt4eQ1Y+Abap1tk/OB2MWQvcwS2ClCd1zuIhc3JKOx6p3kod8Vfys3E+A==",
+       "dev": true,
+       "license": "BSD-3-Clause",
++      "peer": true,
+       "engines": {
+         "node": ">=0.3.1"
+       }
+@@ -3708,6 +3827,13 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/eastasianwidth": {
++      "version": "0.2.0",
++      "resolved": "https://registry.npmjs.org/eastasianwidth/-/eastasianwidth-0.2.0.tgz",
++      "integrity": "sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/elliptic": {
+       "version": "6.6.1",
+       "resolved": "https://registry.npmjs.org/elliptic/-/elliptic-6.6.1.tgz",
+@@ -4243,9 +4369,9 @@
+       "peer": true
+     },
+     "node_modules/fast-uri": {
+-      "version": "3.1.3",
+-      "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.3.tgz",
+-      "integrity": "sha512-i70LwGWUduXqzicKXWshooq+sWL1K3WUU5rKZNG/0i3a1OSoX3HqhH5WbWwTmqWfor4urUakGPiRQcleRZTwOg==",
++      "version": "3.1.8",
++      "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.8.tgz",
++      "integrity": "sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==",
+       "dev": true,
+       "funding": [
+         {
+@@ -4363,6 +4489,23 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/foreground-child": {
++      "version": "3.3.1",
++      "resolved": "https://registry.npmjs.org/foreground-child/-/foreground-child-3.3.1.tgz",
++      "integrity": "sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "cross-spawn": "^7.0.6",
++        "signal-exit": "^4.0.1"
++      },
++      "engines": {
++        "node": ">=14"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
+     "node_modules/form-data": {
+       "version": "4.0.6",
+       "resolved": "https://registry.npmjs.org/form-data/-/form-data-4.0.6.tgz",
+@@ -4417,7 +4560,8 @@
+       "resolved": "https://registry.npmjs.org/fs.realpath/-/fs.realpath-1.0.0.tgz",
+       "integrity": "sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw==",
+       "dev": true,
+-      "license": "ISC"
++      "license": "ISC",
++      "peer": true
+     },
+     "node_modules/fsevents": {
+       "version": "2.3.3",
+@@ -4625,6 +4769,7 @@
+       "deprecated": "Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me",
+       "dev": true,
+       "license": "ISC",
++      "peer": true,
+       "dependencies": {
+         "fs.realpath": "^1.0.0",
+         "inflight": "^1.0.4",
+@@ -4704,9 +4849,9 @@
+       }
+     },
+     "node_modules/globby/node_modules/brace-expansion": {
+-      "version": "1.1.16",
+-      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.16.tgz",
+-      "integrity": "sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==",
++      "version": "1.1.21",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.21.tgz",
++      "integrity": "sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==",
+       "dev": true,
+       "license": "MIT",
+       "peer": true,
+@@ -4808,9 +4953,9 @@
+       }
+     },
+     "node_modules/hardhat": {
+-      "version": "2.28.6",
+-      "resolved": "https://registry.npmjs.org/hardhat/-/hardhat-2.28.6.tgz",
+-      "integrity": "sha512-zQze7qe+8ltwHvhX5NQ8sN1N37WWZGw8L63y+2XcPxGwAjc/SMF829z3NS6o1krX0sryhAsVBK/xrwUqlsot4Q==",
++      "version": "2.29.1",
++      "resolved": "https://registry.npmjs.org/hardhat/-/hardhat-2.29.1.tgz",
++      "integrity": "sha512-BVPE15F9+gWH5Eof7aAhprXTi05mNHwn32fwIKMeMFqrkU3Jun1f7NubXsJ0SOeMqu0mchF6KkW7rx1CHinlWw==",
+       "dev": true,
+       "license": "MIT",
+       "dependencies": {
+@@ -4839,7 +4984,7 @@
+         "lodash": "^4.17.11",
+         "micro-eth-signer": "^0.14.0",
+         "mnemonist": "^0.38.0",
+-        "mocha": "^10.0.0",
++        "mocha": "^11.1.0",
+         "p-map": "^4.0.0",
+         "picocolors": "^1.1.0",
+         "raw-body": "^2.4.1",
+@@ -4995,6 +5140,31 @@
+         "@scure/base": "~1.1.0"
+       }
+     },
++    "node_modules/hardhat/node_modules/cliui": {
++      "version": "8.0.1",
++      "resolved": "https://registry.npmjs.org/cliui/-/cliui-8.0.1.tgz",
++      "integrity": "sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "string-width": "^4.2.0",
++        "strip-ansi": "^6.0.1",
++        "wrap-ansi": "^7.0.0"
++      },
++      "engines": {
++        "node": ">=12"
++      }
++    },
++    "node_modules/hardhat/node_modules/diff": {
++      "version": "7.0.0",
++      "resolved": "https://registry.npmjs.org/diff/-/diff-7.0.0.tgz",
++      "integrity": "sha512-PJWHUb1RFevKCwaFA9RlG5tCd+FO5iRh9A8HEtkmBH2Li03iJriB6m6JIN4rGz3K3JLawI7/veA1xzRKP6ISBw==",
++      "dev": true,
++      "license": "BSD-3-Clause",
++      "engines": {
++        "node": ">=0.3.1"
++      }
++    },
+     "node_modules/hardhat/node_modules/ethereum-cryptography": {
+       "version": "1.2.0",
+       "resolved": "https://registry.npmjs.org/ethereum-cryptography/-/ethereum-cryptography-1.2.0.tgz",
+@@ -5023,6 +5193,28 @@
+         "node": ">=6 <7 || >=8"
+       }
+     },
++    "node_modules/hardhat/node_modules/glob": {
++      "version": "10.5.0",
++      "resolved": "https://registry.npmjs.org/glob/-/glob-10.5.0.tgz",
++      "integrity": "sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==",
++      "deprecated": "Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "foreground-child": "^3.1.0",
++        "jackspeak": "^3.1.2",
++        "minimatch": "^9.0.4",
++        "minipass": "^7.1.2",
++        "package-json-from-dist": "^1.0.0",
++        "path-scurry": "^1.11.1"
++      },
++      "bin": {
++        "glob": "dist/esm/bin.mjs"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
+     "node_modules/hardhat/node_modules/jsonfile": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/jsonfile/-/jsonfile-4.0.0.tgz",
+@@ -5033,6 +5225,75 @@
+         "graceful-fs": "^4.1.6"
+       }
+     },
++    "node_modules/hardhat/node_modules/minimatch": {
++      "version": "9.0.9",
++      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-9.0.9.tgz",
++      "integrity": "sha512-OBwBN9AL4dqmETlpS2zasx+vTeWclWzkblfZk7KTA5j3jeOONz/tRCnZomUyvNg83wL5Zv9Ss6HMJXAgL8R2Yg==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "brace-expansion": "^2.0.2"
++      },
++      "engines": {
++        "node": ">=16 || 14 >=14.17"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
++    "node_modules/hardhat/node_modules/mocha": {
++      "version": "11.8.0",
++      "resolved": "https://registry.npmjs.org/mocha/-/mocha-11.8.0.tgz",
++      "integrity": "sha512-VyCeUdGN3A9lmCTTgG4yuvY9ixxaDk+xt2R/7/+1AP6EqNG+G9OKkzBwhVtVYoNX8YsxNSgAl8mOv3IAeOpFbw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "browser-stdout": "^1.3.1",
++        "chokidar": "^4.0.1",
++        "debug": "^4.3.5",
++        "diff": "^7.0.0",
++        "escape-string-regexp": "^4.0.0",
++        "find-up": "^5.0.0",
++        "glob": "^10.4.5",
++        "he": "^1.2.0",
++        "is-path-inside": "^3.0.3",
++        "js-yaml": "^4.1.0",
++        "log-symbols": "^4.1.0",
++        "minimatch": "^9.0.5",
++        "ms": "^2.1.3",
++        "picocolors": "^1.1.1",
++        "serialize-javascript": "^6.0.2",
++        "strip-json-comments": "^3.1.1",
++        "supports-color": "^8.1.1",
++        "workerpool": "^9.2.0",
++        "yargs": "^17.7.2",
++        "yargs-parser": "^21.1.1",
++        "yargs-unparser": "^2.0.0"
++      },
++      "bin": {
++        "_mocha": "bin/_mocha",
++        "mocha": "bin/mocha.js"
++      },
++      "engines": {
++        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
++      }
++    },
++    "node_modules/hardhat/node_modules/supports-color": {
++      "version": "8.1.1",
++      "resolved": "https://registry.npmjs.org/supports-color/-/supports-color-8.1.1.tgz",
++      "integrity": "sha512-MpUEN2OodtUzxvKQl72cUF7RQ5EiHsGvSsVG0ia9c5RbWGL2CI4C7EpPS8UTBIplnlzZiNuV56w+FuNxy3ty2Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "has-flag": "^4.0.0"
++      },
++      "engines": {
++        "node": ">=10"
++      },
++      "funding": {
++        "url": "https://github.com/chalk/supports-color?sponsor=1"
++      }
++    },
+     "node_modules/hardhat/node_modules/universalify": {
+       "version": "0.1.2",
+       "resolved": "https://registry.npmjs.org/universalify/-/universalify-0.1.2.tgz",
+@@ -5043,6 +5304,13 @@
+         "node": ">= 4.0.0"
+       }
+     },
++    "node_modules/hardhat/node_modules/workerpool": {
++      "version": "9.3.4",
++      "resolved": "https://registry.npmjs.org/workerpool/-/workerpool-9.3.4.tgz",
++      "integrity": "sha512-TmPRQYYSAnnDiEB0P/Ytip7bFGvqnSU6I2BcuSw7Hx+JSg/DsUi5ebYfc8GYaSdpuvOcEs6dXxPurOYpe9QFwg==",
++      "dev": true,
++      "license": "Apache-2.0"
++    },
+     "node_modules/hardhat/node_modules/ws": {
+       "version": "7.5.12",
+       "resolved": "https://registry.npmjs.org/ws/-/ws-7.5.12.tgz",
+@@ -5065,6 +5333,35 @@
+         }
+       }
+     },
++    "node_modules/hardhat/node_modules/yargs": {
++      "version": "17.7.3",
++      "resolved": "https://registry.npmjs.org/yargs/-/yargs-17.7.3.tgz",
++      "integrity": "sha512-GZtjxm/J/4TSxuL3FNYjCmLktBTnIw/rVmKSIyKeYAZpmJB2ig9VauCC5xsa82GNKVKDAqpOn3KVzNt0zmrU0g==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "cliui": "^8.0.1",
++        "escalade": "^3.1.1",
++        "get-caller-file": "^2.0.5",
++        "require-directory": "^2.1.1",
++        "string-width": "^4.2.3",
++        "y18n": "^5.0.5",
++        "yargs-parser": "^21.1.1"
++      },
++      "engines": {
++        "node": ">=12"
++      }
++    },
++    "node_modules/hardhat/node_modules/yargs-parser": {
++      "version": "21.1.1",
++      "resolved": "https://registry.npmjs.org/yargs-parser/-/yargs-parser-21.1.1.tgz",
++      "integrity": "sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==",
++      "dev": true,
++      "license": "ISC",
++      "engines": {
++        "node": ">=12"
++      }
++    },
+     "node_modules/has-flag": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/has-flag/-/has-flag-4.0.0.tgz",
+@@ -5375,6 +5672,7 @@
+       "deprecated": "This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.",
+       "dev": true,
+       "license": "ISC",
++      "peer": true,
+       "dependencies": {
+         "once": "^1.3.0",
+         "wrappy": "1"
+@@ -5498,6 +5796,16 @@
+         "node": ">=0.12.0"
+       }
+     },
++    "node_modules/is-path-inside": {
++      "version": "3.0.3",
++      "resolved": "https://registry.npmjs.org/is-path-inside/-/is-path-inside-3.0.3.tgz",
++      "integrity": "sha512-Fd4gABb+ycGAmKou8eMftCupSir5lRxqf4aD/vd0cD2qc4HL07OjCeuHMr8Ro4CoMaeCKDB0/ECBOVWjTwUvPQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/is-plain-obj": {
+       "version": "2.1.0",
+       "resolved": "https://registry.npmjs.org/is-plain-obj/-/is-plain-obj-2.1.0.tgz",
+@@ -5551,8 +5859,23 @@
+       "resolved": "https://registry.npmjs.org/isexe/-/isexe-2.0.0.tgz",
+       "integrity": "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==",
+       "dev": true,
+-      "license": "ISC",
+-      "peer": true
++      "license": "ISC"
++    },
++    "node_modules/jackspeak": {
++      "version": "3.4.3",
++      "resolved": "https://registry.npmjs.org/jackspeak/-/jackspeak-3.4.3.tgz",
++      "integrity": "sha512-OGlZQpz2yfahA/Rd1Y8Cd9SIEsqvXkLVoSw/cgwhnhFMDbsQFeZYoJJ7bIZBS9BcamUW96asq/npPWugM+RQBw==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "dependencies": {
++        "@isaacs/cliui": "^8.0.2"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      },
++      "optionalDependencies": {
++        "@pkgjs/parseargs": "^0.11.0"
++      }
+     },
+     "node_modules/js-sha3": {
+       "version": "0.8.0",
+@@ -5562,9 +5885,9 @@
+       "license": "MIT"
+     },
+     "node_modules/js-yaml": {
+-      "version": "4.3.0",
+-      "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.0.tgz",
+-      "integrity": "sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==",
++      "version": "4.3.2",
++      "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.2.tgz",
++      "integrity": "sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==",
+       "dev": true,
+       "funding": [
+         {
+@@ -5793,6 +6116,13 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/lru-cache": {
++      "version": "10.4.3",
++      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-10.4.3.tgz",
++      "integrity": "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==",
++      "dev": true,
++      "license": "ISC"
++    },
+     "node_modules/make-error": {
+       "version": "1.3.6",
+       "resolved": "https://registry.npmjs.org/make-error/-/make-error-1.3.6.tgz",
+@@ -5975,6 +6305,7 @@
+       "integrity": "sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw==",
+       "dev": true,
+       "license": "ISC",
++      "peer": true,
+       "dependencies": {
+         "brace-expansion": "^2.0.1"
+       },
+@@ -5993,6 +6324,16 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/minipass": {
++      "version": "7.1.3",
++      "resolved": "https://registry.npmjs.org/minipass/-/minipass-7.1.3.tgz",
++      "integrity": "sha512-tEBHqDnIoM/1rXME1zgka9g6Q2lcoCkxHLuc7ODJ5BxbP5d4c2Z5cGgtXAku59200Cx7diuHTOYfSBD8n6mm8A==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "engines": {
++        "node": ">=16 || 14 >=14.17"
++      }
++    },
+     "node_modules/mkdirp": {
+       "version": "0.5.6",
+       "resolved": "https://registry.npmjs.org/mkdirp/-/mkdirp-0.5.6.tgz",
+@@ -6023,6 +6364,7 @@
+       "integrity": "sha512-VZlYo/WE8t1tstuRmqgeyBgCbJc/lEdopaa+axcKzTBJ+UIdlAB9XnmvTCAH4pwR4ElNInaedhEBmZD8iCSVEg==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "ansi-colors": "^4.1.3",
+         "browser-stdout": "^1.3.1",
+@@ -6059,6 +6401,7 @@
+       "integrity": "sha512-7VT13fmjotKpGipCW9JEQAusEPE+Ei8nl6/g4FBAmIm0GOOLMua9NDDo/DWp0ZAxCr3cPq5ZpBqmPAQgDda2Pw==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "anymatch": "~3.1.2",
+         "braces": "~3.0.2",
+@@ -6084,6 +6427,7 @@
+       "integrity": "sha512-hOS089on8RduqdbhvQ5Z37A0ESjsqz6qnRcffsMU3495FuTdqSm+7bhJ29JvIOsBDEEnan5DPu9t3To9VRlMzA==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "picomatch": "^2.2.1"
+       },
+@@ -6097,6 +6441,7 @@
+       "integrity": "sha512-MpUEN2OodtUzxvKQl72cUF7RQ5EiHsGvSsVG0ia9c5RbWGL2CI4C7EpPS8UTBIplnlzZiNuV56w+FuNxy3ty2Q==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "has-flag": "^4.0.0"
+       },
+@@ -6270,6 +6615,7 @@
+       "integrity": "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==",
+       "dev": true,
+       "license": "ISC",
++      "peer": true,
+       "dependencies": {
+         "wrappy": "1"
+       }
+@@ -6359,6 +6705,13 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
++    "node_modules/package-json-from-dist": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/package-json-from-dist/-/package-json-from-dist-1.0.1.tgz",
++      "integrity": "sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==",
++      "dev": true,
++      "license": "BlueOak-1.0.0"
++    },
+     "node_modules/parse-cache-control": {
+       "version": "1.0.1",
+       "resolved": "https://registry.npmjs.org/parse-cache-control/-/parse-cache-control-1.0.1.tgz",
+@@ -6387,6 +6740,16 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/path-key": {
++      "version": "3.1.1",
++      "resolved": "https://registry.npmjs.org/path-key/-/path-key-3.1.1.tgz",
++      "integrity": "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/path-parse": {
+       "version": "1.0.7",
+       "resolved": "https://registry.npmjs.org/path-parse/-/path-parse-1.0.7.tgz",
+@@ -6394,6 +6757,23 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/path-scurry": {
++      "version": "1.11.1",
++      "resolved": "https://registry.npmjs.org/path-scurry/-/path-scurry-1.11.1.tgz",
++      "integrity": "sha512-Xa4Nw17FS9ApQFJ9umLiJS4orGjm7ZzwUrwamcGQuHSzDyth9boKDaycYdDcZDuqYATXw4HFXgaqWTctW/v1HA==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "dependencies": {
++        "lru-cache": "^10.2.0",
++        "minipass": "^5.0.0 || ^6.0.2 || ^7.0.0"
++      },
++      "engines": {
++        "node": ">=16 || 14 >=14.18"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
+     "node_modules/path-type": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/path-type/-/path-type-4.0.0.tgz",
+@@ -6550,9 +6930,9 @@
+       }
+     },
+     "node_modules/qs": {
+-      "version": "6.15.3",
+-      "resolved": "https://registry.npmjs.org/qs/-/qs-6.15.3.tgz",
+-      "integrity": "sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A==",
++      "version": "6.16.0",
++      "resolved": "https://registry.npmjs.org/qs/-/qs-6.16.0.tgz",
++      "integrity": "sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==",
+       "dev": true,
+       "license": "BSD-3-Clause",
+       "peer": true,
+@@ -6672,9 +7052,9 @@
+       }
+     },
+     "node_modules/recursive-readdir/node_modules/brace-expansion": {
+-      "version": "1.1.16",
+-      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.16.tgz",
+-      "integrity": "sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==",
++      "version": "1.1.21",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.21.tgz",
++      "integrity": "sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==",
+       "dev": true,
+       "license": "MIT",
+       "peer": true,
+@@ -6914,9 +7294,9 @@
+       }
+     },
+     "node_modules/sc-istanbul/node_modules/brace-expansion": {
+-      "version": "1.1.16",
+-      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.16.tgz",
+-      "integrity": "sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==",
++      "version": "1.1.21",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.21.tgz",
++      "integrity": "sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==",
+       "dev": true,
+       "license": "MIT",
+       "peer": true,
+@@ -6956,9 +7336,9 @@
+       }
+     },
+     "node_modules/sc-istanbul/node_modules/js-yaml": {
+-      "version": "3.15.0",
+-      "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-3.15.0.tgz",
+-      "integrity": "sha512-ttBQIIQPDeLjpPOohtUdXuXUVoA2uIB6fEH9HyJ7234s5mBJ5wTx20njxplLZQgLaOfpmPQA7X2t5AX6tIPbog==",
++      "version": "3.15.2",
++      "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-3.15.2.tgz",
++      "integrity": "sha512-6EuL879VkRA+1Cz578mKMiKvjPNEuk6+r1JaFzoSWejZmtf7xWbIyw1e3KkxlkzTIt9Taw6JBhEppG7utc1P+w==",
+       "dev": true,
+       "license": "MIT",
+       "peer": true,
+@@ -7030,9 +7410,9 @@
+       "peer": true
+     },
+     "node_modules/secp256k1": {
+-      "version": "4.0.4",
+-      "resolved": "https://registry.npmjs.org/secp256k1/-/secp256k1-4.0.4.tgz",
+-      "integrity": "sha512-6JfvwvjUOn8F/jUoBY2Q1v5WY5XS+rj8qSe0v8Y4ezH4InLgTEeOOPQsRll9OV429Pvo6BCHGavIyJfr3TAhsw==",
++      "version": "4.0.5",
++      "resolved": "https://registry.npmjs.org/secp256k1/-/secp256k1-4.0.5.tgz",
++      "integrity": "sha512-SQZi5+/uiJIFPYbeRrVuu77Sr3bFOTq0oCQs67CqYwdmg0lhnqi/8djSWhzNO3GKGOqxBYCdx8zJJv0zUwDDvw==",
+       "dev": true,
+       "hasInstallScript": true,
+       "license": "MIT",
+@@ -7145,6 +7525,29 @@
+         "node": "*"
+       }
+     },
++    "node_modules/shebang-command": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz",
++      "integrity": "sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "shebang-regex": "^3.0.0"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
++    "node_modules/shebang-regex": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/shebang-regex/-/shebang-regex-3.0.0.tgz",
++      "integrity": "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/shelljs": {
+       "version": "0.8.5",
+       "resolved": "https://registry.npmjs.org/shelljs/-/shelljs-0.8.5.tgz",
+@@ -7165,9 +7568,9 @@
+       }
+     },
+     "node_modules/shelljs/node_modules/brace-expansion": {
+-      "version": "1.1.16",
+-      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.16.tgz",
+-      "integrity": "sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==",
++      "version": "1.1.21",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.21.tgz",
++      "integrity": "sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==",
+       "dev": true,
+       "license": "MIT",
+       "peer": true,
+@@ -7293,6 +7696,19 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/signal-exit": {
++      "version": "4.1.0",
++      "resolved": "https://registry.npmjs.org/signal-exit/-/signal-exit-4.1.0.tgz",
++      "integrity": "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==",
++      "dev": true,
++      "license": "ISC",
++      "engines": {
++        "node": ">=14"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
+     "node_modules/sisteransi": {
+       "version": "1.0.5",
+       "resolved": "https://registry.npmjs.org/sisteransi/-/sisteransi-1.0.5.tgz",
+@@ -7670,6 +8086,22 @@
+         "node": ">=8"
+       }
+     },
++    "node_modules/string-width-cjs": {
++      "name": "string-width",
++      "version": "4.2.3",
++      "resolved": "https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz",
++      "integrity": "sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "emoji-regex": "^8.0.0",
++        "is-fullwidth-code-point": "^3.0.0",
++        "strip-ansi": "^6.0.1"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/strip-ansi": {
+       "version": "6.0.1",
+       "resolved": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-6.0.1.tgz",
+@@ -7683,6 +8115,20 @@
+         "node": ">=8"
+       }
+     },
++    "node_modules/strip-ansi-cjs": {
++      "name": "strip-ansi",
++      "version": "6.0.1",
++      "resolved": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-6.0.1.tgz",
++      "integrity": "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "ansi-regex": "^5.0.1"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/strip-hex-prefix": {
+       "version": "1.0.0",
+       "resolved": "https://registry.npmjs.org/strip-hex-prefix/-/strip-hex-prefix-1.0.0.tgz",
+@@ -8134,9 +8580,9 @@
+       }
+     },
+     "node_modules/typechain/node_modules/brace-expansion": {
+-      "version": "1.1.16",
+-      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.16.tgz",
+-      "integrity": "sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==",
++      "version": "1.1.21",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.21.tgz",
++      "integrity": "sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==",
+       "dev": true,
+       "license": "MIT",
+       "peer": true,
+@@ -8589,7 +9035,8 @@
+       "resolved": "https://registry.npmjs.org/workerpool/-/workerpool-6.5.1.tgz",
+       "integrity": "sha512-Fs4dNYcsdpYSAfVxhnl1L5zTksjvOJxtC5hzMNl+1t9B8hTJTdKDyZ5ju7ztgPy+ft9tBFXoOlDNiOT9WUXZlA==",
+       "dev": true,
+-      "license": "Apache-2.0"
++      "license": "Apache-2.0",
++      "peer": true
+     },
+     "node_modules/wrap-ansi": {
+       "version": "7.0.0",
+@@ -8609,12 +9056,32 @@
+         "url": "https://github.com/chalk/wrap-ansi?sponsor=1"
+       }
+     },
++    "node_modules/wrap-ansi-cjs": {
++      "name": "wrap-ansi",
++      "version": "7.0.0",
++      "resolved": "https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-7.0.0.tgz",
++      "integrity": "sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "ansi-styles": "^4.0.0",
++        "string-width": "^4.1.0",
++        "strip-ansi": "^6.0.0"
++      },
++      "engines": {
++        "node": ">=10"
++      },
++      "funding": {
++        "url": "https://github.com/chalk/wrap-ansi?sponsor=1"
++      }
++    },
+     "node_modules/wrappy": {
+       "version": "1.0.2",
+       "resolved": "https://registry.npmjs.org/wrappy/-/wrappy-1.0.2.tgz",
+       "integrity": "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==",
+       "dev": true,
+-      "license": "ISC"
++      "license": "ISC",
++      "peer": true
+     },
+     "node_modules/ws": {
+       "version": "8.21.0",
+@@ -8655,6 +9122,7 @@
+       "integrity": "sha512-Nt9ZJjXTv5R8MHbqby/wXQ6Gi0Bb3TcYZkR1bzuL4yB2OxWPkXknz513gEF0GoA6tn00UpbPvERW8rzCuWCA6w==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "cliui": "^7.0.2",
+         "escalade": "^3.1.1",
+@@ -8674,6 +9142,7 @@
+       "integrity": "sha512-y11nGElTIV+CT3Zv9t7VKl+Q3hTQoT9a1Qzezhhl6Rp21gJ/IVTW7Z3y9EWXhuUBC2Shnf+DX0antecpAwSP8w==",
+       "dev": true,
+       "license": "ISC",
++      "peer": true,
+       "engines": {
+         "node": ">=10"
+       }
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/contracts/test/backend.mainnet-fork.test.js b/contracts/test/backend.mainnet-fork.test.js
+--- a/contracts/test/backend.mainnet-fork.test.js	2026-09-17 23:15:41.293722600 +0200
++++ b/contracts/test/backend.mainnet-fork.test.js	2026-09-22 17:49:31.364776200 +0200
+@@ -11,7 +11,7 @@
+     const rpc = 'https://rpc.mainnet.chain.robinhood.com';
+     const response = await fetch(rpc, { method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}),signal:AbortSignal.timeout(15000) });
+     const body = await response.json(); if (!body.result) throw new Error('missing fork block');
+-    const blockNumber = Number(BigInt(body.result));
++    const blockNumber = process.env.AUDIT_FORK_BLOCK ? Number(process.env.AUDIT_FORK_BLOCK) : Number(BigInt(body.result)); // pin with AUDIT_FORK_BLOCK for a reproducible run
+     await network.provider.send('hardhat_reset',[{forking:{jsonRpcUrl:rpc,blockNumber}}]);
+     console.log('      mainnet dependency state pinned at block',blockNumber,'; transactions LOCAL ONLY');
+     const [owner,platform,creator,buyer,other] = await ethers.getSigners();
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/contracts/test/integration.fork.test.js b/contracts/test/integration.fork.test.js
+--- a/contracts/test/integration.fork.test.js	2026-09-17 23:15:41.300449200 +0200
++++ b/contracts/test/integration.fork.test.js	1970-01-01 01:00:00.000000000 +0100
+@@ -1,126 +0,0 @@
+-// End-to-end integration test against a fork of Base mainnet (real Uniswap V3).
+-//
+-// Run with:
+-//   BASE_FORK_RPC_URL=https://mainnet.base.org npx hardhat test test/integration.fork.test.js
+-//
+-// If no fork RPC is configured (the Uniswap contracts aren't present), the suite skips itself.
+-const { expect } = require("chai");
+-const hre = require("hardhat");
+-const { ethers } = hre;
+-const ADDR = require("../scripts/addresses");
+-const { computeLaunchParams, computeGraduationTick } = require("../scripts/lib/launchParams");
+-
+-const UNI = ADDR.base; // Base mainnet addresses (state provided by the fork)
+-const FEE = 10000; // 1% tier — the launch standard
+-const LAUNCH_PRICE = 1e-8;
+-
+-const WETH_ABI = [
+-  "function deposit() payable",
+-  "function approve(address,uint256) returns (bool)",
+-  "function balanceOf(address) view returns (uint256)",
+-];
+-const ROUTER_ABI = [
+-  "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)",
+-];
+-
+-describe("launch -> buy -> collect fees, with graduation split (Base fork)", function () {
+-  this.timeout(180000);
+-
+-  let deployer, creator, buyer;
+-  let factory, locker, feeVault;
+-
+-  before(async function () {
+-    const code = await ethers.provider.getCode(UNI.NonfungiblePositionManager);
+-    if (code === "0x") {
+-      console.log("      (no fork detected — set BASE_FORK_RPC_URL to run this suite)");
+-      this.skip();
+-    }
+-    [deployer, creator, buyer] = await ethers.getSigners();
+-
+-    const FeeVault = await ethers.getContractFactory("FeeVault", deployer);
+-    feeVault = await FeeVault.deploy(deployer.address);
+-    await feeVault.waitForDeployment();
+-
+-    const LaunchLocker = await ethers.getContractFactory("LaunchLocker", deployer);
+-    locker = await LaunchLocker.deploy(UNI.NonfungiblePositionManager, await feeVault.getAddress(), 2000);
+-    await locker.waitForDeployment();
+-
+-    const LaunchFactory = await ethers.getContractFactory("LaunchFactory", deployer);
+-    factory = await LaunchFactory.deploy(UNI.NonfungiblePositionManager, UNI.WETH, await locker.getAddress());
+-    await factory.waitForDeployment();
+-
+-    await (await locker.initFactory(await factory.getAddress())).wait();
+-  });
+-
+-  // Launch a token whose graduation tick is placed either just at the launch price (so any buy
+-  // graduates it) or far in the appreciation direction (so a normal buy never reaches it).
+-  async function launch(mode) {
+-    const factoryAddr = await factory.getAddress();
+-    const nonce = await ethers.provider.getTransactionCount(factoryAddr);
+-    const predicted = ethers.getCreateAddress({ from: factoryAddr, nonce });
+-
+-    const params = computeLaunchParams({ token: predicted, weth: UNI.WETH, tokenDecimals: 18, fee: FEE, priceWethPerToken: LAUNCH_PRICE });
+-    const launchTick = computeGraduationTick({ token: predicted, weth: UNI.WETH, tokenDecimals: 18, graduationPriceWethPerToken: LAUNCH_PRICE });
+-    const sign = params.tokenIsToken0 ? 1 : -1; // direction price moves as the token appreciates
+-    const graduationTick = mode === "immediate" ? launchTick : launchTick + sign * 500000;
+-
+-    const totalSupply = 1_000_000_000n * 10n ** 18n;
+-    const tx = await factory.connect(creator).createLaunch({
+-      name: "Fork Test", symbol: "FORK", totalSupply, decimals: 18, fee: FEE,
+-      sqrtPriceX96: params.sqrtPriceX96, tickLower: params.tickLower, tickUpper: params.tickUpper, graduationTick,
+-    }, "0x0000000000000000000000000000000000000000000000000000000000000000");
+-    const receipt = await tx.wait();
+-    const ev = receipt.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "Launched");
+-    return { token: ev.args.token, tokenId: ev.args.tokenId, pool: ev.args.pool, liquidity: ev.args.liquidity };
+-  }
+-
+-  async function buy(tokenAddr, ethAmount) {
+-    const weth = new ethers.Contract(UNI.WETH, WETH_ABI, buyer);
+-    const router = new ethers.Contract(UNI.SwapRouter02, ROUTER_ABI, buyer);
+-    const amountIn = ethers.parseEther(ethAmount);
+-    await (await weth.deposit({ value: amountIn })).wait();
+-    await (await weth.approve(UNI.SwapRouter02, amountIn)).wait();
+-    await (await router.exactInputSingle({ tokenIn: UNI.WETH, tokenOut: tokenAddr, fee: FEE, recipient: buyer.address, amountIn, amountOutMinimum: 0, sqrtPriceLimitX96: 0 })).wait();
+-  }
+-
+-  async function collectAndMeasure(tokenId) {
+-    const weth = new ethers.Contract(UNI.WETH, WETH_ABI, deployer);
+-    const vaultAddr = await feeVault.getAddress();
+-    const cBefore = await weth.balanceOf(creator.address);
+-    const vBefore = await weth.balanceOf(vaultAddr);
+-    await (await locker.collectFees(tokenId)).wait();
+-    return {
+-      creatorGain: (await weth.balanceOf(creator.address)) - cBefore,
+-      vaultGain: (await weth.balanceOf(vaultAddr)) - vBefore,
+-    };
+-  }
+-
+-  it("pre-graduation: creator keeps 100%, vault gets nothing", async function () {
+-    const { token, tokenId, liquidity } = await launch("never");
+-    expect(liquidity).to.be.greaterThan(0n);
+-    expect(await locker.isGraduated(tokenId)).to.equal(false);
+-
+-    await buy(token, "0.5");
+-    expect(await locker.isGraduated(tokenId)).to.equal(false);
+-
+-    const { creatorGain, vaultGain } = await collectAndMeasure(tokenId);
+-    console.log("      pre-grad  creator:", ethers.formatEther(creatorGain), " vault:", ethers.formatEther(vaultGain));
+-    expect(creatorGain).to.be.greaterThan(0n);
+-    expect(vaultGain).to.equal(0n);
+-  });
+-
+-  it("post-graduation: fees split 80% creator / 20% vault", async function () {
+-    const { token, tokenId } = await launch("immediate");
+-    await buy(token, "0.5");
+-    expect(await locker.isGraduated(tokenId)).to.equal(true);
+-
+-    const { creatorGain, vaultGain } = await collectAndMeasure(tokenId);
+-    console.log("      post-grad creator:", ethers.formatEther(creatorGain), " vault:", ethers.formatEther(vaultGain));
+-    expect(creatorGain).to.be.greaterThan(0n);
+-    expect(vaultGain).to.be.greaterThan(0n);
+-    // creator 80 / vault 20  => creator == 4x vault (allow rounding dust).
+-    const ratio = Number(creatorGain) / Number(vaultGain);
+-    expect(ratio).to.be.greaterThan(3.9);
+-    expect(ratio).to.be.lessThan(4.1);
+-  });
+-});
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/contracts/test/v4.adversarial.test.js b/contracts/test/v4.adversarial.test.js
+--- a/contracts/test/v4.adversarial.test.js	1970-01-01 01:00:00.000000000 +0100
++++ b/contracts/test/v4.adversarial.test.js	2026-09-22 18:10:52.534449300 +0200
+@@ -0,0 +1,138 @@
++// Adversarial V4 component cases added on the 2026-09-22 release-day pass. Component coverage only:
++// the production curve/factory/reward integration does not exist yet, so nothing here proves the
++// end-to-end V4 launch path.
++const { expect } = require('chai');
++const { ethers } = require('hardhat');
++const { deploy, deployHook, sqrt } = require('./helpers/v4');
++const E = ethers.parseEther;
++const MIN = 4295128740n;
++const MAX = 1461446703485210103287273052203988822378723970341n;
++
++async function fixture({ taxedQuote = false } = {}) {
++  const [owner, creator, rewards, ...actors] = await ethers.getSigners();
++  const manager = await deploy('PoolManager', owner.address);
++  const graduator = await deploy('CensusV4Graduator', manager.target, owner.address, owner.address);
++  const hook = await deployHook(manager.target, graduator.target, owner.address);
++  await graduator.setHook(hook.target);
++  const coin = await deploy('LaunchToken', 'Adversarial', 'ADV', E('1000000000'), 18, owner.address);
++  const quote = taxedQuote ? await deploy('AuditQuote') : await deploy('LaunchToken', 'Quote', 'Q', E('1000000'), 18, owner.address);
++  if (taxedQuote) await quote.mint(owner.address, E('1000000'));
++  const coin0 = BigInt(coin.target) < BigInt(quote.target);
++  const coinAmount = E('214285714'), quoteAmount = E('4');
++  const amount0 = coin0 ? coinAmount : quoteAmount, amount1 = coin0 ? quoteAmount : coinAmount;
++  const sqrtPriceX96 = sqrt((amount1 << 192n) / amount0);
++  const key = { currency0: coin0 ? coin.target : quote.target, currency1: coin0 ? quote.target : coin.target, fee: 0, tickSpacing: 60, hooks: hook.target };
++  await coin.approve(graduator.target, coinAmount);
++  await quote.approve(graduator.target, quoteAmount);
++  const now = (await ethers.provider.getBlock('latest')).timestamp;
++  await graduator.graduate({ coin: coin.target, quote: quote.target, creator: creator.address, rewards: rewards.address, reflectionBps: 400, launchedAt: now - 10, coinAmount, quoteAmount, sqrtPriceX96 });
++  const router = await deploy('CensusV4Router', manager.target, hook.target);
++  for (const a of actors.slice(0, 3)) {
++    await quote.transfer(a.address, E('10'));
++    await coin.connect(a).approve(router.target, ethers.MaxUint256);
++    await quote.connect(a).approve(router.target, ethers.MaxUint256);
++  }
++  const buy = (actor, amount = E('0.1')) => ({ key, zeroForOne: !coin0, amountIn: amount, minOut: 1n, sqrtPriceLimitX96: coin0 ? MAX : MIN, recipient: actor.address, deadline: ethers.MaxUint256 });
++  const sell = (actor, amount) => ({ ...buy(actor), zeroForOne: coin0, amountIn: amount, sqrtPriceLimitX96: coin0 ? MIN : MAX });
++  const snapshot = async (actor) => ({ q: await quote.balanceOf(actor.address), c: await coin.balanceOf(actor.address), reserved: await hook.totalReserved(quote.target), hookQ: await quote.balanceOf(hook.target) });
++  return { owner, creator, rewards, actors, manager, graduator, hook, coin, quote, key, coin0, router, buy, sell, snapshot, sqrtPriceX96 };
++}
++
++describe('V4 adversarial: partial fills, repeated claims, dust, bypass disclosure, registration', function () {
++  this.timeout(180000);
++
++  it('rejects a price-limited partial buy and partial sell atomically: no fee accrues, no balance moves', async () => {
++    const f = await fixture(); const a = f.actors[0];
++    // A limit 0.5% away from the pool price cannot absorb a 2.5%-of-reserve buy: the manager fills
++    // partially, the hook (fee charged on the full specified input) must refuse rather than overcharge.
++    const before = await f.snapshot(a);
++    const buyLimit = f.coin0 ? f.sqrtPriceX96 * 10025n / 10000n : f.sqrtPriceX96 * 9975n / 10000n;
++    await expect(f.router.connect(a).swapExactInput({ ...f.buy(a), sqrtPriceLimitX96: buyLimit })).to.be.reverted;
++    expect(await f.snapshot(a)).to.deep.equal(before);
++    // Acquire coins normally, then attempt a sell whose limit forces a partial fill.
++    await f.router.connect(a).swapExactInput(f.buy(a, E('0.05')));
++    const held = await f.coin.balanceOf(a.address);
++    const mid = await f.snapshot(a);
++    // The sell walks the price back from its post-buy level toward the launch price; a limit 0.5% short of
++    // the launch price sits inside that path, so the manager can only fill part of the order.
++    const sellLimit = f.coin0 ? f.sqrtPriceX96 * 10050n / 10000n : f.sqrtPriceX96 * 9950n / 10000n;
++    await expect(f.router.connect(a).swapExactInput({ ...f.sell(a, held), sqrtPriceLimitX96: sellLimit })).to.be.revertedWithCustomError(f.router, 'IncompleteFill');
++    expect(await f.snapshot(a)).to.deep.equal(mid);
++    // A zero-input request is refused outright.
++    await expect(f.router.connect(a).swapExactInput({ ...f.buy(a), amountIn: 0n })).to.be.revertedWithCustomError(f.router, 'InvalidRequest');
++  });
++
++  it('pays a repeated claim nothing and keeps the reserve ledger exact; a 1 wei buy rounds the fee to zero without breaking custody', async () => {
++    const f = await fixture(); const a = f.actors[0];
++    await f.router.connect(a).swapExactInput(f.buy(a));
++    const owed = await f.hook.claimable(f.quote.target, f.creator.address);
++    expect(owed).to.be.gt(0);
++    await f.hook.claimFor(f.quote.target, f.creator.address);
++    const reservedAfter = await f.hook.totalReserved(f.quote.target);
++    const balanceAfter = await f.quote.balanceOf(f.creator.address);
++    await expect(f.hook.connect(a).claimFor(f.quote.target, f.creator.address)).to.emit(f.hook, 'FeesClaimed').withArgs(f.quote.target, f.creator.address, 0n);
++    expect(await f.quote.balanceOf(f.creator.address)).to.equal(balanceAfter);
++    expect(await f.hook.totalReserved(f.quote.target)).to.equal(reservedAfter);
++    expect(await f.quote.balanceOf(f.hook.target)).to.equal(reservedAfter);
++    // Dust: 1 wei of quote => fee 0 (integer floor). The pool still settles and the ledger stays solvent.
++    const receipt = await (await f.router.connect(a).swapExactInput(f.buy(a, 1n))).wait();
++    const fee = receipt.logs.map((l) => { try { return f.hook.interface.parseLog(l); } catch { return null; } }).find((e) => e?.name === 'FeeAccrued').args;
++    expect(fee.protocolFee + fee.creatorFee + fee.holderFee).to.equal(0n);
++    expect(await f.hook.totalReserved(f.quote.target)).to.equal(reservedAfter);
++    expect(await f.quote.balanceOf(f.hook.target)).to.equal(reservedAfter);
++  });
++
++  it('DISCLOSURE: an independent hookless pool on the same manager trades the same pair with no Census fee', async () => {
++    const f = await fixture(); const stranger = f.actors[2];
++    const open = { ...f.key, fee: 3000, hooks: ethers.ZeroAddress };
++    await f.manager.connect(stranger).initialize(open, f.sqrtPriceX96); // nobody can stop this
++    const lp = await deploy('PoolModifyLiquidityTest', f.manager.target);
++    const swapper = await deploy('PoolSwapTest', f.manager.target);
++    await f.coin.transfer(stranger.address, E('1000000'));
++    for (const t of [f.coin, f.quote]) { await t.connect(stranger).approve(lp.target, ethers.MaxUint256); await t.connect(stranger).approve(swapper.target, ethers.MaxUint256); }
++    await lp.connect(stranger)['modifyLiquidity((address,address,uint24,int24,address),(int24,int24,int256,bytes32),bytes)'](open, { tickLower: -887220, tickUpper: 887220, liquidityDelta: E('100'), salt: ethers.ZeroHash }, '0x');
++    const reservedBefore = await f.hook.totalReserved(f.quote.target);
++    const coinBefore = await f.coin.balanceOf(stranger.address);
++    await swapper.connect(stranger).swap(open, { zeroForOne: !f.coin0, amountSpecified: -E('0.01'), sqrtPriceLimitX96: f.coin0 ? MAX : MIN }, { takeClaims: false, settleUsingBurn: false }, '0x');
++    expect(await f.coin.balanceOf(stranger.address)).to.be.gt(coinBefore);
++    expect(await f.hook.totalReserved(f.quote.target)).to.equal(reservedBefore); // zero Census fee: the bypass is real
++    // The canonical pool cannot be re-initialized or shadowed under the hook by anyone else.
++    await expect(f.manager.connect(stranger).initialize(f.key, f.sqrtPriceX96)).to.be.reverted;
++    await expect(f.manager.connect(stranger).initialize({ ...f.key, tickSpacing: 10 }, f.sqrtPriceX96)).to.be.reverted;
++  });
++
++  it('refuses malformed or replayed registrations and a future launch timestamp', async () => {
++    const [owner, creator, rewards, stranger] = await ethers.getSigners();
++    const manager = await deploy('PoolManager', owner.address);
++    const hook = await deployHook(manager.target, owner.address, owner.address);
++    const a = await deploy('MockERC20', 'A', 'A'), b = await deploy('MockERC20', 'B', 'B');
++    const [c0, c1] = [a, b].sort((x, y) => (BigInt(x.target) < BigInt(y.target) ? -1 : 1)).map((t) => t.target);
++    const key = { currency0: c0, currency1: c1, fee: 0, tickSpacing: 60, hooks: hook.target };
++    const now = (await ethers.provider.getBlock('latest')).timestamp;
++    await expect(hook.register({ ...key, fee: 3000 }, c0, creator.address, rewards.address, 100, now)).to.be.revertedWithCustomError(hook, 'InvalidPool');
++    await expect(hook.register({ ...key, hooks: ethers.ZeroAddress }, c0, creator.address, rewards.address, 100, now)).to.be.revertedWithCustomError(hook, 'InvalidPool');
++    await expect(hook.register(key, stranger.address, creator.address, rewards.address, 100, now)).to.be.revertedWithCustomError(hook, 'InvalidPool'); // quote not in the pair
++    await expect(hook.register(key, c0, ethers.ZeroAddress, rewards.address, 100, now)).to.be.revertedWithCustomError(hook, 'InvalidPool');
++    await expect(hook.register(key, c0, creator.address, ethers.ZeroAddress, 100, now)).to.be.revertedWithCustomError(hook, 'InvalidPool'); // reflection without a rewards sink
++    await expect(hook.register(key, c0, creator.address, rewards.address, 100, now + 3600)).to.be.revertedWithCustomError(hook, 'InvalidPool'); // future launch
++    await expect(hook.register(key, c0, creator.address, rewards.address, 50, now)).to.be.revertedWithCustomError(hook, 'InvalidReflection');
++    await expect(hook.register(key, c0, creator.address, rewards.address, 401, now)).to.be.revertedWithCustomError(hook, 'InvalidReflection');
++    await hook.register(key, c0, creator.address, ethers.ZeroAddress, 0, now); // disabled reflection needs no sink
++    await expect(hook.register(key, c0, stranger.address, rewards.address, 0, now)).to.be.revertedWithCustomError(hook, 'InvalidPool'); // immutable once set
++    await expect(hook.connect(stranger).register({ ...key, tickSpacing: 10 }, c0, creator.address, rewards.address, 0, now)).to.be.revertedWithCustomError(hook, 'Unauthorized');
++  });
++
++  it('reverts a sell whose quote output is taxed on transfer, leaving balances and the fee ledger untouched', async () => {
++    const f = await fixture({ taxedQuote: true }); const a = f.actors[0];
++    await f.router.connect(a).swapExactInput(f.buy(a, E('0.05')));
++    const held = await f.coin.balanceOf(a.address);
++    await f.quote.setTax(100);
++    const before = await f.snapshot(a);
++    await expect(f.router.connect(a).swapExactInput(f.sell(a, held))).to.be.reverted;
++    expect(await f.snapshot(a)).to.deep.equal(before);
++    await f.quote.setTax(0);
++    await f.router.connect(a).swapExactInput(f.sell(a, held));
++    expect(await f.coin.balanceOf(a.address)).to.equal(0n);
++    expect(await f.quote.balanceOf(f.hook.target)).to.equal(await f.hook.totalReserved(f.quote.target));
++  });
++});
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/contracts/test/v4.readiness.test.js b/contracts/test/v4.readiness.test.js
+--- a/contracts/test/v4.readiness.test.js	2026-09-21 22:27:56.590668900 +0200
++++ b/contracts/test/v4.readiness.test.js	2026-09-22 17:49:31.813803100 +0200
+@@ -172,7 +172,7 @@
+     const rpc='https://rpc.mainnet.chain.robinhood.com';
+     const response=await fetch(rpc,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}),signal:AbortSignal.timeout(15000)});
+     const body=await response.json(); if(!body.result) throw Error('no fork block');
+-    const blockNumber=Number(BigInt(body.result));
++    const blockNumber=process.env.AUDIT_FORK_BLOCK?Number(process.env.AUDIT_FORK_BLOCK):Number(BigInt(body.result)); // pin with AUDIT_FORK_BLOCK for a reproducible run
+     await network.provider.send('hardhat_reset',[{forking:{jsonRpcUrl:rpc,blockNumber}}]);
+     const f=await fixture({liveManager:true}); const actor=f.actors[0];
+     const out=await f.router.connect(actor).swapExactInput.staticCall(f.buy(actor));
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/frontend/package.json b/frontend/package.json
+--- a/frontend/package.json	2026-09-17 23:15:41.319530700 +0200
++++ b/frontend/package.json	2026-09-22 18:07:20.164332200 +0200
+@@ -7,7 +7,9 @@
+     "dev": "vite",
+     "build": "tsc -b && vite build",
+     "preview": "vite preview",
+-    "typecheck": "tsc --noEmit"
++    "typecheck": "tsc --noEmit",
++    "release:check": "node release-check.cjs",
++    "test:release-check": "node release-check.test.cjs"
+   },
+   "dependencies": {
+     "@privy-io/react-auth": "^3.43.0",
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/frontend/package-lock.json b/frontend/package-lock.json
+--- a/frontend/package-lock.json	2026-09-17 23:15:41.318523200 +0200
++++ b/frontend/package-lock.json	2026-09-22 18:14:38.477722500 +0200
+@@ -473,16 +473,16 @@
+       }
+     },
+     "node_modules/@coinbase/cdp-sdk": {
+-      "version": "1.52.0",
+-      "resolved": "https://registry.npmjs.org/@coinbase/cdp-sdk/-/cdp-sdk-1.52.0.tgz",
+-      "integrity": "sha512-3R42LCxGQy/xy7EdeiAvabAESFMRTNNN8Nm1U4AxSPs8fMwazTulLy0NprsW+vuvIMhO2Ih8XInHiXD3DKx6Fw==",
++      "version": "1.56.0",
++      "resolved": "https://registry.npmjs.org/@coinbase/cdp-sdk/-/cdp-sdk-1.56.0.tgz",
++      "integrity": "sha512-Fwq77OUHRfSihdi/IB3sp2eVplv9UQjiXoZfpU0mYmxD42CRbVINQT9PVrBbn6fxqS9Vlc4XdaB166IPBVfXkA==",
+       "license": "MIT",
+       "dependencies": {
+         "@solana-program/system": "^0.10.0",
+         "@solana-program/token": "^0.9.0",
+         "@solana/kit": "^5.5.1",
+         "abitype": "1.0.6",
+-        "axios": "1.16.0",
++        "axios": "^1.18.0",
+         "axios-retry": "^4.5.0",
+         "bs58": "^6.0.0",
+         "jose": "^6.2.0",
+@@ -490,6 +490,26 @@
+         "uncrypto": "^0.1.3",
+         "viem": "^2.47.0",
+         "zod": "^3.25.76"
++      },
++      "peerDependencies": {
++        "@x402/core": "^2.25.0",
++        "@x402/evm": "^2.25.0",
++        "@x402/extensions": "^2.25.0",
++        "@x402/svm": "^2.25.0"
++      },
++      "peerDependenciesMeta": {
++        "@x402/core": {
++          "optional": true
++        },
++        "@x402/evm": {
++          "optional": true
++        },
++        "@x402/extensions": {
++          "optional": true
++        },
++        "@x402/svm": {
++          "optional": true
++        }
+       }
+     },
+     "node_modules/@coinbase/cdp-sdk/node_modules/abitype": {
+@@ -1720,6 +1740,40 @@
+         "node": ">=12.0.0"
+       }
+     },
++    "node_modules/@metamask/scure-bip39": {
++      "version": "2.1.1",
++      "resolved": "https://registry.npmjs.org/@metamask/scure-bip39/-/scure-bip39-2.1.1.tgz",
++      "integrity": "sha512-1K8aBsAqr6+8jWhguVl06n8e+zjV9sUnys+5PLyVU4mb8LbulQ60F6cq7iQys3xX/yCwKt1+7c7j2nuTEpW+ZQ==",
++      "license": "MIT",
++      "dependencies": {
++        "@noble/hashes": "~1.3.2",
++        "@scure/base": "~1.1.3"
++      },
++      "engines": {
++        "node": "^16.20 || ^18.16 || >=20"
++      }
++    },
++    "node_modules/@metamask/scure-bip39/node_modules/@noble/hashes": {
++      "version": "1.3.3",
++      "resolved": "https://registry.npmjs.org/@noble/hashes/-/hashes-1.3.3.tgz",
++      "integrity": "sha512-V7/fPHgl+jsVPXqqeOzT8egNj2iBIVt+ECeMMG8TdcnTikP3oaBtUVqpT/gYCR68aEBJSF+XbYUxStjbFMqIIA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 16"
++      },
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      }
++    },
++    "node_modules/@metamask/scure-bip39/node_modules/@scure/base": {
++      "version": "1.1.9",
++      "resolved": "https://registry.npmjs.org/@scure/base/-/base-1.1.9.tgz",
++      "integrity": "sha512-8YKhl8GHiNI/pU2VMaofa2Tor7PJRAjwQLBBuilkJ9L5+13yVbC7JO/wS7piioAvPSwR3JKM1IJ/u4xQzbcXKg==",
++      "license": "MIT",
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      }
++    },
+     "node_modules/@metamask/sdk": {
+       "version": "0.33.1",
+       "resolved": "https://registry.npmjs.org/@metamask/sdk/-/sdk-0.33.1.tgz",
+@@ -1844,12 +1898,13 @@
+       }
+     },
+     "node_modules/@metamask/utils": {
+-      "version": "11.11.0",
+-      "resolved": "https://registry.npmjs.org/@metamask/utils/-/utils-11.11.0.tgz",
+-      "integrity": "sha512-0nF2CWjWQr/m0Y2t2lJnBTU1/CZPPTvKvcESLplyWe/tyeb8zFOi/FeneDmaFnML6LYRIGZU6f+xR0jKAIUZfw==",
++      "version": "11.12.1",
++      "resolved": "https://registry.npmjs.org/@metamask/utils/-/utils-11.12.1.tgz",
++      "integrity": "sha512-X97J5AEcaKDTIAfKb4X93ZTLfvOahzDVadlveQW+7OZ7yhXjMxXoFmhX2d9UKv48iS2Dxq9kbGJ1lUfphu9ebQ==",
+       "license": "ISC",
+       "dependencies": {
+         "@ethereumjs/tx": "^4.2.0",
++        "@metamask/scure-bip39": "^2.0.3",
+         "@metamask/superstruct": "^3.1.0",
+         "@noble/hashes": "^1.3.1",
+         "@scure/base": "^1.1.3",
+@@ -1959,64 +2014,65 @@
+       }
+     },
+     "node_modules/@privy-io/api-base": {
+-      "version": "1.10.0",
+-      "resolved": "https://registry.npmjs.org/@privy-io/api-base/-/api-base-1.10.0.tgz",
+-      "integrity": "sha512-3HxU0umyY8IBAqyZP/m/qfIkrdjlbcECdGKqfGR7LSkmWiAhq+9BC0Rtv1um6wkO/67b3d8nbRzSNVQvahdnrw==",
++      "version": "1.11.0",
++      "resolved": "https://registry.npmjs.org/@privy-io/api-base/-/api-base-1.11.0.tgz",
++      "integrity": "sha512-DrnBcw0FW+/nGHy2LNdJu00un8+cAw7b6A6/6pMCIesLYEJo+CA+veGVp1lo+KRKqcUuLH9WttGbpnxm3dF3VA==",
+       "dependencies": {
+         "zod": "^3.25.76"
+       }
+     },
+     "node_modules/@privy-io/api-types": {
+-      "version": "0.21.0",
+-      "resolved": "https://registry.npmjs.org/@privy-io/api-types/-/api-types-0.21.0.tgz",
+-      "integrity": "sha512-O0sfwAyFu2Y29ncU0Y3qh9xyU01PJIpg/6ylWTJGiufyBMFuK7EHDWxWVwGM9ET4RYWJuUC6gndSeyvzqWYMvw==",
++      "version": "0.22.0",
++      "resolved": "https://registry.npmjs.org/@privy-io/api-types/-/api-types-0.22.0.tgz",
++      "integrity": "sha512-Yp4Il1UyQGjYF1E/6aqpq/bacKS1dCFbKw66/eQegUfv/1T8FI1B/GEXvxzRWkru9hwo+0xVAXQdPBNUbs5BGg==",
+       "license": "Apache-2.0"
+     },
+     "node_modules/@privy-io/are-addresses-equal": {
+-      "version": "0.0.12",
+-      "resolved": "https://registry.npmjs.org/@privy-io/are-addresses-equal/-/are-addresses-equal-0.0.12.tgz",
+-      "integrity": "sha512-tuevtCjOlja9LyB7mZYUxxdWnUp7i9tSA/PWI+AtUekLk+ypgQFbkXpMaOZVQuoniY1NFlNempLmMz4s1V6iCA==",
++      "version": "0.0.13",
++      "resolved": "https://registry.npmjs.org/@privy-io/are-addresses-equal/-/are-addresses-equal-0.0.13.tgz",
++      "integrity": "sha512-481++WscrOwyv2bjT1NIWJpzZ6P9CG03rYxK4d3ZXzAzty5F2qE4KUtHV4aXE+IKW97xIIz0s8fJZq8s51CW1g==",
+       "license": "Apache-2.0",
+       "dependencies": {
+         "viem": "2.56.0"
+       }
+     },
+     "node_modules/@privy-io/chains": {
+-      "version": "0.6.0",
+-      "resolved": "https://registry.npmjs.org/@privy-io/chains/-/chains-0.6.0.tgz",
+-      "integrity": "sha512-sE9WdjR8ew2eCn3s/RR5INDVVlItDvurR4/cU90C5FxjkgBVsSVnGcCXHKIsg0tQCI9WslE8Ej1WlRyzHIQ4wQ==",
++      "version": "0.6.1",
++      "resolved": "https://registry.npmjs.org/@privy-io/chains/-/chains-0.6.1.tgz",
++      "integrity": "sha512-cz941EUCMV0xhD2sojotbNgmLENzUqHq3rUAS+ZzKtZ/NTsDF0y7UoF/OVF9alBV6+wPvjtk8fYsPdLbuikQSw==",
+       "license": "Apache-2.0"
+     },
+     "node_modules/@privy-io/encoding": {
+-      "version": "0.2.2",
+-      "resolved": "https://registry.npmjs.org/@privy-io/encoding/-/encoding-0.2.2.tgz",
+-      "integrity": "sha512-bQHM5AB+F3/MIEaJ0WcFbCqAyuls7nUbQ34AlyctibPK1tmYL0tc9D2voeHo9q2S31nlgIKLEDJ65VZc+pcv6Q==",
++      "version": "0.2.3",
++      "resolved": "https://registry.npmjs.org/@privy-io/encoding/-/encoding-0.2.3.tgz",
++      "integrity": "sha512-vJaYa48lT36ao01gy7uxLBvi5xGz9eGIpQX2R4hsNnAitmB4BHkOe3B6G5TmPrPK84wIMn6C7FHiEcHT5KmLYQ==",
+       "license": "Apache-2.0",
+       "dependencies": {
+         "@scure/base": "^1.2.6"
+       }
+     },
+     "node_modules/@privy-io/ethereum": {
+-      "version": "0.2.3",
+-      "resolved": "https://registry.npmjs.org/@privy-io/ethereum/-/ethereum-0.2.3.tgz",
+-      "integrity": "sha512-ofYileoIrrR+QDfZH/YF5fkeJZGJEwH4FJDQ3ipm16p8feHqImPXWrqIKOOT0n7IM6OUMvKpAP6QeEgXMc18jA==",
++      "version": "0.2.4",
++      "resolved": "https://registry.npmjs.org/@privy-io/ethereum/-/ethereum-0.2.4.tgz",
++      "integrity": "sha512-9ILDjTsvJhHFGGU/HHZWGEbqZRJyZqCtSB9+j+Bg8F4LdoBtMSlhyCt75nMHXU4TjV3Qx7rGbYiWOdq/GyFLoQ==",
+       "license": "Apache-2.0",
+       "peerDependencies": {
+         "viem": "2.56.0"
+       }
+     },
+     "node_modules/@privy-io/js-sdk-core": {
+-      "version": "0.76.0",
+-      "resolved": "https://registry.npmjs.org/@privy-io/js-sdk-core/-/js-sdk-core-0.76.0.tgz",
+-      "integrity": "sha512-dcAMryybfeYpmyUU1CAFL4Nq2XhlKKrfSmfNwWDB0Nfu2edwGS3DkJwREec4AXU++xk3qKrpKIUOqsdYcBjDDA==",
++      "version": "0.76.2",
++      "resolved": "https://registry.npmjs.org/@privy-io/js-sdk-core/-/js-sdk-core-0.76.2.tgz",
++      "integrity": "sha512-ASqroInL58D06nihshn8RA3BxRLTywd8cYyY01k/dr+lbkieBvqSBvveHnvLaqltIHMmQB0LprLGePrF+pB7UQ==",
+       "license": "Apache-2.0",
+       "dependencies": {
+-        "@privy-io/api-base": "1.10.0",
+-        "@privy-io/api-types": "0.21.0",
+-        "@privy-io/chains": "0.6.0",
+-        "@privy-io/encoding": "0.2.2",
+-        "@privy-io/ethereum": "0.2.3",
+-        "@privy-io/routes": "0.4.0",
++        "@privy-io/api-base": "1.11.0",
++        "@privy-io/api-types": "0.22.0",
++        "@privy-io/chains": "0.6.1",
++        "@privy-io/encoding": "0.2.3",
++        "@privy-io/ethereum": "0.2.4",
++        "@privy-io/routes": "0.4.1",
++        "@privy-io/std": "0.0.1",
+         "canonicalize": "^2.0.0",
+         "eventemitter3": "^5.0.1",
+         "fetch-retry": "^6.0.0",
+@@ -2048,15 +2104,15 @@
+       }
+     },
+     "node_modules/@privy-io/popup": {
+-      "version": "0.0.5",
+-      "resolved": "https://registry.npmjs.org/@privy-io/popup/-/popup-0.0.5.tgz",
+-      "integrity": "sha512-lIwErJA86rHmLkSyapv86Z6hVzoLl544iZsVgk4tcVCHxbLBlLI4UmgLDmviNTZdp+uY0VEZe8fjUQIPpa6tZg==",
++      "version": "0.0.6",
++      "resolved": "https://registry.npmjs.org/@privy-io/popup/-/popup-0.0.6.tgz",
++      "integrity": "sha512-GqhllI3PzwszfWkVyFhSZ7TiCR0opjWysdfX45SMnVXBasG0pyt7pAf/eHvQhUmjpVpi1VAcOdeB70Iv2CYuDw==",
+       "license": "Apache-2.0"
+     },
+     "node_modules/@privy-io/react-auth": {
+-      "version": "3.43.0",
+-      "resolved": "https://registry.npmjs.org/@privy-io/react-auth/-/react-auth-3.43.0.tgz",
+-      "integrity": "sha512-Bn1AaoJjcJlexf9FJM1O4WhGXou4IGKe7fVbLDvCCWB5eyaBjwa1dsZlEZwWg/00xoBV3MOZ8sZgqHiLfPTIpA==",
++      "version": "3.45.0",
++      "resolved": "https://registry.npmjs.org/@privy-io/react-auth/-/react-auth-3.45.0.tgz",
++      "integrity": "sha512-zMBvxABR9w2rO3Id2SWrRLdhaXd6c2h90zX9PKAHAkyTsStQystuUFzAo79V/ecopQnc900d2jtXF+Gk2sIcWA==",
+       "license": "Apache-2.0",
+       "dependencies": {
+         "@base-org/account": "^1.1.0",
+@@ -2067,19 +2123,19 @@
+         "@headlessui/react": "^2.2.0",
+         "@heroicons/react": "^2.2.0",
+         "@marsidev/react-turnstile": "^1.3.1",
+-        "@privy-io/api-base": "1.10.0",
+-        "@privy-io/api-types": "0.21.0",
+-        "@privy-io/are-addresses-equal": "0.0.12",
+-        "@privy-io/chains": "0.6.0",
+-        "@privy-io/encoding": "0.2.2",
+-        "@privy-io/ethereum": "0.2.3",
+-        "@privy-io/js-sdk-core": "0.76.0",
+-        "@privy-io/popup": "0.0.5",
+-        "@privy-io/routes": "0.4.0",
++        "@privy-io/api-base": "1.11.0",
++        "@privy-io/api-types": "0.22.0",
++        "@privy-io/are-addresses-equal": "0.0.13",
++        "@privy-io/chains": "0.6.1",
++        "@privy-io/encoding": "0.2.3",
++        "@privy-io/ethereum": "0.2.4",
++        "@privy-io/js-sdk-core": "0.76.2",
++        "@privy-io/popup": "0.0.6",
++        "@privy-io/routes": "0.4.1",
+         "@privy-io/urls": "0.0.5",
+         "@scure/base": "^1.2.5",
+         "@simplewebauthn/browser": "^13.2.2",
+-        "@stripe/crypto": ">=1.1.1",
++        "@stripe/crypto": ">=1.1.3",
+         "@tanstack/react-virtual": "^3.13.10",
+         "@wallet-standard/app": "^1.0.1",
+         "@walletconnect/ethereum-provider": "2.22.4",
+@@ -3501,14 +3557,20 @@
+       }
+     },
+     "node_modules/@privy-io/routes": {
+-      "version": "0.4.0",
+-      "resolved": "https://registry.npmjs.org/@privy-io/routes/-/routes-0.4.0.tgz",
+-      "integrity": "sha512-/vsyB4i6AmIbWvqId1ywjZ5/IUI6R7OVrDDqmQEBzGLsr+nZtnRnbwwURDyKwtYUvaPT1WbnXHAXxVrPgxgVgw==",
++      "version": "0.4.1",
++      "resolved": "https://registry.npmjs.org/@privy-io/routes/-/routes-0.4.1.tgz",
++      "integrity": "sha512-T66LFbb0F9ovUj7V3+K2kfG8LjL8bZk0nouXaIsA+s4UTJkkimroqsuGIK2T1ruWFjeCoo31YC5xwB3P2cnM1Q==",
+       "license": "Apache-2.0",
+       "dependencies": {
+-        "@privy-io/api-types": "0.21.0"
++        "@privy-io/api-types": "0.22.0"
+       }
+     },
++    "node_modules/@privy-io/std": {
++      "version": "0.0.1",
++      "resolved": "https://registry.npmjs.org/@privy-io/std/-/std-0.0.1.tgz",
++      "integrity": "sha512-6bgdA8OZZ2hX3CnTgmKVsu+vyIFb0880g030djQHhtNAWacyfnUHUiRTxkeiciMdnh9M3WEV/EZTAOAaF3Rk/w==",
++      "license": "Apache-2.0"
++    },
+     "node_modules/@privy-io/urls": {
+       "version": "0.0.5",
+       "resolved": "https://registry.npmjs.org/@privy-io/urls/-/urls-0.0.5.tgz",
+@@ -3565,9 +3627,9 @@
+       }
+     },
+     "node_modules/@remix-run/router": {
+-      "version": "1.23.3",
+-      "resolved": "https://registry.npmjs.org/@remix-run/router/-/router-1.23.3.tgz",
+-      "integrity": "sha512-4An71tdz9X8+3sI4Qqqd2LWd9vS39J7sqd9EU4Scw7TJE/qB10Flv/UuqbPVgfQV9XoK8Np6jNquZitnZq5i+Q==",
++      "version": "1.23.4",
++      "resolved": "https://registry.npmjs.org/@remix-run/router/-/router-1.23.4.tgz",
++      "integrity": "sha512-q7j5geK7xs3UJSdm9/iytUNclBnLmYx1EnSeCFXHPeutdqgIMeFeHtUZgS3EhlKxdBEAu8OwtJCwmLrEzpSs7Q==",
+       "license": "MIT",
+       "engines": {
+         "node": ">=14.0.0"
+@@ -7061,6 +7123,18 @@
+         "node": ">=6.5"
+       }
+     },
++    "node_modules/agent-base": {
++      "version": "6.0.2",
++      "resolved": "https://registry.npmjs.org/agent-base/-/agent-base-6.0.2.tgz",
++      "integrity": "sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==",
++      "license": "MIT",
++      "dependencies": {
++        "debug": "4"
++      },
++      "engines": {
++        "node": ">= 6.0.0"
++      }
++    },
+     "node_modules/ansi-regex": {
+       "version": "5.0.1",
+       "resolved": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz",
+@@ -7159,13 +7233,14 @@
+       }
+     },
+     "node_modules/axios": {
+-      "version": "1.16.0",
+-      "resolved": "https://registry.npmjs.org/axios/-/axios-1.16.0.tgz",
+-      "integrity": "sha512-6hp5CwvTPlN2A31g5dxnwAX0orzM7pmCRDLnZSX772mv8WDqICwFjowHuPs04Mc8deIld1+ejhtaMn5vp6b+1w==",
++      "version": "1.20.0",
++      "resolved": "https://registry.npmjs.org/axios/-/axios-1.20.0.tgz",
++      "integrity": "sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==",
+       "license": "MIT",
+       "dependencies": {
+         "follow-redirects": "^1.16.0",
+-        "form-data": "^4.0.5",
++        "form-data": "^4.0.6",
++        "https-proxy-agent": "^5.0.1",
+         "proxy-from-env": "^2.1.0"
+       }
+     },
+@@ -7208,9 +7283,9 @@
+       "license": "MIT"
+     },
+     "node_modules/baseline-browser-mapping": {
+-      "version": "2.10.43",
+-      "resolved": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.43.tgz",
+-      "integrity": "sha512-AjYpR78kDWAY3Efj+cDTFH9t9SCoL7OoTp1BOb0mQV7S+6CiLwnWM3FyxhJtdPufDFKzmCSFoUncKjWgJEZTCQ==",
++      "version": "2.11.25",
++      "resolved": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.11.25.tgz",
++      "integrity": "sha512-gMmEShwwq7FJqMwvfRwvCl00v4kN+KOfJqXn+f4nrufak5gNHJOksd/60Dvjuz7sI8Y5WiSFBa8FEYr+zoyqCw==",
+       "dev": true,
+       "license": "Apache-2.0",
+       "bin": {
+@@ -7252,9 +7327,9 @@
+       "license": "MIT"
+     },
+     "node_modules/browserslist": {
+-      "version": "4.28.6",
+-      "resolved": "https://registry.npmjs.org/browserslist/-/browserslist-4.28.6.tgz",
+-      "integrity": "sha512-FQBYNK15VMslhLHpA7+n+n1GOlF1kId2xcCg7/j95f24AOF6VDYMNH4mFxF7KuaTdv627faazpOAjFzMrfJOUw==",
++      "version": "4.29.0",
++      "resolved": "https://registry.npmjs.org/browserslist/-/browserslist-4.29.0.tgz",
++      "integrity": "sha512-3GSvyjvDI4Dur1Meg2BekJquu5uF+9R9a1+5M1Mde192eZoXbeXjzgOsgqPS2V8D5wrrip0gR5Hf/GhWQ9ZzaA==",
+       "dev": true,
+       "funding": [
+         {
+@@ -7272,11 +7347,11 @@
+       ],
+       "license": "MIT",
+       "dependencies": {
+-        "baseline-browser-mapping": "^2.10.42",
+-        "caniuse-lite": "^1.0.30001803",
+-        "electron-to-chromium": "^1.5.389",
+-        "node-releases": "^2.0.51",
+-        "update-browserslist-db": "^1.2.3"
++        "baseline-browser-mapping": "^2.11.23",
++        "caniuse-lite": "^1.0.30001810",
++        "electron-to-chromium": "^1.5.427",
++        "node-releases": "^2.0.55",
++        "update-browserslist-db": "^1.3.3"
+       },
+       "bin": {
+         "browserslist": "cli.js"
+@@ -7397,9 +7472,9 @@
+       }
+     },
+     "node_modules/caniuse-lite": {
+-      "version": "1.0.30001805",
+-      "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001805.tgz",
+-      "integrity": "sha512-52noaS3DubycKSXaU30TwPGIp+POyQSUVa5jBEq3vkRkY0kjyb3LQgvhU6WGyCcyXqVLWO0Cw0Q6BSdD0kUfVA==",
++      "version": "1.0.30001810",
++      "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001810.tgz",
++      "integrity": "sha512-TITQPUkaz+aVk5GL6NhOdwk1aEaNTSDPsGFWrTuhKGtjTF70jL/Oht2W4c6rXUe5fu7Ie19VIahAXHIIiWWNeg==",
+       "dev": true,
+       "funding": [
+         {
+@@ -7813,9 +7888,9 @@
+       }
+     },
+     "node_modules/electron-to-chromium": {
+-      "version": "1.5.391",
+-      "resolved": "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.391.tgz",
+-      "integrity": "sha512-YmCu4856jkgKT1Nh6fwRdeVrM6Ydf/fBnq51tpmSfX+jOcUMTxh31yH6hjKScRenhB2oDSvA9oooxcpjogPeig==",
++      "version": "1.5.434",
++      "resolved": "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.434.tgz",
++      "integrity": "sha512-7EeFW9OLf1NN9NKQP9xdOE/XKqjxv7JDPP6AEAkHli11+Fae1OaLoNuAf13hQv1PPNtuES0pLQSPk2+fS3s8ww==",
+       "dev": true,
+       "license": "ISC"
+     },
+@@ -8460,14 +8535,27 @@
+       "license": "MIT"
+     },
+     "node_modules/hono": {
+-      "version": "4.12.30",
+-      "resolved": "https://registry.npmjs.org/hono/-/hono-4.12.30.tgz",
+-      "integrity": "sha512-emn+JoJjrN9YTpRDS5it/UI2SO9BAE37T6I3d963RxcZ81G9A4pr2SZTEiiaiKbzx+NKRg5BZ89fCL7gCJCUog==",
++      "version": "4.13.8",
++      "resolved": "https://registry.npmjs.org/hono/-/hono-4.13.8.tgz",
++      "integrity": "sha512-/Gng7NfoykZl2pjukW5Z6+8Yxm3BPRf86GTbQnt0SbySkvax4fyL4H3HhY1cCpBGmiW9XDRFzRV+CXK2W8QudQ==",
+       "license": "MIT",
+       "engines": {
+         "node": ">=16.9.0"
+       }
+     },
++    "node_modules/https-proxy-agent": {
++      "version": "5.0.1",
++      "resolved": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.1.tgz",
++      "integrity": "sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==",
++      "license": "MIT",
++      "dependencies": {
++        "agent-base": "6",
++        "debug": "4"
++      },
++      "engines": {
++        "node": ">= 6"
++      }
++    },
+     "node_modules/idb-keyval": {
+       "version": "6.2.1",
+       "resolved": "https://registry.npmjs.org/idb-keyval/-/idb-keyval-6.2.1.tgz",
+@@ -8932,9 +9020,9 @@
+       "license": "(Apache-2.0 AND MIT)"
+     },
+     "node_modules/nanoid": {
+-      "version": "3.3.16",
+-      "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz",
+-      "integrity": "sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==",
++      "version": "3.3.19",
++      "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.19.tgz",
++      "integrity": "sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==",
+       "dev": true,
+       "funding": [
+         {
+@@ -9000,9 +9088,9 @@
+       "license": "MIT"
+     },
+     "node_modules/node-releases": {
+-      "version": "2.0.51",
+-      "resolved": "https://registry.npmjs.org/node-releases/-/node-releases-2.0.51.tgz",
+-      "integrity": "sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==",
++      "version": "2.0.56",
++      "resolved": "https://registry.npmjs.org/node-releases/-/node-releases-2.0.56.tgz",
++      "integrity": "sha512-x0InOIyzgdk+eyaWaRJFH5snEtiImgBgblZ2CyPrLmqqcuMQkEvcDPHbzqbD8eDsSeJbVOjn+crzyzHaM4D+/A==",
+       "dev": true,
+       "license": "MIT",
+       "engines": {
+@@ -9344,9 +9432,9 @@
+       }
+     },
+     "node_modules/postcss": {
+-      "version": "8.5.19",
+-      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.19.tgz",
+-      "integrity": "sha512-Mz8SaolMd8nB+G13WkORcxQKHZ/NE4xXevtkJHVuG+guo9/wYKlIMTKAqGdEmYOXR2ijPjTYNHssizdaVSUNdQ==",
++      "version": "8.5.28",
++      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.28.tgz",
++      "integrity": "sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==",
+       "dev": true,
+       "funding": [
+         {
+@@ -9364,7 +9452,7 @@
+       ],
+       "license": "MIT",
+       "dependencies": {
+-        "nanoid": "^3.3.12",
++        "nanoid": "^3.3.18",
+         "picocolors": "^1.1.1",
+         "source-map-js": "^1.2.1"
+       },
+@@ -9570,12 +9658,12 @@
+       }
+     },
+     "node_modules/react-router": {
+-      "version": "6.30.4",
+-      "resolved": "https://registry.npmjs.org/react-router/-/react-router-6.30.4.tgz",
+-      "integrity": "sha512-SVUsDe+DybHM/WmYKIVYhZh1o5Dcuf16yM6WjG02Q9XVFMZIJyHYhwrr6bFBXZkVP6z69kNkMyBCujt8FaFLJA==",
++      "version": "6.30.6",
++      "resolved": "https://registry.npmjs.org/react-router/-/react-router-6.30.6.tgz",
++      "integrity": "sha512-5HfK7k5im7LTOB0EqCQmfvy4C13G92Ssj1VTmouTK3AJvyjKTnFuCV0vcMAD/JS+JC4DvDIBRrlAeJIFjh5VWg==",
+       "license": "MIT",
+       "dependencies": {
+-        "@remix-run/router": "1.23.3"
++        "@remix-run/router": "1.23.4"
+       },
+       "engines": {
+         "node": ">=14.0.0"
+@@ -9585,13 +9673,13 @@
+       }
+     },
+     "node_modules/react-router-dom": {
+-      "version": "6.30.4",
+-      "resolved": "https://registry.npmjs.org/react-router-dom/-/react-router-dom-6.30.4.tgz",
+-      "integrity": "sha512-q4HvNl+mmDdkS0g+MqiBZNteQJCuimWoOyHMy4T/RQLAn9Z29+E91QXRaxOujeMl2HTzRSS0KFPd7lxX3PjV0Q==",
++      "version": "6.30.6",
++      "resolved": "https://registry.npmjs.org/react-router-dom/-/react-router-dom-6.30.6.tgz",
++      "integrity": "sha512-0RHKZz7wwffvkU+2MFVT2NnjK44ssLEV+m0CAJaS2Ksmorrwj7WxH00jO0SOCW26/tINUnJHToXblDs33I38YQ==",
+       "license": "MIT",
+       "dependencies": {
+-        "@remix-run/router": "1.23.3",
+-        "react-router": "6.30.4"
++        "@remix-run/router": "1.23.4",
++        "react-router": "6.30.6"
+       },
+       "engines": {
+         "node": ">=14.0.0"
+@@ -9886,9 +9974,9 @@
+       }
+     },
+     "node_modules/socket.io-parser": {
+-      "version": "4.2.6",
+-      "resolved": "https://registry.npmjs.org/socket.io-parser/-/socket.io-parser-4.2.6.tgz",
+-      "integrity": "sha512-asJqbVBDsBCJx0pTqw3WfesSY0iRX+2xzWEWzrpcH7L6fLzrhyF8WPI8UaeM4YCuDfpwA/cgsdugMsmtz8EJeg==",
++      "version": "4.2.7",
++      "resolved": "https://registry.npmjs.org/socket.io-parser/-/socket.io-parser-4.2.7.tgz",
++      "integrity": "sha512-IH/iSeO9T6gz1KkFleGDWkG9N3dl4jXVYUtMhIqH10Md0ttMer8nUNWiP1DKuNrybD2xBrixLJdCC9J6ECoYkg==",
+       "license": "MIT",
+       "dependencies": {
+         "@socket.io/component-emitter": "~3.1.0",
+@@ -10312,9 +10400,9 @@
+       }
+     },
+     "node_modules/update-browserslist-db": {
+-      "version": "1.2.3",
+-      "resolved": "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.2.3.tgz",
+-      "integrity": "sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w==",
++      "version": "1.3.3",
++      "resolved": "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.3.3.tgz",
++      "integrity": "sha512-pJ2sYawQS0R/WI928Gj5GlPhTGzbMelq0+4INtSYNDV9ErKJcX6xjGWkoG/VnB3dpUm00zALaqkrUD77pO5TDQ==",
+       "dev": true,
+       "funding": [
+         {
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/frontend/release-check.cjs b/frontend/release-check.cjs
+--- a/frontend/release-check.cjs	1970-01-01 01:00:00.000000000 +0100
++++ b/frontend/release-check.cjs	2026-09-22 18:05:05.962289200 +0200
+@@ -0,0 +1,101 @@
++#!/usr/bin/env node
++// Release-configuration gate for the frontend bundle. FAILS CLOSED: a production build whose
++// configuration is incomplete must not ship as "ready". Run before every production deploy:
++//   npm run release:check              (reads .env, then .env.production, then process.env)
++//   RELEASE_CHAIN_ID=46630 npm run release:check   (a testnet release)
++// Exit code 1 lists every failure with the variable or file that must change.
++const fs = require("node:fs");
++const path = require("node:path");
++
++const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
++const ZERO = "0x" + "0".repeat(40);
++const REQUIRED_ADDRESSES = [
++  ["VITE_FACTORY_ADDRESS", "LaunchFactory (Prima)"],
++  ["VITE_FACTORY_V2_ADDRESS", "LaunchFactoryV2 (Maxima)"],
++  ["VITE_LOCKER_ADDRESS", "LaunchLocker"],
++  ["VITE_CURVE_ADDRESS", "CensusCurve"],
++  ["VITE_QUOTER", "Uniswap QuoterV2 (impact-aware quotes; mainnet gate G13)"],
++];
++
++function parseEnvFile(file) {
++  const out = {};
++  if (!fs.existsSync(file)) return out;
++  for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
++    const line = raw.trim();
++    if (!line || line.startsWith("#")) continue;
++    const eq = line.indexOf("=");
++    if (eq < 0) continue;
++    let v = line.slice(eq + 1).trim();
++    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
++    else v = v.replace(/\s+#.*$/, "");
++    out[line.slice(0, eq).trim()] = v;
++  }
++  return out;
++}
++
++// Vite precedence: .env.production overrides .env; the process environment overrides both.
++function loadEnv(dir) {
++  return { ...parseEnvFile(path.join(dir, ".env")), ...parseEnvFile(path.join(dir, ".env.production")), ...process.env };
++}
++
++function check({ env, srcDir, releaseChainId }) {
++  const failures = [];
++  const warnings = [];
++  const chainId = Number(env.VITE_CHAIN_ID ?? 4663);
++  if (chainId !== releaseChainId) failures.push(`VITE_CHAIN_ID=${env.VITE_CHAIN_ID ?? "(unset => 4663)"} but this release targets chain ${releaseChainId}`);
++
++  const seen = new Map();
++  for (const [key, what] of REQUIRED_ADDRESSES) {
++    const v = (env[key] ?? "").trim();
++    if (!ADDRESS.test(v)) failures.push(`${key} (${what}) is missing or not a 20-byte hex address`);
++    else if (v.toLowerCase() === ZERO) failures.push(`${key} (${what}) is the zero address: the bundle would ship unconfigured`);
++    else if (seen.has(v.toLowerCase())) failures.push(`${key} duplicates ${seen.get(v.toLowerCase())}: two contracts cannot share an address`);
++    else seen.set(v.toLowerCase(), key);
++  }
++  if (releaseChainId !== 4663) {
++    for (const key of ["VITE_WETH", "VITE_SWAP_ROUTER", "VITE_V3_FACTORY"]) {
++      const v = (env[key] ?? "").trim();
++      if (!ADDRESS.test(v) || v.toLowerCase() === ZERO) failures.push(`${key} is required off mainnet (CX-H3: no silent mainnet fallback)`);
++    }
++  }
++
++  const indexer = (env.VITE_INDEXER_URL ?? "").trim();
++  if (!indexer) failures.push("VITE_INDEXER_URL is empty: the board would scan chain logs from the browser on every load (G10)");
++  else if (!/^https:\/\/[^\s/]+/.test(indexer)) failures.push(`VITE_INDEXER_URL="${indexer}" must be an https:// origin`);
++
++  const fromBlock = Number(env.VITE_FROM_BLOCK ?? 0);
++  if (!Number.isInteger(fromBlock) || fromBlock <= 0) warnings.push("VITE_FROM_BLOCK is unset/0: the no-indexer fallback scans from block 0 (set it to the factory deploy block)");
++  const privy = (env.VITE_PRIVY_APP_ID ?? "").trim();
++  if (privy && privy.length !== 25) failures.push("VITE_PRIVY_APP_ID is set but is not a 25-character Privy App ID (sign-up would be silently disabled)");
++  if (!privy) warnings.push("VITE_PRIVY_APP_ID is unset: wallet-only connect, no email/social sign-up");
++  for (const key of Object.keys(env)) {
++    if (/^VITE_/.test(key) && /(SECRET|PRIVATE|API_KEY)/i.test(key)) failures.push(`${key}: a secret must never be a VITE_ variable (it ships in the browser bundle)`);
++  }
++
++  // Fee presentation must match the agreed V4 product: 2% base (+ optional 1-4% reflection) in the
++  // canonical hooked pool. While the UI still labels graduated trades with the Uniswap V3 pool tier
++  // (DEFAULT_FEE = 10000 => "1% pool fee"), a build is a V3 release, not the V4 product.
++  const configTs = readIf(path.join(srcDir, "config.ts"));
++  const coinTsx = readIf(path.join(srcDir, "pages", "Coin.tsx"));
++  const v4Marker = /GRADUATION_VENUE\s*=\s*["']v4["']/.test(configTs);
++  if (!v4Marker) {
++    if (/DEFAULT_FEE\s*=\s*10000/.test(configTs)) failures.push("src/config.ts: DEFAULT_FEE = 10000 (Uniswap V3 1% tier) is still the graduation venue; the V4 canonical-pool fee (2% base + reflection) is not wired (P0 in GO-LIVE-READINESS)");
++    if (/poolFee\s*\/\s*1e6/.test(coinTsx)) failures.push("src/pages/Coin.tsx: graduated trades are labelled with the V3 pool tier (poolFee / 1e6 => \"pool fee\"); V4 fee breakdown (base + reflection, Census/creator split) is not presented");
++  }
++  return { failures, warnings, chainId };
++}
++
++function readIf(file) { return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""; }
++
++module.exports = { check, loadEnv, parseEnvFile };
++
++if (require.main === module) {
++  const dir = __dirname;
++  const releaseChainId = Number(process.env.RELEASE_CHAIN_ID ?? 4663);
++  const { failures, warnings, chainId } = check({ env: loadEnv(dir), srcDir: path.join(dir, "src"), releaseChainId });
++  console.log(`release-check: chain ${chainId} (release target ${releaseChainId})`);
++  for (const w of warnings) console.log(`  WARN ${w}`);
++  for (const f of failures) console.log(`  FAIL ${f}`);
++  if (failures.length) { console.log(`release-check: NOT RELEASABLE (${failures.length} failure${failures.length === 1 ? "" : "s"})`); process.exit(1); }
++  console.log("release-check: configuration complete");
++}
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/frontend/release-check.test.cjs b/frontend/release-check.test.cjs
+--- a/frontend/release-check.test.cjs	1970-01-01 01:00:00.000000000 +0100
++++ b/frontend/release-check.test.cjs	2026-09-22 18:05:25.320290900 +0200
+@@ -0,0 +1,55 @@
++// Tests for release-check.cjs: the gate must fail closed on every missing/placeholder value and pass
++// only for a complete configuration against a V4-presenting source tree.
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const { check, parseEnvFile } = require("./release-check.cjs");
++
++const addr = (n) => "0x" + n.toString(16).padStart(40, "0");
++const GOOD = {
++  VITE_CHAIN_ID: "4663", VITE_FACTORY_ADDRESS: addr(1), VITE_FACTORY_V2_ADDRESS: addr(2), VITE_LOCKER_ADDRESS: addr(3),
++  VITE_CURVE_ADDRESS: addr(4), VITE_QUOTER: addr(5), VITE_INDEXER_URL: "https://indexer.example", VITE_FROM_BLOCK: "123",
++  VITE_PRIVY_APP_ID: "c".repeat(25),
++};
++const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "census-release-check-"));
++const v4Src = path.join(tmp, "v4src"); fs.mkdirSync(path.join(v4Src, "pages"), { recursive: true });
++fs.writeFileSync(path.join(v4Src, "config.ts"), 'export const GRADUATION_VENUE = "v4";\nexport const DEFAULT_FEE = 10000; // legacy V3 launches only\n');
++fs.writeFileSync(path.join(v4Src, "pages", "Coin.tsx"), "const feeRate = poolFee / 1e6; // legacy branch\n");
++const v3Src = path.join(tmp, "v3src"); fs.mkdirSync(path.join(v3Src, "pages"), { recursive: true });
++fs.writeFileSync(path.join(v3Src, "config.ts"), "export const DEFAULT_FEE = 10000; // 1% tier\n");
++fs.writeFileSync(path.join(v3Src, "pages", "Coin.tsx"), "const feeRate = onCurve ? x : poolFee / 1e6;\n");
++
++let n = 0;
++const failsWith = (env, srcDir, re, chain = 4663) => { const r = check({ env, srcDir, releaseChainId: chain }); assert.ok(r.failures.some((f) => re.test(f)), `expected a failure matching ${re}; got ${JSON.stringify(r.failures)}`); n++; };
++
++// complete configuration + V4 presentation => releasable
++assert.deepEqual(check({ env: GOOD, srcDir: v4Src, releaseChainId: 4663 }).failures, []); n++;
++// every required address: missing, zero, malformed, duplicated
++for (const k of ["VITE_FACTORY_ADDRESS", "VITE_FACTORY_V2_ADDRESS", "VITE_LOCKER_ADDRESS", "VITE_CURVE_ADDRESS", "VITE_QUOTER"]) {
++  failsWith({ ...GOOD, [k]: undefined }, v4Src, new RegExp(`${k}.*missing`));
++  failsWith({ ...GOOD, [k]: "0x" + "0".repeat(40) }, v4Src, new RegExp(`${k}.*zero address`));
++  failsWith({ ...GOOD, [k]: "0x1234" }, v4Src, new RegExp(`${k}.*missing or not`));
++}
++failsWith({ ...GOOD, VITE_QUOTER: GOOD.VITE_CURVE_ADDRESS }, v4Src, /VITE_QUOTER duplicates VITE_CURVE_ADDRESS/);
++// indexer URL: empty, unset, http
++failsWith({ ...GOOD, VITE_INDEXER_URL: "" }, v4Src, /VITE_INDEXER_URL is empty/);
++failsWith({ ...GOOD, VITE_INDEXER_URL: undefined }, v4Src, /VITE_INDEXER_URL is empty/);
++failsWith({ ...GOOD, VITE_INDEXER_URL: "http://indexer.example" }, v4Src, /must be an https/);
++// chain mismatch and off-mainnet Uniswap requirements
++failsWith({ ...GOOD, VITE_CHAIN_ID: "46630" }, v4Src, /VITE_CHAIN_ID=46630 but this release targets chain 4663/);
++failsWith({ ...GOOD, VITE_CHAIN_ID: "46630" }, v4Src, /VITE_WETH is required off mainnet/, 46630);
++assert.deepEqual(check({ env: { ...GOOD, VITE_CHAIN_ID: "46630", VITE_WETH: addr(7), VITE_SWAP_ROUTER: addr(8), VITE_V3_FACTORY: addr(9) }, srcDir: v4Src, releaseChainId: 46630 }).failures, []); n++;
++// secrets and Privy
++failsWith({ ...GOOD, VITE_ZEROX_API_KEY: "x" }, v4Src, /secret must never be a VITE_/);
++failsWith({ ...GOOD, VITE_PRIVY_APP_ID: "short" }, v4Src, /VITE_PRIVY_APP_ID.*25-character/);
++// V3 fee presentation is a release failure even with a complete env
++failsWith(GOOD, v3Src, /DEFAULT_FEE = 10000.*V4 canonical-pool fee.*not wired/);
++failsWith(GOOD, v3Src, /Coin\.tsx.*V3 pool tier/);
++// the real source tree today still presents V3 fees => the gate must fail on this checkout
++failsWith(GOOD, path.join(__dirname, "src"), /V4 canonical-pool fee.*not wired/);
++// .env parsing: quotes, inline comments, blank/comment lines
++const envFile = path.join(tmp, ".env"); fs.writeFileSync(envFile, '# c\nVITE_A="x y"\nVITE_B=0x1 # trailing\n\nVITE_C=\'z\'\n');
++assert.deepEqual(parseEnvFile(envFile), { VITE_A: "x y", VITE_B: "0x1", VITE_C: "z" }); n++;
++fs.rmSync(tmp, { recursive: true, force: true });
++console.log(`release-check.test.cjs: ${n} checks passed`);
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/frontend/src/lib/indexer.ts b/frontend/src/lib/indexer.ts
+--- a/frontend/src/lib/indexer.ts	2026-09-17 23:15:41.351949500 +0200
++++ b/frontend/src/lib/indexer.ts	2026-09-22 18:07:20.164332200 +0200
+@@ -9,7 +9,8 @@
+   creator: string; quote: string; quoteSymbol: string; vault: string | null; holdersBps: number; isV2: boolean;
+   virtualQuote: string; tokenReserve: string; virtualTokenOffset: string; realQuote: string; graduationQuote: string;
+   graduated: boolean; pool: string | null; progressBps: number;
+-  priceQuote: number; priceUsd: number; marketCapUsd: number; volumeQuote: number; volumeUsd: number;
++  // USD fields are null when the indexer has no configured USD price for the quote asset (fail closed).
++  priceQuote: number; priceUsd: number | null; marketCapUsd: number | null; volumeQuote: number; volumeUsd: number | null;
+   tradeCount: number; createdBlock: string; createdAt: string; updatedAt: string;
+ };
+ export type IndexerTrade = {
+@@ -33,7 +34,7 @@
+ export const fetchCoins = (sort = "new", limit = 50) => get<{ coins: IndexerCoin[] }>(`/coins?sort=${sort}&limit=${limit}`);
+ export const fetchCoin = (address: string) => get<{ coin: IndexerCoin }>(`/coins/${address.toLowerCase()}`);
+ export const fetchTrades = (address: string, limit = 50) => get<{ trades: IndexerTrade[] }>(`/coins/${address.toLowerCase()}/trades?limit=${limit}`);
+-export const fetchChart = (address: string, limit = 500) => get<{ points: { t: string; priceQuote: number; priceUsd: number }[] }>(`/coins/${address.toLowerCase()}/chart?limit=${limit}`);
++export const fetchChart = (address: string, limit = 500) => get<{ points: { t: string; priceQuote: number; priceUsd: number | null }[] }>(`/coins/${address.toLowerCase()}/chart?limit=${limit}`);
+ 
+ // WebSocket URL for live updates (new coins / trades / graduations), or null if the indexer isn't set.
+ export const indexerWsUrl = () => (INDEXER_URL ? INDEXER_URL.replace(/^http/, "ws") + "/ws" : null);
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/.env.example b/indexer/.env.example
+--- a/indexer/.env.example	2026-09-17 23:15:41.390326000 +0200
++++ b/indexer/.env.example	2026-09-22 18:06:42.361787900 +0200
+@@ -30,5 +30,9 @@
+ # (anyone could then spoof X-Forwarded-For). Leave unset when clients connect directly.
+ # TRUST_PROXY=1
+ 
+-# USD reference for the ETH-quoted price→USD conversion (HOOD is read live from its pool if configured).
+-ETH_USD=3000
++# USD pricing FAILS CLOSED: there is no default. Unset => priceUsd/marketCapUsd/volumeUsd are null for
++# every coin quoted in that asset (the board must not show a placeholder). Set from a verified source
++# and keep it current, or wire a feed before the board reads this indexer.
++# ETH_USD=
++# Other quote assets, e.g. HOOD: QUOTE_USD=0x32ac8c1d7672667d5ebdea22935f7b06fc8d496f=<usd>
++# QUOTE_USD=
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/backend.readiness.cjs b/indexer/backend.readiness.cjs
+--- a/indexer/backend.readiness.cjs	2026-09-17 23:15:41.394844800 +0200
++++ b/indexer/backend.readiness.cjs	2026-09-22 18:08:06.342355700 +0200
+@@ -1,3 +1,4 @@
++const path=require('node:path');
+ // Actual API and ingestion source; isolated adapters test failure boundaries, not Postgres itself.
+ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
+ const {EventEmitter}=require('node:events');
+@@ -68,4 +69,32 @@
+   console.log(`PASS ingest: RPC/write rollback, post-commit notifications, replay, missing registration, reorg/hash rejection, no RPC inside transactions, adaptive log paging; 10000 unique + 1000 duplicate events applied once (${Date.now()-start}ms, in-memory adapters).`);
+ }
+ module.exports={apiChecks,ingestChecks};
+-if(require.main===module)(async()=>{await apiChecks();await ingestChecks();})().catch(e=>{console.error(e);process.exitCode=1;});
++async function pricingChecks(){
++  // USD pricing fails closed: without a configured price for the quote asset every USD field is null,
++  // never 0 or a placeholder; with one, the numbers are exact and volumeUsd accumulates.
++  const run=async(cfg,quote,initialVolumeUsd)=>{
++    const s={coin:{address:'0xcoin',virtualQuote:'1000000000',tokenReserve:'1000000000',realQuote:'0',graduationQuote:'1000000000',decimals:18,quote,totalSupply:'1000000000',volumeQuote:0,volumeUsd:initialVolumeUsd,tradeCount:0},trades:new Map(),points:[]};
++    const db={coin:{findUnique:async()=>({...s.coin}),update:async({data})=>s.coin={...s.coin,...data}},trade:{findUnique:async()=>null,upsert:async({where,create})=>s.trades.set(JSON.stringify(where),create)},pricePoint:{create:async({data})=>s.points.push(data)}};
++    const context={exports:{},console:{log(){},warn(){}},cfg:{chainId:1,curve:'0xcurve',weth:'0xweth',...cfg},defineChain:x=>x,http:()=>({}),createPublicClient:()=>({getBlock:async()=>({timestamp:1000n})}),parseAbiItem:x=>x,getAddress:x=>x,erc20Abi:[],prisma:{},publish(){},ingestion:{}};
++    vm.runInNewContext(code('ingest.ts','\nexport { derive, onTraded };'),context);
++    const d=context.exports.derive(s.coin);
++    await context.exports.onTraded({args:{coin:'0xcoin',trader:'0xholder',isBuy:true,amountIn:100n,amountOut:90n,fee:2n},blockNumber:1n,transactionHash:'0xtx',logIndex:0},db,()=>{});
++    return{d,coin:s.coin,point:s.points[0]};
++  };
++  let r=await run({},'0xweth',null);
++  assert.equal(r.d.priceUsd,null);assert.equal(r.d.marketCapUsd,null);assert.equal(r.coin.priceUsd,null);assert.equal(r.coin.marketCapUsd,null);assert.equal(r.coin.volumeUsd,null);assert.equal(r.point.priceUsd,null);
++  assert.ok(r.coin.priceQuote>0&&r.coin.volumeQuote>0,'quote-denominated data still indexed');
++  r=await run({ethUsd:2500},'0xweth',0);
++  assert.ok(r.coin.priceUsd>0&&r.coin.marketCapUsd>0&&r.point.priceUsd>0);assert.equal(r.coin.volumeUsd,100/1e18*2500);
++  r=await run({ethUsd:2500},'0xhood',0);                       // non-ETH quote without QUOTE_USD: null, not 0
++  assert.equal(r.coin.priceUsd,null);assert.equal(r.coin.marketCapUsd,null);assert.equal(r.coin.volumeUsd,null);
++  r=await run({ethUsd:2500,quoteUsd:{'0xhood':40}},'0xhood',0); // configured non-ETH quote is priced
++  assert.ok(r.coin.priceUsd>0);assert.equal(r.coin.volumeUsd,100/1e18*40);
++  r=await run({ethUsd:2500},'0xweth',null);                     // once unknown, volumeUsd stays null (no partial sums)
++  assert.equal(r.coin.volumeUsd,null);assert.ok(r.coin.priceUsd>0);
++  const cfgSrc=fs.readFileSync(path.join(__dirname,'src','config.ts'),'utf8');
++  assert.ok(!/ETH_USD \?\? 3000/.test(cfgSrc),'no hardcoded ETH/USD default');
++  console.log('PASS pricing: USD fields are null (never 0/placeholder) without a configured ETH_USD/QUOTE_USD; exact when configured; unknown volume never becomes a partial sum.');
++}
++module.exports.pricingChecks=pricingChecks;
++if(require.main===module)(async()=>{await apiChecks();await ingestChecks();await pricingChecks();})().catch(e=>{console.error(e);process.exit(1);}); // explicit non-zero exit
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/postgres.readiness.cjs b/indexer/postgres.readiness.cjs
+--- a/indexer/postgres.readiness.cjs	2026-09-17 23:15:41.399859800 +0200
++++ b/indexer/postgres.readiness.cjs	2026-09-22 18:06:42.362785400 +0200
+@@ -337,14 +337,14 @@
+       for (let i = 1; i < chart.points.length; i++) assert.ok(chart.points[i].t >= chart.points[i - 1].t, 'chart ascending, recent window');
+       assert.equal((await app.inject('/coins?limit=abc')).statusCode, 400);
+       t0 = Date.now();
+-      let failures = 0;
++      const failures = [];
+       for (let i = 0; i < 20; i++) {
+         await Promise.all(Array.from({ length: 50 }, async (_, j) => {
+           const r = await app.inject({ url: `/coins?limit=50`, remoteAddress: `10.0.${i}.${j + 1}` });
+-          if (r.statusCode !== 200) failures++;
++          if (r.statusCode !== 200) failures.push(`${r.statusCode}: ${String(r.body).slice(0, 160)}`);
+         }));
+       }
+-      assert.equal(failures, 0);
++      assert.equal(failures.length, 0, `${failures.length} of 1000 API requests failed under load: ${[...new Set(failures)].join(' | ')}`);
+       console.log(`PASS api: actual Fastify handlers on real Postgres — health, board, coin detail, recent chart, validation; 1000 requests at concurrency 50 in ${Date.now() - t0}ms (in-process transport)`);
+     } finally { await app.close(); }
+ 
+@@ -363,4 +363,4 @@
+   }
+ }
+ 
+-main().catch((e) => { console.error(e); process.exitCode = 1; });
++main().catch((e) => { console.error(e); process.exit(1); }); // exit explicitly: a failed check must never report success
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/prisma/migrations/20260922000000_usd_fail_closed/migration.sql b/indexer/prisma/migrations/20260922000000_usd_fail_closed/migration.sql
+--- a/indexer/prisma/migrations/20260922000000_usd_fail_closed/migration.sql	1970-01-01 01:00:00.000000000 +0100
++++ b/indexer/prisma/migrations/20260922000000_usd_fail_closed/migration.sql	2026-09-22 18:06:42.360769500 +0200
+@@ -0,0 +1,7 @@
++-- USD fields fail closed: null means "no configured USD price for this quote asset", never 0 or a
++-- placeholder ETH price. Existing rows keep their values; rebuild the index after configuring ETH_USD /
++-- QUOTE_USD if the previous values were produced by the old hardcoded default.
++ALTER TABLE "Coin" ALTER COLUMN "priceUsd" DROP NOT NULL, ALTER COLUMN "priceUsd" DROP DEFAULT,
++  ALTER COLUMN "marketCapUsd" DROP NOT NULL, ALTER COLUMN "marketCapUsd" DROP DEFAULT,
++  ALTER COLUMN "volumeUsd" DROP NOT NULL, ALTER COLUMN "volumeUsd" DROP DEFAULT;
++ALTER TABLE "PricePoint" ALTER COLUMN "priceUsd" DROP NOT NULL, ALTER COLUMN "priceUsd" DROP DEFAULT;
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/prisma/schema.prisma b/indexer/prisma/schema.prisma
+--- a/indexer/prisma/schema.prisma	2026-09-17 23:15:41.410932000 +0200
++++ b/indexer/prisma/schema.prisma	2026-09-22 18:06:42.359771300 +0200
+@@ -38,10 +38,10 @@
+ 
+   // Aggregates for the board.
+   priceQuote      Float    @default(0) // spot price, quote per token
+-  priceUsd        Float    @default(0)
+-  marketCapUsd    Float    @default(0)
++  priceUsd        Float? // null = no configured USD price for the quote asset (fail closed)
++  marketCapUsd    Float?
+   volumeQuote     Float    @default(0) // cumulative quote volume
+-  volumeUsd       Float    @default(0)
++  volumeUsd       Float? // null once any trade could not be priced; rebuild after configuring a price
+   tradeCount      Int      @default(0)
+ 
+   createdBlock    BigInt   @default(0)
+@@ -103,7 +103,7 @@
+   coin        Coin     @relation(fields: [coinAddress], references: [address])
+   coinAddress String
+   priceQuote  Float
+-  priceUsd    Float    @default(0)
++  priceUsd    Float?
+   block       BigInt
+   ts          DateTime @default(now())
+ 
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/README.md b/indexer/README.md
+--- a/indexer/README.md	2026-09-17 23:15:41.391329300 +0200
++++ b/indexer/README.md	2026-09-22 18:06:42.361787900 +0200
+@@ -52,6 +52,8 @@
+ | `GET /stats` | totals (coins, graduated, trades, volume) |
+ | `GET /ws` | WebSocket stream: `{type:"coin"\|"trade"\|"graduate", data}` |
+ 
+-All amounts are strings (uint256); prices/mcap are numbers. `priceUsd`/`marketCapUsd` are populated for
+-ETH-quoted coins; HOOD/other-quoted coins report `priceQuote` (in the quote asset) until a price feed for
+-that quote is wired.
++All amounts are strings (uint256); prices/mcap are numbers or **null**. USD pricing fails closed:
++`priceUsd`/`marketCapUsd`/`volumeUsd` are null unless the quote asset has a configured USD price
++(`ETH_USD` for WETH, `QUOTE_USD` for others); there is no default ETH price. `/stats.volumeUsd` is null
++while any coin is unpriced (`unpricedCoins` says how many) and `/health.usdPricing` reports whether
++`ETH_USD` is configured. Company-coin quotes are not USD-priced yet.
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/src/api.ts b/indexer/src/api.ts
+--- a/indexer/src/api.ts	2026-09-17 23:15:41.411931000 +0200
++++ b/indexer/src/api.ts	2026-09-22 18:06:42.359771300 +0200
+@@ -37,7 +37,7 @@
+     let database = false;
+     try { await prisma.$queryRaw`SELECT 1`; database = true; } catch { /* unavailable */ }
+     const ok = database && !ingestion.error && Date.now() - ingestion.lastSuccessAt < Math.max(60000, cfg.pollMs * 3);
+-    return reply.code(ok ? 200 : 503).send({ ok, database, chainId: cfg.chainId, curve: cfg.curve, finalizedBlock: ingestion.lastBlock, ingestionError: ingestion.error });
++    return reply.code(ok ? 200 : 503).send({ ok, database, chainId: cfg.chainId, curve: cfg.curve, finalizedBlock: ingestion.lastBlock, ingestionError: ingestion.error, usdPricing: (cfg as any).ethUsd == null ? "unconfigured" : "configured" });
+   });
+ 
+   // Board: list coins. sort=new|mcap|volume, optional graduated filter.
+@@ -47,7 +47,7 @@
+     const sort = q.sort ?? "new";
+     if (!["new", "mcap", "volume", "active"].includes(sort) || q.graduated !== undefined && !["true", "false"].includes(q.graduated)) throw Object.assign(new Error("invalid filter"), { statusCode: 400 });
+     const orderBy =
+-      sort === "mcap" ? { marketCapUsd: "desc" as const }
++      sort === "mcap" ? { marketCapUsd: { sort: "desc" as const, nulls: "last" as const } }
+       : sort === "volume" ? { volumeQuote: "desc" as const }
+       : sort === "active" ? { updatedAt: "desc" as const }
+       : { createdAt: "desc" as const };
+@@ -101,8 +101,12 @@
+     const [coins, graduated, tradeCount] = await Promise.all([
+       prisma.coin.count(), prisma.coin.count({ where: { graduated: true } }), prisma.trade.count(),
+     ]);
+-    const vol = await prisma.coin.aggregate({ _sum: { volumeQuote: true, volumeUsd: true } });
+-    return { coins, graduated, tradeCount, volumeQuote: vol._sum.volumeQuote ?? 0, volumeUsd: vol._sum.volumeUsd ?? 0 };
++    const [vol, unpriced] = await Promise.all([
++      prisma.coin.aggregate({ _sum: { volumeQuote: true, volumeUsd: true } }),
++      prisma.coin.count({ where: { volumeUsd: null } }),
++    ]);
++    // A USD total over a set that contains unpriced coins is not a total: report null, not a partial sum.
++    return { coins, graduated, tradeCount, volumeQuote: vol._sum.volumeQuote ?? 0, volumeUsd: unpriced > 0 ? null : vol._sum.volumeUsd ?? 0, unpricedCoins: unpriced };
+   });
+ 
+   // Live stream: new coins, trades, graduations.
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/src/config.ts b/indexer/src/config.ts
+--- a/indexer/src/config.ts	2026-09-17 23:15:41.412931800 +0200
++++ b/indexer/src/config.ts	2026-09-22 18:06:42.358248200 +0200
+@@ -15,13 +15,36 @@
+   logPage: BigInt(process.env.LOG_PAGE ?? 5000),
+   port: Number(process.env.PORT ?? 8080),
+   corsOrigin: process.env.CORS_ORIGIN ?? "*",
+-  ethUsd: Number(process.env.ETH_USD ?? 3000),
++  // USD pricing fails CLOSED: no default. Unset/invalid => USD fields are null (never 0 or a stale
++  // placeholder). ETH_USD prices WETH-quoted coins; QUOTE_USD ("0xaddr=1.23,0xaddr2=4.5") prices other
++  // quote assets (e.g. HOOD). Company-coin quotes are not priced here (null) until a feed exists.
++  ethUsd: parseUsd(process.env.ETH_USD),
++  quoteUsd: parseQuoteUsd(process.env.QUOTE_USD),
+   // Behind a load balancer the client IP arrives in X-Forwarded-For. Set TRUST_PROXY to the number
+   // of trusted hops (e.g. 1) or a comma-separated list of proxy IPs/CIDRs; never a bare "true"
+   // (anyone could then spoof the header and share or escape the rate-limit bucket). Unset = direct.
+   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+ };
+ 
++function parseUsd(v: string | undefined): number | null {
++  if (v === undefined || v.trim() === "") return null;
++  const n = Number(v);
++  if (!Number.isFinite(n) || n <= 0) throw new Error("ETH_USD must be a positive number when set");
++  return n;
++}
++
++function parseQuoteUsd(v: string | undefined): Record<string, number> {
++  const out: Record<string, number> = {};
++  if (v === undefined || v.trim() === "") return out;
++  for (const part of v.split(",").map((s) => s.trim()).filter(Boolean)) {
++    const [a, p] = part.split("=").map((s) => s.trim());
++    const n = Number(p);
++    if (!/^0x[0-9a-fA-F]{40}$/.test(a ?? "") || !Number.isFinite(n) || n <= 0) throw new Error(`QUOTE_USD entry invalid: "${part}" (expected 0xaddress=positive number)`);
++    out[a.toLowerCase()] = n;
++  }
++  return out;
++}
++
+ function parseTrustProxy(v: string | undefined): number | string[] | false {
+   if (v === undefined || v.trim() === "" || v.trim() === "false") return false;
+   if (v.trim() === "true") throw new Error("TRUST_PROXY must be a hop count or a proxy IP/CIDR list, not 'true'");
+diff -ruN -x node_modules -x dist -x .test-build -x rd -x cache -x artifacts -x .git -x tsconfig.tsbuildinfo -x typechain-types -x BONDING-LIFECYCLE-RESULTS.json -x BONDING-LIFECYCLE-RESULTS.md -x 'readiness-2026-09-2*' -x '*.patch' -x 'RELEASE-DAY-REPORT-*' -x .env a/indexer/src/ingest.ts b/indexer/src/ingest.ts
+--- a/indexer/src/ingest.ts	2026-09-17 23:15:41.417460800 +0200
++++ b/indexer/src/ingest.ts	2026-09-22 18:06:42.359248500 +0200
+@@ -70,6 +70,17 @@
+   return d;
+ }
+ 
++// ---- USD pricing (fail closed) ----
++// Returns the configured USD price of a quote asset, or null when none is configured. Callers must
++// write null USD fields in that case: a placeholder (0 or a fixed ETH price) would be a wrong number
++// served to the board, not a missing one.
++function quoteUsdFor(quote: string): number | null {
++  const q = lc(quote);
++  if (q === cfg.weth) return typeof cfg.ethUsd === "number" && cfg.ethUsd > 0 ? cfg.ethUsd : null;
++  const v = (cfg as any).quoteUsd?.[q];
++  return typeof v === "number" && v > 0 ? v : null;
++}
++
+ // ---- derived fields ----
+ function derive(coin: {
+   virtualQuote: string; tokenReserve: string; virtualTokenOffset?: string; realQuote: string; graduationQuote: string;
+@@ -80,10 +91,10 @@
+   const qd = coin.quoteDecimals ?? 18;
+   const decFactor = 10 ** (coin.decimals - qd); // human quote per human token
+   const priceQuote = tr > 0 ? (vq / tr) * decFactor : 0; // quote per token (human)
+-  const quoteUsd = lc(coin.quote) === cfg.weth ? cfg.ethUsd : 0; // HOOD/other: needs its own feed (TODO)
+-  const priceUsd = priceQuote * quoteUsd;
++  const quoteUsd = quoteUsdFor(coin.quote);
++  const priceUsd = quoteUsd == null ? null : priceQuote * quoteUsd;
+   const supplyHuman = Number(coin.totalSupply) / 10 ** coin.decimals;
+-  const marketCapUsd = priceUsd * supplyHuman;
++  const marketCapUsd = priceUsd == null ? null : priceUsd * supplyHuman;
+   const gq = BigInt(coin.graduationQuote || "0");
+   const rq = BigInt(coin.realQuote || "0");
+   const progressBps = gq > 0n ? Number((rq >= gq ? 10000n : (rq * 10000n) / gq)) : 0;
+@@ -125,7 +136,7 @@
+   const d = derive(base);
+   const row = await db.coin.upsert({
+     where: { address: coin },
+-    create: { address: coin, ...base, ...d },
++    create: { address: coin, ...base, ...d, volumeUsd: quoteUsdFor(quote) == null ? null : 0 },
+     update: { ...base, ...d },
+   });
+   notify({ type: "coin", data: serializeCoin(row) });
+@@ -188,7 +199,7 @@
+     where: { address: coin },
+     data: {
+       virtualQuote: vq.toString(), tokenReserve: tr.toString(), realQuote: rq.toString(),
+-      ...d, volumeQuote: c.volumeQuote + volAdd, volumeUsd: c.volumeUsd + volAdd * (d.priceUsd > 0 && d.priceQuote > 0 ? d.priceUsd / d.priceQuote : 0),
++      ...d, volumeQuote: c.volumeQuote + volAdd, volumeUsd: addVolumeUsd(c.volumeUsd, volAdd, quoteUsdFor(c.quote)),
+       tradeCount: c.tradeCount + 1,
+     },
+   });
+@@ -239,14 +250,14 @@
+     },
+     update: {},
+   });
+-  const quoteUsd = lc(c.quote) === cfg.weth ? cfg.ethUsd : 0;
+-  const priceUsd = priceQuote * quoteUsd;
+-  const marketCapUsd = priceUsd * (Number(c.totalSupply) / 10 ** c.decimals);
++  const quoteUsd = quoteUsdFor(c.quote);
++  const priceUsd = quoteUsd == null ? null : priceQuote * quoteUsd;
++  const marketCapUsd = priceUsd == null ? null : priceUsd * (Number(c.totalSupply) / 10 ** c.decimals);
+   const row = await db.coin.update({
+     where: { address: c.address },
+     data: {
+       priceQuote, priceUsd, marketCapUsd,
+-      volumeQuote: c.volumeQuote + volAdd, volumeUsd: c.volumeUsd + volAdd * quoteUsd,
++      volumeQuote: c.volumeQuote + volAdd, volumeUsd: addVolumeUsd(c.volumeUsd, volAdd, quoteUsd),
+       tradeCount: c.tradeCount + 1,
+     },
+   });
+@@ -409,10 +420,17 @@
+   }
+ }
+ 
++// Once a coin's USD volume is unknown it stays null (a partial sum would understate it) until a rebuild.
++function addVolumeUsd(current: number | null | undefined, volAdd: number, quoteUsd: number | null): number | null {
++  if (current == null || quoteUsd == null) return null;
++  return current + volAdd * quoteUsd;
++}
++
+ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+ 
+ export async function runIngest() {
+   console.log(`[ingest] curve=${getAddress(cfg.curve)} chain=${cfg.chainId}`);
++  if (cfg.ethUsd == null) console.warn("[ingest] ETH_USD is not set: USD price/mcap/volume are reported as null for ETH-quoted coins (fail closed). Set ETH_USD (and QUOTE_USD for other quotes) from a verified source before the board reads this indexer.");
+   if (await client.getChainId() !== cfg.chainId) throw new Error("RPC chain ID mismatch");
+   for (;;) {
+     try {

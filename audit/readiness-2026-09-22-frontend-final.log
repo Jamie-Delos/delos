@@ -1,0 +1,65 @@
+### tsc --noEmit (after audit fix)
+exit=0
+### npm run build
+node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-CZXyXJwt.mjs (1:4744): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-CZXyXJwt.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-CZXyXJwt.mjs (1:5264): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/ErrorScreen-CZXyXJwt.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/to-ui-error-DriSyvzX.mjs (4:133): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/to-ui-error-DriSyvzX.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/to-ui-error-DriSyvzX.mjs (4:1378): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/to-ui-error-DriSyvzX.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/to-ui-error-DriSyvzX.mjs (4:2045): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/to-ui-error-DriSyvzX.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs (1:1596): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs (1:1980): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs (36:116): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs (43:1069): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs (44:876): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs (69:942): A comment
+in "node_modules/@privy-io/react-auth/dist/esm/TransactionErrorView-CHChscnJ.mjs" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+[2mdist/[22m[36massets/ErrorMessage-D8VaAP5m-D5ZrBkCW.js                               [39m[1m[2m    0.21 kB[22m[1m[22m[2m │ gzip:   0.18 kB[22m
+[2mdist/[22m[36massets/ErrorBanner-BcpGRt0h-DxczFbpF.js                                [39m[1m[2m    0.89 kB[22m[1m[22m[2m │ gzip:   0.52 kB[22m
+[2mdist/[22m[36massets/ErrorScreen-CZXyXJwt-C1k5Ml6N.js                                [39m[1m[2m    4.42 kB[22m[1m[22m[2m │ gzip:   1.89 kB[22m
+[2mdist/[22m[36massets/to-ui-error-DriSyvzX-Dpwy1J3r.js                                [39m[1m[2m    5.57 kB[22m[1m[22m[2m │ gzip:   2.34 kB[22m
+[2mdist/[22m[36massets/TransactionErrorView-CHChscnJ-BzEqLMQi.js                       [39m[1m[2m   24.22 kB[22m[1m[22m[2m │ gzip:   6.94 kB[22m
+[32m✓ built in 33.83s[39m
+exit=0
+### api metadata
+metadata authorization: 23 checks passed
+exit=0
+### api upload
+upload authorization: 18 checks passed
+exit=0
+### api zeroex
+api.zeroex.test.cjs: all assertions passed
+exit=0
+### names
+lib.names.test.cjs: 10 checks passed
+exit=0
+### release-check tests
+release-check.test.cjs: 29 checks passed
+exit=0
+### npm run release:check (this checkout)
+
+> launchpad-frontend@0.1.0 release:check
+> node release-check.cjs
+
+release-check: chain 4663 (release target 4663)
+  WARN VITE_FROM_BLOCK is unset/0: the no-indexer fallback scans from block 0 (set it to the factory deploy block)
+  WARN VITE_PRIVY_APP_ID is unset: wallet-only connect, no email/social sign-up
+  FAIL VITE_FACTORY_ADDRESS (LaunchFactory (Prima)) is missing or not a 20-byte hex address
+  FAIL VITE_FACTORY_V2_ADDRESS (LaunchFactoryV2 (Maxima)) is missing or not a 20-byte hex address
+  FAIL VITE_LOCKER_ADDRESS (LaunchLocker) is missing or not a 20-byte hex address
+  FAIL VITE_CURVE_ADDRESS (CensusCurve) is missing or not a 20-byte hex address
+  FAIL VITE_QUOTER (Uniswap QuoterV2 (impact-aware quotes; mainnet gate G13)) is missing or not a 20-byte hex address
+  FAIL VITE_INDEXER_URL is empty: the board would scan chain logs from the browser on every load (G10)
+  FAIL src/config.ts: DEFAULT_FEE = 10000 (Uniswap V3 1% tier) is still the graduation venue; the V4 canonical-pool fee (2% base + reflection) is not wired (P0 in GO-LIVE-READINESS)
+  FAIL src/pages/Coin.tsx: graduated trades are labelled with the V3 pool tier (poolFee / 1e6 => "pool fee"); V4 fee breakdown (base + reflection, Census/creator split) is not presented
+release-check: NOT RELEASABLE (8 failures)
+exit=1

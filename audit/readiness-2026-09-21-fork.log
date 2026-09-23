@@ -1,0 +1,10 @@
+
+
+  Local fork lifecycle against configured mainnet Uniswap dependencies
+      mainnet dependency state pinned at block 69078436 ; transactions LOCAL ONLY
+      lifecycle and repaired platform/holder split verified
+    √ launches, trades, claims a dividend, graduates and trades the migrated pool locally (25880ms)
+
+
+  1 passing (26s)
+

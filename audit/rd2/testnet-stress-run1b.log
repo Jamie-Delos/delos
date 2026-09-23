@@ -1,0 +1,57 @@
+
+> launchpad-contracts@0.1.0 stress:robinhoodTestnet
+> hardhat run scripts/stressTestnet.js --network robinhoodTestnet
+
+[22:26:37] stress on robinhoodTestnet chainId 46630 deployer 0x5fC5cB0d2F026331B5ceaF4e13eff123cd8dFA2b balance 0.00578406156 ETH
+[22:29:05] trades 200/300 ok=200 reverted=0 mismatch=0
+[22:29:55] ERROR trades/buy c3 w7: execution reverted: WETH: insufficient
+[22:30:12] trades 300/300 ok=299 reverted=1 mismatch=0
+[22:30:12] trades done: {"sent":300,"ok":299,"reverted":1,"feeMismatch":0,"buys":199,"sells":100,"gasMax":"198888","gasTotal":"49252443","byCoin":[{"buys":50,"sells":25,"feeTotal":"59946770180515"},{"buys":50,"sells":25,"feeTotal":"88483120198744"},{"buys":50,"sells":25,"feeTotal":"143346672824165"},{"buys":49,"sells":25,"feeTotal":"170439059202910"}]} in 215104 ms
+[22:30:19] graduated c0: {"coin":"0x4806D19d1dA9A2CAde208167646613aaD2D3202F","accepted":"0.000664762347323678","refund":"0.0002","realQuoteAtCap":"0.0008","poolId":"0x35b779de607e3fd96d76bdde780b8a306cc60eb1298127485b0eeb03513ba2c3","tokensIn":"214285714.285730634091507775","quoteIn":"0.000799999999999995","liquidity":"414039335605432632174","managerHolds":"214285714.285730634091507775","dust":"0.000000000000134214"}
+[22:30:25] graduated c1: {"coin":"0xf1131F57D86ffb1b72Cd7E3611598EE044486E2D","accepted":"0.000634544902493971","refund":"0.0002","realQuoteAtCap":"0.0008","poolId":"0x48d87ee79657860ca42e883c1706fd8141711391e0098197b26547b7976de297","tokensIn":"214285714.285732270052712237","quoteIn":"0.000799999999999996","liquidity":"414039335605434643705","managerHolds":"214285714.285732270052712237","dust":"0.000000000000197898"}
+[22:30:32] graduated c2: {"coin":"0xEF13B3Cdb9cb367a0C9174732650fcb00afBC5d6","accepted":"0.000608523821411212","refund":"0.0002","realQuoteAtCap":"0.0008","poolId":"0x34eabe9580fd0de3a9ad2de28592447b2bd2970c4ea685b8163d65703c0c3118","tokensIn":"214285714.285732546967200079","quoteIn":"0.000799999999999997","liquidity":"414039335605434984191","managerHolds":"214285714.285732546967200079","dust":"0.000000000000373668"}
+[22:30:38] graduated c3: {"coin":"0x4297C944EAd305906a5dD6ADf5A990D2F4Ec038C","accepted":"0.000728561891309018","refund":"0.0002","realQuoteAtCap":"0.0008","poolId":"0x887688b50060c8c09327f141afdea266f6d656f70c8f5be53d4f7c6efbffc244","tokensIn":"214285714.285731190423793895","quoteIn":"0.000799999999999995","liquidity":"414039335605433316224","managerHolds":"214285714.285731190423793895","dust":"0.000000000000485483"}
+[22:30:39] no top-up for w1: deployer reserve reached
+[22:30:40] ERROR pool/sell c1 w1: insufficient funds (wallet gas exhausted; harness budget, not a contract failure)
+[22:30:41] pool revert diag c1 w1: {"weth":"0.000140775871310931","eth":"0.000006423403333334","coin":"190429092.244187857666416941","amountIn":"95214546.12209392883320847","zeroForOne":false,"static":"ok"}
+[22:30:43] no top-up for w1: deployer reserve reached
+[22:30:50] no top-up for w1: deployer reserve reached
+[22:30:50] no top-up for w2: deployer reserve reached
+[22:30:51] ERROR pool/sell c1 w1: insufficient funds (wallet gas exhausted; harness budget, not a contract failure)
+[22:30:52] pool revert diag c1 w1: {"weth":"0.000324747459228289","eth":"0.000004358913333334","coin":"95214546.122093928833208471","amountIn":"47607273.061046964416604235","zeroForOne":false,"static":"ok"}
+[22:30:57] no top-up for w1: deployer reserve reached
+[22:30:57] no top-up for w2: deployer reserve reached
+[22:30:58] no top-up for w4: deployer reserve reached
+[22:30:59] no top-up for w6: deployer reserve reached
+[22:30:59] ERROR pool/sell c1 w1: insufficient funds (wallet gas exhausted; harness budget, not a contract failure)
+[22:30:59] pool revert diag c1 w1: {"weth":"0.000324747459228289","eth":"0.000004358913333334","coin":"95214546.122093928833208471","amountIn":"47607273.061046964416604235","zeroForOne":false,"static":"ok"}
+[22:31:04] no top-up for w1: deployer reserve reached
+[22:31:04] no top-up for w2: deployer reserve reached
+[22:31:05] no top-up for w4: deployer reserve reached
+[22:31:06] no top-up for w6: deployer reserve reached
+[22:31:06] ERROR pool/sell c1 w1: insufficient funds (wallet gas exhausted; harness budget, not a contract failure)
+[22:31:06] pool revert diag c1 w1: {"weth":"0.000324747459228289","eth":"0.000004358913333334","coin":"95214546.122093928833208471","amountIn":"47607273.061046964416604235","zeroForOne":false,"static":"ok"}
+[22:31:09] pool trades 40/60 ok=30 reverted=4
+[22:31:09] no top-up for w1: deployer reserve reached
+[22:31:10] no top-up for w2: deployer reserve reached
+[22:31:10] no top-up for w4: deployer reserve reached
+[22:31:11] ERROR pool/sell c1 w1: insufficient funds (wallet gas exhausted; harness budget, not a contract failure)
+[22:31:11] no top-up for w6: deployer reserve reached
+[22:31:11] pool revert diag c1 w1: {"weth":"0.000324747459228289","eth":"0.000004358913333334","coin":"95214546.122093928833208471","amountIn":"47607273.061046964416604235","zeroForOne":false,"static":"ok"}
+[22:31:14] no top-up for w1: deployer reserve reached
+[22:31:14] no top-up for w2: deployer reserve reached
+[22:31:15] no top-up for w4: deployer reserve reached
+[22:31:15] no top-up for w6: deployer reserve reached
+[22:31:16] ERROR pool/sell c1 w1: insufficient funds (wallet gas exhausted; harness budget, not a contract failure)
+[22:31:16] pool revert diag c1 w1: {"weth":"0.000324747459228289","eth":"0.000004358913333334","coin":"95214546.122093928833208471","amountIn":"47607273.061046964416604235","zeroForOne":false,"static":"ok"}
+[22:31:19] no top-up for w1: deployer reserve reached
+[22:31:20] no top-up for w2: deployer reserve reached
+[22:31:21] ERROR pool/sell c1 w1: insufficient funds (wallet gas exhausted; harness budget, not a contract failure)
+[22:31:21] pool revert diag c1 w1: {"weth":"0.000324747459228289","eth":"0.000004358913333334","coin":"95214546.122093928833208471","amountIn":"47607273.061046964416604235","zeroForOne":false,"static":"ok"}
+[22:31:24] pool trades done: {"sent":47,"ok":40,"reverted":7,"feeMismatch":0,"gasMax":"270784"}
+[22:31:30] rewards c0: {"coin":"0x4806D19d1dA9A2CAde208167646613aaD2D3202F","vault":"0x0000000000000000000000000000000000000000","claims":{"creator":"0.00000308","treasury":"0.000007325755342955"},"distributed":null,"holdersPaid":0,"insolvent":false}
+[22:31:50] rewards c1: {"coin":"0xf1131F57D86ffb1b72Cd7E3611598EE044486E2D","vault":"0xEb9C6bD3e35cd738c26623Cb1a1F0159A958c00F","claims":{"vault":"0.000003483516502615","creator":"0.000004876923103668"},"distributed":"0.00007181205108172","holdersPaid":3,"insolvent":false}
+[22:32:12] rewards c2: {"coin":"0xEF13B3Cdb9cb367a0C9174732650fcb00afBC5d6","vault":"0x7d906b9B46B0517DE6de8345F2588234A4D33B14","claims":{"vault":"0.000009","creator":"0.0000042"},"distributed":"0.000207210793552528","holdersPaid":3,"insolvent":false}
+[22:32:36] rewards c3: {"coin":"0x4297C944EAd305906a5dD6ADf5A990D2F4Ec038C","vault":"0x0D054549D6393170B7442ac077810F229fCa9C14","claims":{"vault":"0.000013304302942619","creator":"0.000004656506029921"},"distributed":"0.000284608705708172","holdersPaid":3,"insolvent":false}
+[22:32:52] report written: C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\audit\TESTNET-STRESS-robinhoodTestnet-2026-09-22.md; failed checks 0; errors 9
+exit=0

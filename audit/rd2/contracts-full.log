@@ -1,0 +1,256 @@
+### compile
+Nothing to compile
+exit=0
+### bytecode + size check
+Creation bytecode and contract size checks passed
+exit=0
+### npx hardhat test (full)
+
+
+  AUDIT CX-F1: launch front-running is prevented (vanity address bound to the creator)
+    ✔ an attacker cannot reproduce the victim's vanity address; the victim's launch still succeeds (39961ms)
+
+  AUDIT CX-H1 (Neil): direct-pool trades must be quoted with price impact (QuoterV2), not a spot estimate
+    ✔ the impact-free estimate overstates output and its minOut reverts; the QuoterV2 quote fills (106ms)
+
+  Audit regressions and remaining design risks
+    ✔ accepts a vanity salt grinded from the generated client bytecode on a fresh deployment (12231ms)
+    ✔ never re-credits reserved quote dividends and pays both holders their shares (39ms)
+    ✔ recovers a poisoned graduation without refunding the creator or losing curve reserves (86ms)
+      pool/curve exit price: 1
+    ✔ preserves marginal curve price at PF graduation (61ms)
+      creator/platform/holders WETH: 0.0/0.002499999999999999/0.0075
+    ✔ preserves platform and 100%-holder allocations after Maxima graduation (75ms)
+
+  AUDIT CX-H1: graduation enables a pool price TWAP
+    ✔ grows the observation cardinality and observe() serves a TWAP after swaps (83ms)
+
+  Local fork lifecycle against configured mainnet Uniswap dependencies
+    - launches, trades, claims a dividend, graduates and trades the migrated pool locally
+
+  Backend regressions and remaining external risks
+    ✔ splits both LP fee assets with holder allocation 0 bps (75ms)
+    ✔ splits both LP fee assets with holder allocation 4000 bps (78ms)
+    ✔ splits both LP fee assets with holder allocation 10000 bps (98ms)
+    ✔ external pool trades bypass Census fees BEFORE graduation (91ms)
+    ✔ external pool trades bypass locked-position revenue AFTER graduation (61ms)
+      externally owned same-pool NFT collects nonzero LP fees
+    ✔ third-party LP in the SAME official pool captures fees outside Census locker (68ms)
+    ✔ unrecognized external pools accrue dividends they cannot claim (90ms)
+    ✔ selling before first collection cannot suppress the migrated protocol split (85ms)
+    ✔ rejects a taxed quote deposit atomically without damaging shared reserves (45ms)
+    ✔ rejects launches with unsupported quote collateral until the deployer enables it (38ms)
+    ✔ blocked fee recipient no longer halts trading: the share is deferred and pushable later
+    ✔ rejects zero-output 0x execution without spending payout funds
+    ✔ rejects duplicate basket assets at creation
+    ✔ rejects a route whose output differs from the configured payout asset
+
+  Bounded local workload (not mainnet throughput certification)
+      operations=500 actors=10 elapsedMs=1680 maxTradeGas=135106
+    ✔ 500 deterministic mixed buy/sell operations preserve normal-asset curve reserves (1727ms)
+
+  CensusCurve — bonding curve, 2% fee, accounting, anti-snipe
+    ✔ seeds the whole supply into the curve and registers it
+    ✔ buy: 2% fee splits 25% platform / 75% creator (Prima), rest walks the curve
+    ✔ buyWithETH + sellForETH: one-tap native ETH in, native ETH out (ETH-quoted coin)
+    ✔ ZAP buyWithETH: HOOD-quoted coin — ETH in wraps + swaps to HOOD, buys, fees paid in HOOD (43ms)
+    ✔ ZAP launch buy takes the decayed tax in the quote asset (45ms)
+    ✔ ZAP sellForETH: HOOD-quoted coin — sell gives HOOD, swaps to WETH, unwraps to native ETH (57ms)
+    ✔ ZAP slippage: a worse router rate than minTokensOut expects reverts (61ms)
+    ✔ ZAP guard: buyWithETH on a non-zap-enabled non-ETH quote reverts NotZappable (56ms)
+    ✔ buyWithETH rejects a zero-value call
+    ✔ round-trip conserves value (no free money): buy then sell-all returns < input, curve resets
+    ✔ launch tax: ordinary wallets can buy without caps and creator buys keep the base fee (40ms)
+    ✔ graduation readiness: progress tracks realQuote; graduate() reverts NotReady before the threshold (44ms)
+    ✔ guards: unknown coin, zero amount, and slippage all revert (65ms)
+    ✔ PF zap caps the curve fill and refunds excess in quote tokens without a reverse swap (64ms)
+
+  DividendVault — HOOD-quoted coin pays a stock basket (unified model)
+    ✔ swaps the HOOD fee into the basket and pays holders pro-rata (46ms)
+    ✔ still supports 'holders earn HOOD' — a basket member equal to the quote is a passthrough
+
+  Dividend backing and transfer accounting
+    ✔ 700 dust-sized distributions, transfers and claims match an independent entitlement ledger (3257ms)
+    ✔ mixed quote/stock baskets only distribute new funds and release router approvals (49ms)
+    ✔ 0x supports a same-asset leg, enforces full weights and cannot spend old quote entitlements (45ms)
+    ✔ rejects a corrupted route payload that delivers no requested payout even with a positive floor (46ms)
+    ✔ retains a usable distribution operator (50ms)
+
+  Prima three-second launch tax
+    ✔ quotes the exact decay, exempts the creator, and has no wallet or block caps (50ms)
+    ✔ executes a 0.1 ETH native buy at t+1 with exact tax split (48ms)
+    ✔ executes a 0.1 ETH ERC20 buy at t+1 with exact tax split (41ms)
+    ✔ supports same-block launch and non-exempt buy at 99%, then a sell at the normal 2% (78ms)
+    ✔ refunds the oversized final fill during the taxed window and preserves minOut (120ms)
+    ✔ freezes bundle exemptions at registration and prevents unauthorized registration (59ms)
+    ✔ executes at t+2 and t+3 using the decayed rate without a purchase allowance (57ms)
+    ✔ caps and refunds even a launch-second buy at the 99% rate (56ms)
+
+  Maxima three-second launch tax
+    ✔ quotes the exact decay, exempts the creator, and has no wallet or block caps (54ms)
+    ✔ executes a 0.1 ETH native buy at t+1 with exact tax split (81ms)
+    ✔ executes a 0.1 ETH ERC20 buy at t+1 with exact tax split (76ms)
+    ✔ supports same-block launch and non-exempt buy at 99%, then a sell at the normal 2% (78ms)
+    ✔ refunds the oversized final fill during the taxed window and preserves minOut (120ms)
+    ✔ freezes bundle exemptions at registration and prevents unauthorized registration (76ms)
+    ✔ executes at t+2 and t+3 using the decayed rate without a purchase allowance (59ms)
+    ✔ caps and refunds even a launch-second buy at the 99% rate (58ms)
+
+  Graduation recovery from adversarial pool initialization
+    ✔ graduates through a pool pre-initialized ABOVE the migration price (no liquidity) (152ms)
+    ✔ graduates through a pool pre-initialized BELOW the migration price (no liquidity) (90ms)
+    ✔ recovers at the attacker's expense when the mispriced pool holds real liquidity (108ms)
+    ✔ fails closed when liquidity is too deep for the bounded recovery, and the curve keeps trading (82ms)
+    ✔ M3: the deployer can sweep a graduated coin recorded migration dust to the platform (once) (93ms)
+    ✔ H5: a griefed graduation can be unblocked by the deployer widening that coin recovery bound (118ms)
+    ✔ a pool pre-initialized exactly AT the migration price needs no recovery swap (90ms)
+
+  Launch-token LP fee conversion into holder rewards
+    ✔ converts vault-held launch-token fees to quote and pays them out to holders (100ms)
+    ✔ conversion cannot exceed the vault's launch-token balance (88ms)
+    ✔ a keeper pushes rewards to holders with claimFor (automatic distribution) (97ms)
+
+  launchParams (off-chain tick math)
+    ✔ isqrt matches known values
+    ✔ token sorting below WETH => token0 => range above start price
+    ✔ token sorting above WETH => token1 => range below start price
+    ✔ ticks are aligned to the fee tier spacing
+    ✔ Arc standard (USDC quote) produces valid single-sided params
+    ✔ quoteDecimals actually changes the encoded price (18 vs 6)
+
+  Meme pairing against graduated company coins
+    ✔ rejects a company-coin quote BEFORE that coin graduates (76ms)
+    ✔ full $MEME/$XYZ lifecycle: launch, trade with XYZ fees, graduate into a MEME/XYZ locked pool (112ms)
+    ✔ M2: a Maxima meme quoted in a company coin needs basket routes rooted at that coin (93ms)
+    ✔ meme-on-meme chains are not pairable (86ms)
+
+  PF virtual-token graduation
+    ✔ Prima: 1B real supply, formula-only offset, partial fill and continuous pool price (92ms)
+    ✔ Maxima: 1B real supply, formula-only offset, partial fill and continuous pool price (102ms)
+    ✔ refunds excess ERC20 input, charges only accepted input, and respects minOut atomically (107ms)
+    ✔ fills the final quote wei exactly, and a sell reopens the filled curve safely (82ms)
+    ✔ derives allocations for V=0.5, G=4 rather than hardcoding 786M/214M (76ms)
+    ✔ derives allocations for V=1.5, G=10 rather than hardcoding 786M/214M (90ms)
+    ✔ derives allocations for V=3, G=4 rather than hardcoding 786M/214M (75ms)
+    ✔ mixed buys/sells match an independent integer model and export actual events for indexer parity (830ms)
+    ✔ supports a six-decimal quote without treating virtual tokens as real supply (91ms)
+
+  Review fixes — keeper authority, deferred fees, resilient claims
+    ✔ factory creates vaults through the deployer and stays far below EIP-170 (70ms)
+    ✔ H1: the platform keeper registered on the curve can distribute without per-coin delegation (60ms)
+    ✔ M5: a blocked fee recipient defers its share instead of halting trading; it is pushable later (43ms)
+    ✔ M4: one frozen basket asset defers only its own payout; the rest of the basket still pays (45ms)
+    ✔ rejects registration with a pool fee tier Uniswap V3 does not have (42ms)
+    ✔ decodable custom errors replace stripped revert strings on the user-facing paths (48ms)
+
+  Review invariants — deferred fees, payout isolation, recovery permissions
+    ✔ deferred fees stay backed through trading and graduation, cannot be swept, and only reach their recipient (119ms)
+    ✔ a blocked vault, creator or claimant never halts the other payouts (113ms)
+    ✔ the recovery-bound lever cannot divert reserves: dust-only residue, exact price, no value loss, nothing to admins (190ms)
+
+  V4 adversarial: partial fills, repeated claims, dust, bypass disclosure, registration
+    ✔ rejects a price-limited partial buy and partial sell atomically: no fee accrues, no balance moves (139ms)
+    ✔ pays a repeated claim nothing and keeps the reserve ledger exact; a 1 wei buy rounds the fee to zero without breaking custody (223ms)
+    ✔ DISCLOSURE: an independent hookless pool on the same manager trades the same pair with no Census fee (1020ms)
+    ✔ refuses malformed or replayed registrations and a future launch timestamp (258ms)
+    ✔ reverts a sell whose quote output is taxed on transfer, leaving balances and the fee ledger untouched (85ms)
+
+  V4 fee migration
+    ✔ creates a permanently custodied pool, rejects unauthorized graduation and swaps after graduation (1325ms)
+    ✔ preserves fee conservation at every tax rate, phase and launch second (47ms)
+    ✔ enforces 2% + 4% with real V4, both directions and two routers; quoteFirst=true (294ms)
+    ✔ enforces 2% + 4% with real V4, both directions and two routers; quoteFirst=false (736ms)
+
+  V4 product on a Robinhood Chain fork (official PoolManager, local transactions only)
+    - launches, trades on the curve, graduates into the official PoolManager, trades through the hook and distributes reflections
+
+  V4 product lifecycle (factory -> curve -> V4 pool -> rewards)
+    ✔ meme launch: 2% base fee split 90/10 on the curve, capped final fill with refund, V4 graduation, 30/70 after (2104ms)
+    ✔ launch window: 99% at the launch second, decay at +1s/+2s/+3s with reflection on top and the 90/10 split, creator and bundle exempt (689ms)
+    ✔ company launch with 3% reflection: three-asset basket (launch token, pairing asset, stock), checkpoints, custody exclusions, claims before and after V4 graduation (905ms)
+    ✔ 6-decimal quote with quote below the coin address: curve, graduation and V4 trades reconcile (817ms)
+    ✔ 6-decimal quote with quote above the coin address: curve, graduation and V4 trades reconcile (229ms)
+    ✔ rejects bad launches and unauthorised access: reflection range, basket shape, foreign factory, unwired curve, hook re-initialisation (545ms)
+      curve trades=500 wallets=10 maxGas=264615
+    ✔ 500 mixed curve trades across 10 wallets keep every fee allocation exact and the curve solvent (4573ms)
+
+  V4 readiness: realistic reserves and adversarial flows
+    ✔ executes the mandatory launch-second 99% fee and the three-second decay with reflections on top (565ms)
+    ✔ graduates and trades a 1B fixed supply with 6-decimal quote (1045ms)
+    ✔ graduates and trades a 1B fixed supply with 18-decimal quote (107ms)
+      V4 swaps=500 wallets=10 elapsedMs=4501 maxGas=278361 (local sequential workload)
+    ✔ 500 mixed swaps across 10 wallets preserve independently calculated fee liabilities and pool custody (5359ms)
+    ✔ rolls back taxed deposits and isolates an unclaimable fee recipient (1581ms)
+
+  V4 Robinhood fork: deployed PoolManager compatibility
+    - registers a Census hook, graduates and swaps against the actual deployed manager on a LOCAL fork
+
+
+  119 passing (1m)
+  3 pending
+
+exit=0
+### rehearse:bonding (legacy)
+
+> launchpad-contracts@0.1.0 rehearse:bonding
+> hardhat run scripts/rehearseBondingLifecycle.js --network hardhat
+
+Prima: Launch; FDV 1.388430 ETH; curve quote 0.000000
+Prima: Alice buys with 1 ETH; FDV 3.795288 ETH; curve quote 0.980000
+Prima: Bob buys with 0.75 ETH; FDV 6.378277 ETH; curve quote 1.715000
+Prima: Alice sells 25% of her tokens; FDV 4.343942 ETH; curve quote 1.153208
+Prima: Bob buys with another 1.25 ETH; FDV 9.281189 ETH; curve quote 2.378208
+Prima: Carol submits 10 ETH; final fill plus refund; FDV 18.666667 ETH; curve quote 4.000000
+Prima: Graduation: liquidity deposited and NFT locked; FDV 18.666667 ETH; pool quote 4.000000
+Prima: Dave buys in pool with 0.25 ETH; FDV 21.048132 ETH; pool quote 4.250000
+Prima: Alice sells 30% of remaining tokens in pool; FDV 9.724071 ETH; pool quote 2.889526
+Prima: Bob buys in pool with 0.6 ETH; FDV 14.137131 ETH; pool quote 3.489526
+Prima: Dave sells half his pool purchase; FDV 13.453268 ETH; pool quote 3.404288
+Prima: LP fees collected and split; FDV 13.453268 ETH; pool quote 3.395788
+Prima: Final balances reconciled; FDV 13.453268 ETH; pool quote 3.395788
+Maxima: all creator-side fees to holders: Launch; FDV 1.388430 ETH; curve quote 0.000000
+Maxima: all creator-side fees to holders: Alice buys with 1 ETH; FDV 3.795288 ETH; curve quote 0.980000
+Maxima: all creator-side fees to holders: Bob buys with 0.75 ETH; FDV 6.378277 ETH; curve quote 1.715000
+Maxima: all creator-side fees to holders: Alice sells 25% of her tokens; FDV 4.343942 ETH; curve quote 1.153208
+Maxima: all creator-side fees to holders: Bob buys with another 1.25 ETH; FDV 9.281189 ETH; curve quote 2.378208
+Maxima: all creator-side fees to holders: Carol submits 10 ETH; final fill plus refund; FDV 18.666667 ETH; curve quote 4.000000
+Maxima: all creator-side fees to holders: Graduation: liquidity deposited and NFT locked; FDV 18.666667 ETH; pool quote 4.000000
+Maxima: all creator-side fees to holders: Dave buys in pool with 0.25 ETH; FDV 21.048132 ETH; pool quote 4.250000
+Maxima: all creator-side fees to holders: Alice sells 30% of remaining tokens in pool; FDV 9.724071 ETH; pool quote 2.889526
+Maxima: all creator-side fees to holders: Bob buys in pool with 0.6 ETH; FDV 14.137131 ETH; pool quote 3.489526
+Maxima: all creator-side fees to holders: Dave sells half his pool purchase; FDV 13.453268 ETH; pool quote 3.404288
+Maxima: all creator-side fees to holders: LP fees collected and split; FDV 13.453268 ETH; pool quote 3.395788
+Maxima: all creator-side fees to holders: Holder token-fees converted to WETH; FDV 13.372664 ETH; pool quote 3.385599
+Maxima: all creator-side fees to holders: Final balances reconciled; FDV 13.372664 ETH; pool quote 3.385599
+Maxima: creator/holders split equally: Launch; FDV 1.388430 ETH; curve quote 0.000000
+Maxima: creator/holders split equally: Alice buys with 1 ETH; FDV 3.795288 ETH; curve quote 0.980000
+Maxima: creator/holders split equally: Bob buys with 0.75 ETH; FDV 6.378277 ETH; curve quote 1.715000
+Maxima: creator/holders split equally: Alice sells 25% of her tokens; FDV 4.343942 ETH; curve quote 1.153208
+Maxima: creator/holders split equally: Bob buys with another 1.25 ETH; FDV 9.281189 ETH; curve quote 2.378208
+Maxima: creator/holders split equally: Carol submits 10 ETH; final fill plus refund; FDV 18.666667 ETH; curve quote 4.000000
+Maxima: creator/holders split equally: Graduation: liquidity deposited and NFT locked; FDV 18.666667 ETH; pool quote 4.000000
+Maxima: creator/holders split equally: Dave buys in pool with 0.25 ETH; FDV 21.048132 ETH; pool quote 4.250000
+Maxima: creator/holders split equally: Alice sells 30% of remaining tokens in pool; FDV 9.724071 ETH; pool quote 2.889526
+Maxima: creator/holders split equally: Bob buys in pool with 0.6 ETH; FDV 14.137131 ETH; pool quote 3.489526
+Maxima: creator/holders split equally: Dave sells half his pool purchase; FDV 13.453268 ETH; pool quote 3.404288
+Maxima: creator/holders split equally: LP fees collected and split; FDV 13.453268 ETH; pool quote 3.395788
+Maxima: creator/holders split equally: Holder token-fees converted to WETH; FDV 13.412876 ETH; pool quote 3.390686
+Maxima: creator/holders split equally: Final balances reconciled; FDV 13.412876 ETH; pool quote 3.390686
+ALL THREE BONDING LIFECYCLES PASSED
+exit=0
+### rehearse:v4
+
+> launchpad-contracts@0.1.0 rehearse:v4
+> hardhat run scripts/rehearseV4Lifecycle.js --network hardhat
+
+meme launch, reflection off: 10 steps, 3 checks
+company launch, 3% reflection, basket coin/ETH/stock: 15 steps, 4 checks
+ALL V4 LIFECYCLE SCENARIOS PASSED
+exit=0
+### parity
+PASS PF contract/indexer parity: 121 real trades, partial-fill fees, exact reserves, price, supply, new + legacy event topics.
+exit=0 ()
+PASS PF contract/indexer parity: 1 real trades, partial-fill fees, exact reserves, price, supply, new + legacy event topics.
+exit=0 (.test-build/launch-tax-events-prima.json)
+PASS PF contract/indexer parity: 1 real trades, partial-fill fees, exact reserves, price, supply, new + legacy event topics.
+exit=0 (.test-build/launch-tax-events-maxima.json)

@@ -201,7 +201,53 @@ input[type="range"] { accent-color: var(--census-lime); height: 4px; }
   align-items: start;
   flex: 1;
 }
+/* The preview sticks while the step scrolls. The aside must stretch to the row's full height: a sticky
+   element can only move within its parent, and with the grid's align-items:start the aside was exactly
+   the panel's height, so the preview never stuck — it just scrolled off the top ("one panel deletes the
+   other" as you scroll down). */
+.census-wizard__aside { align-self: stretch; }
 .census-wizard__aside > .census-panel { position: sticky; top: var(--census-space-6); }
+
+/* Fee-split tooltip (launch wizard). Pure CSS: :hover on pointer devices, :focus-within for keyboard and
+   tap (the trigger is focusable). Pops below its trigger; --right aligns to the trigger's right edge. */
+.census-tip { position: relative; display: inline-block; cursor: help; outline: none; }
+.census-tip--block { display: block; }
+.census-tip__label { text-decoration: underline dotted; text-decoration-color: rgba(180, 240, 61, 0.55); text-underline-offset: 3px; }
+.census-tip__hint { flex: none; font-family: var(--census-font-mono); font-size: 11.5px; color: var(--census-text-muted); white-space: nowrap; transition: color var(--census-transition); }
+.census-tip:hover .census-tip__hint, .census-tip:focus-within .census-tip__hint,
+.census-tip:hover .census-tip__label, .census-tip:focus-within .census-tip__label { color: var(--census-lime); }
+.census-tip__pop {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  top: calc(100% + 8px);
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  padding: 14px 16px;
+  background: #0b1d13;
+  border: 1px solid var(--census-lime-border-strong);
+  border-radius: var(--census-radius-card);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  font-family: var(--census-font-sans);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--census-text-secondary);
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+}
+.census-tip--right .census-tip__pop { left: auto; right: 0; }
+.census-tip:hover .census-tip__pop, .census-tip:focus-within .census-tip__pop { opacity: 1; visibility: visible; transform: none; }
+.census-tip__title { display: block; color: var(--census-text); font-weight: 600; margin-bottom: 4px; }
+.census-tip__row { display: flex; justify-content: space-between; gap: 12px; color: var(--census-text); margin-top: 10px; }
+.census-tip__sub { display: flex; justify-content: space-between; gap: 12px; padding-left: 12px; margin-top: 4px; }
+.census-tip__foot { display: block; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--census-hairline); color: var(--census-text-muted); font-size: 12px; }
 .census-wizard__title {
   margin: 0 0 var(--census-space-2);
   font-weight: 300;

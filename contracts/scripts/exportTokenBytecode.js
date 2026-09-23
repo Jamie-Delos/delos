@@ -17,8 +17,11 @@ const dest = path.join(__dirname, "..", "..", "frontend", "src", "lib", "launchT
 if (process.argv.includes("--check")) {
   const embedded = fs.readFileSync(dest, "utf8").match(/0x[0-9a-fA-F]{100,}/)?.[0];
   if (embedded !== artifact.bytecode) throw new Error("Client creation bytecode differs from compiled LaunchToken; regenerate before release");
-  for (const name of ["LaunchFactory", "LaunchFactoryV2", "CensusCurve", "DividendVault", "LaunchLocker"]) {
-    const compiled = require(`../artifacts/contracts/${name}.sol/${name}.json`);
+  const sized = ["LaunchFactory", "LaunchFactoryV2", "LaunchFactoryV4", "CensusCurve", "DividendVault", "LaunchLocker",
+    "v4/CensusCurveV4", "v4/CensusRewardVault", "v4/CensusRewardVaultDeployer", "v4/CensusV4Hook", "v4/CensusV4Router", "v4/CensusV4Graduator", "v4/CensusHookDeployer"];
+  for (const file of sized) {
+    const name = file.split("/").pop();
+    const compiled = require(`../artifacts/contracts/${file}.sol/${name}.json`);
     if ((compiled.deployedBytecode.length - 2) / 2 > 24576) throw new Error(`${name} exceeds EIP-170 size limit`);
   }
   console.log("Creation bytecode and contract size checks passed");

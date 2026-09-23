@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release:check": "node release-check.cjs",
+    "test:release-check": "node release-check.test.cjs"
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.43.0",

@@ -1,0 +1,9 @@
+
+
+  V4 Robinhood fork: deployed PoolManager compatibility
+      V4 dependency block=69082016; deployments and trades LOCAL ONLY
+    √ registers a Census hook, graduates and swaps against the actual deployed manager on a LOCAL fork (23961ms)
+
+
+  1 passing (24s)
+

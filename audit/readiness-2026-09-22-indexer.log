@@ -1,0 +1,271 @@
+### prisma generate
+Prisma schema loaded from prisma\schema.prisma
+
+✔ Generated Prisma Client (v5.22.0) to .\node_modules\@prisma\client in 60ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Easily identify and fix slow SQL queries in your app. Optimize helps you enhance your visibility: https://pris.ly/--optimize
+
+┌─────────────────────────────────────────────────────────┐
+│  Update available 5.22.0 -> 8.0.0-rc.15                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+exit=0
+### typecheck
+
+> census-indexer@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+exit=0
+### build
+
+> census-indexer@0.1.0 build
+> tsc -p tsconfig.json
+
+exit=0
+### npm test
+
+> census-indexer@0.1.0 test
+> node backend.readiness.cjs
+
+PASS API: validation, DB/worker health, recent chart, rate limit; 1000 stub-DB requests at concurrency 50 (72ms including rate-limit checks).
+PASS ingest: RPC/write rollback, post-commit notifications, replay, missing registration, reorg/hash rejection, no RPC inside transactions, adaptive log paging; 10000 unique + 1000 duplicate events applied once (225ms, in-memory adapters).
+exit=0
+### npm run test:pg
+
+> census-indexer@0.1.0 test:pg
+> node postgres.readiness.cjs
+
+The files belonging to this database system will be owned by user "neilr".
+This user must also own the server process.
+
+
+The database cluster will be initialized with this locale configuration:
+  locale provider:   libc
+  LC_COLLATE:  English_United States.1252
+  LC_CTYPE:    English_United States.1252
+  LC_MESSAGES: C
+  LC_MONETARY: English_United States.1252
+  LC_NUMERIC:  English_United States.1252
+  LC_TIME:     English_United States.1252
+The default database encoding has accordingly been set to "WIN1252".
+The default text search configuration will be set to "english".
+
+Data page checksums are enabled.
+
+creating directory C:/Users/neilr/AppData/Local/Temp/census-pg-N6BaGO/main ... 
+ok
+
+creating subdirectories ... 
+ok
+
+selecting dynamic shared memory implementation ... windows
+selecting default "max_connections" ... 
+100
+selecting default "shared_buffers" ... 
+128MB
+selecting default time zone ... 
+Europe/Berlin
+creating configuration files ... 
+ok
+running bootstrap script ... 
+ok
+
+performing post-bootstrap initialization ... 
+ok
+syncing data to disk ... 
+ok
+
+Success. You can now start the database server using:
+
+    ^"C^:^\Users^\neilr^\AppData^\Local^\Temp^\claude^\C^-^-Users^-neilr^-OneDrive^-Documents^-ChatGPT^-Boxabl^-Census^-Core^-Repo^\d05e45c4^-78ff^-45da^-8a10^-5590f4bebf66^\scratchpad^\wt^\indexer^\node^_modules^\^@embedded^-postgres^\windows^-x64^\native^\bin^\pg^_ctl^" -D ^"C^:^\Users^\neilr^\AppData^\Local^\Temp^\census^-pg^-N6BaGO^\main^" -l logfile start
+
+
+2026-09-22 17:51:17.914 CEST [65036] LOG:  starting PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit
+
+2026-09-22 17:51:17.919 CEST [65036] LOG:  listening on IPv6 address "::1", port 55530
+
+2026-09-22 17:51:17.919 CEST [65036] LOG:  listening on IPv4 address "127.0.0.1", port 55530
+
+2026-09-22 17:51:18.457 CEST [52564] LOG:  database system was shut down at 2026-09-22 17:51:14 CEST
+
+2026-09-22 17:51:18.468 CEST [65036] LOG:  database system is ready to accept connections
+
+PASS migrate: committed migrations deploy cleanly onto 5 fresh real databases
+(node:60472) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-22 17:51:24.404 CEST [66080] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+2026-09-22 17:51:25.896 CEST [8184] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 17:51:31.017 CEST [17396] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 17:51:32.026 CEST [32044] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 17:51:37.172 CEST [20812] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 17:51:38.673 CEST [65352] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 17:51:45.984 CEST [17268] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 17:51:49.255 CEST [46268] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+2026-09-22 17:51:49.487 CEST [55424] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+
+PASS reference: 2000 trades + 200 duplicate replays + graduation + pool swaps + reward events applied exactly once on real Postgres (11150ms); full-range replay is a no-op
+PASS recovery: RPC outage mid-run left only whole committed pages; resume from the durable cursor reaches the reference digest
+2026-09-22 17:52:11.580 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:11.580 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("logIndex","block","chainId","txHash","blockHash") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:12.550 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:12.550 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("logIndex","txHash","blockHash","chainId","block") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:13.434 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:13.434 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("logIndex","blockHash","chainId","txHash","block") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:14.290 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:14.290 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("blockHash","txHash","chainId","block","logIndex") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:15.106 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:15.106 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("blockHash","logIndex","txHash","chainId","block") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:15.952 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:15.952 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("chainId","block","blockHash","txHash","logIndex") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:16.892 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:16.892 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("txHash","chainId","block","logIndex","blockHash") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:17.807 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:17.807 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("logIndex","blockHash","txHash","block","chainId") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:18.700 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:18.700 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("chainId","block","blockHash","txHash","logIndex") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:19.587 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:19.587 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("blockHash","txHash","logIndex","chainId","block") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+2026-09-22 17:52:19.727 CEST [40780] ERROR:  could not serialize access due to concurrent update
+2026-09-22 17:52:19.727 CEST [40780] STATEMENT:  INSERT INTO "public"."IndexedEvent" ("chainId","block","logIndex","txHash","blockHash") VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+
+PASS concurrency: two workers over the same range on one real database applied every event exactly once (9313ms)
+The files belonging to this database system will be owned by user "neilr".
+This user must also own the server process.
+
+
+The database cluster will be initialized with this locale configuration:
+  locale provider:   libc
+  LC_COLLATE:  English_United States.1252
+  LC_CTYPE:    English_United States.1252
+  LC_MESSAGES: C
+  LC_MONETARY: English_United States.1252
+  LC_NUMERIC:  English_United States.1252
+  LC_TIME:     English_United States.1252
+The default database encoding has accordingly been set to "WIN1252".
+The default text search configuration will be set to "english".
+
+Data page checksums are enabled.
+
+
+creating directory C:/Users/neilr/AppData/Local/Temp/census-pg-N6BaGO/crash ... 
+ok
+
+creating subdirectories ... 
+ok
+
+selecting dynamic shared memory implementation ... windows
+selecting default "max_connections" ... 
+100
+selecting default "shared_buffers" ... 
+128MB
+selecting default time zone ... 
+Europe/Berlin
+creating configuration files ... 
+ok
+running bootstrap script ... 
+ok
+
+performing post-bootstrap initialization ... 
+ok
+syncing data to disk ... 
+ok
+
+
+Success. You can now start the database server using:
+
+    ^"C^:^\Users^\neilr^\AppData^\Local^\Temp^\claude^\C^-^-Users^-neilr^-OneDrive^-Documents^-ChatGPT^-Boxabl^-Census^-Core^-Repo^\d05e45c4^-78ff^-45da^-8a10^-5590f4bebf66^\scratchpad^\wt^\indexer^\node^_modules^\^@embedded^-postgres^\windows^-x64^\native^\bin^\pg^_ctl^" -D ^"C^:^\Users^\neilr^\AppData^\Local^\Temp^\census^-pg^-N6BaGO^\crash^" -l logfile start
+
+
+2026-09-22 17:52:26.352 CEST [18352] LOG:  starting PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit
+
+2026-09-22 17:52:26.358 CEST [18352] LOG:  listening on IPv6 address "::1", port 55531
+2026-09-22 17:52:26.358 CEST [18352] LOG:  listening on IPv4 address "127.0.0.1", port 55531
+
+2026-09-22 17:52:26.693 CEST [66476] LOG:  database system was shut down at 2026-09-22 17:52:23 CEST
+
+2026-09-22 17:52:26.705 CEST [18352] LOG:  database system is ready to accept connections
+
+2026-09-22 17:52:29.480 CEST [3800] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-22 17:52:29.714 CEST [34004] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+
+2026-09-22 17:52:32.827 CEST [10400] LOG:  starting PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit
+
+2026-09-22 17:52:32.832 CEST [10400] LOG:  listening on IPv6 address "::1", port 55531
+2026-09-22 17:52:32.832 CEST [10400] LOG:  listening on IPv4 address "127.0.0.1", port 55531
+
+2026-09-22 17:52:33.325 CEST [20316] LOG:  database system was interrupted; last known up at 2026-09-22 17:52:26 CEST
+
+2026-09-22 17:52:37.007 CEST [20316] LOG:  database system was not properly shut down; automatic recovery in progress
+
+2026-09-22 17:52:37.013 CEST [20316] LOG:  redo starts at 0/17F16E0
+
+2026-09-22 17:52:37.138 CEST [20316] LOG:  invalid magic number 0000 in WAL segment 000000010000000000000001, LSN 0/1D22000, offset 13770752
+2026-09-22 17:52:37.138 CEST [20316] LOG:  redo done at 0/1D21FC0 system usage: CPU: user: 0.03 s, system: 0.07 s, elapsed: 0.12 s
+
+2026-09-22 17:52:37.179 CEST [25264] LOG:  checkpoint starting: end-of-recovery immediate wait
+
+2026-09-22 17:52:38.293 CEST [25264] LOG:  checkpoint complete: wrote 1080 buffers (6.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.057 s, sync=1.035 s, total=1.119 s; sync files=348, longest=0.009 s, average=0.003 s; distance=5314 kB, estimate=5314 kB; lsn=0/1D22018, redo lsn=0/1D22018
+
+2026-09-22 17:52:38.312 CEST [10400] LOG:  database system is ready to accept connections
+
+PASS crash: postgres hard-killed mid-ingest at block 20; WAL recovery + resume reached the reference digest
+PASS restore: logical export into a freshly-migrated database matches the reference digest and remains a valid live target (pg_dump rehearsal on production tooling remains a release gate)
+PASS load: 10000 unique + 1000 duplicate events through real serializable transactions in 44993ms (244 events/s incl. duplicates; local single-node, not a production capacity claim)
+2026-09-22 17:53:38.105 CEST [41200] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+
+2026-09-22 17:53:38.164 CEST [39248] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+
+2026-09-22 17:53:39.040 CEST [57120] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+
+2026-09-22 17:53:39.385 CEST [39364] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+
+2026-09-22 17:53:40.222 CEST [45416] LOG:  could not receive data from client: An established connection was aborted by the software in your host machine.
+	
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+5 !== 0
+
+    at main (C:\Users\neilr\AppData\Local\Temp\claude\C--Users-neilr-OneDrive-Documents-ChatGPT-Boxabl-Census-Core-Repo\d05e45c4-78ff-45da-8a10-5590f4bebf66\scratchpad\wt\indexer\postgres.readiness.cjs:347:14)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 5,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+exit=0

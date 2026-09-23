@@ -1,0 +1,46 @@
+
+> launchpad-contracts@0.1.0 rehearse:bonding
+> hardhat run scripts/rehearseBondingLifecycle.js --network hardhat
+
+Prima: Launch; FDV 1.388430 ETH; curve quote 0.000000
+Prima: Alice buys with 1 ETH; FDV 3.795288 ETH; curve quote 0.980000
+Prima: Bob buys with 0.75 ETH; FDV 6.378277 ETH; curve quote 1.715000
+Prima: Alice sells 25% of her tokens; FDV 4.343942 ETH; curve quote 1.153208
+Prima: Bob buys with another 1.25 ETH; FDV 9.281189 ETH; curve quote 2.378208
+Prima: Carol submits 10 ETH; final fill plus refund; FDV 18.666667 ETH; curve quote 4.000000
+Prima: Graduation: liquidity deposited and NFT locked; FDV 18.666667 ETH; pool quote 4.000000
+Prima: Dave buys in pool with 0.25 ETH; FDV 21.048132 ETH; pool quote 4.250000
+Prima: Alice sells 30% of remaining tokens in pool; FDV 9.724071 ETH; pool quote 2.889526
+Prima: Bob buys in pool with 0.6 ETH; FDV 14.137131 ETH; pool quote 3.489526
+Prima: Dave sells half his pool purchase; FDV 13.453268 ETH; pool quote 3.404288
+Prima: LP fees collected and split; FDV 13.453268 ETH; pool quote 3.395788
+Prima: Final balances reconciled; FDV 13.453268 ETH; pool quote 3.395788
+Maxima: all creator-side fees to holders: Launch; FDV 1.388430 ETH; curve quote 0.000000
+Maxima: all creator-side fees to holders: Alice buys with 1 ETH; FDV 3.795288 ETH; curve quote 0.980000
+Maxima: all creator-side fees to holders: Bob buys with 0.75 ETH; FDV 6.378277 ETH; curve quote 1.715000
+Maxima: all creator-side fees to holders: Alice sells 25% of her tokens; FDV 4.343942 ETH; curve quote 1.153208
+Maxima: all creator-side fees to holders: Bob buys with another 1.25 ETH; FDV 9.281189 ETH; curve quote 2.378208
+Maxima: all creator-side fees to holders: Carol submits 10 ETH; final fill plus refund; FDV 18.666667 ETH; curve quote 4.000000
+Maxima: all creator-side fees to holders: Graduation: liquidity deposited and NFT locked; FDV 18.666667 ETH; pool quote 4.000000
+Maxima: all creator-side fees to holders: Dave buys in pool with 0.25 ETH; FDV 21.048132 ETH; pool quote 4.250000
+Maxima: all creator-side fees to holders: Alice sells 30% of remaining tokens in pool; FDV 9.724071 ETH; pool quote 2.889526
+Maxima: all creator-side fees to holders: Bob buys in pool with 0.6 ETH; FDV 14.137131 ETH; pool quote 3.489526
+Maxima: all creator-side fees to holders: Dave sells half his pool purchase; FDV 13.453268 ETH; pool quote 3.404288
+Maxima: all creator-side fees to holders: LP fees collected and split; FDV 13.453268 ETH; pool quote 3.395788
+Maxima: all creator-side fees to holders: Holder token-fees converted to WETH; FDV 13.372664 ETH; pool quote 3.385599
+Maxima: all creator-side fees to holders: Final balances reconciled; FDV 13.372664 ETH; pool quote 3.385599
+Maxima: creator/holders split equally: Launch; FDV 1.388430 ETH; curve quote 0.000000
+Maxima: creator/holders split equally: Alice buys with 1 ETH; FDV 3.795288 ETH; curve quote 0.980000
+Maxima: creator/holders split equally: Bob buys with 0.75 ETH; FDV 6.378277 ETH; curve quote 1.715000
+Maxima: creator/holders split equally: Alice sells 25% of her tokens; FDV 4.343942 ETH; curve quote 1.153208
+Maxima: creator/holders split equally: Bob buys with another 1.25 ETH; FDV 9.281189 ETH; curve quote 2.378208
+Maxima: creator/holders split equally: Carol submits 10 ETH; final fill plus refund; FDV 18.666667 ETH; curve quote 4.000000
+Maxima: creator/holders split equally: Graduation: liquidity deposited and NFT locked; FDV 18.666667 ETH; pool quote 4.000000
+Maxima: creator/holders split equally: Dave buys in pool with 0.25 ETH; FDV 21.048132 ETH; pool quote 4.250000
+Maxima: creator/holders split equally: Alice sells 30% of remaining tokens in pool; FDV 9.724071 ETH; pool quote 2.889526
+Maxima: creator/holders split equally: Bob buys in pool with 0.6 ETH; FDV 14.137131 ETH; pool quote 3.489526
+Maxima: creator/holders split equally: Dave sells half his pool purchase; FDV 13.453268 ETH; pool quote 3.404288
+Maxima: creator/holders split equally: LP fees collected and split; FDV 13.453268 ETH; pool quote 3.395788
+Maxima: creator/holders split equally: Holder token-fees converted to WETH; FDV 13.412876 ETH; pool quote 3.390686
+Maxima: creator/holders split equally: Final balances reconciled; FDV 13.412876 ETH; pool quote 3.390686
+ALL THREE BONDING LIFECYCLES PASSED

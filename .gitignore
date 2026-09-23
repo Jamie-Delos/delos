@@ -73,3 +73,6 @@ Thumbs.db
 /Census-Inner-Pages-Handoff/
 /Ghost-Integration/
 /Sumo-Integration/
+
+# Stress-run resume state: holds the throwaway test wallets' private keys. Never commit.
+audit/testnet-stress-state.*.json

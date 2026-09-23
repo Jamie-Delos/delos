@@ -1,0 +1,26 @@
+
+> launchpad-contracts@0.1.0 stress:robinhoodTestnet
+> hardhat run scripts/stressTestnet.js --network robinhoodTestnet
+
+[22:19:24] stress on robinhoodTestnet chainId 46630 deployer 0x5fC5cB0d2F026331B5ceaF4e13eff123cd8dFA2b balance 0.01 ETH
+[22:20:01] hook salt mined in 2938 iterations -> 0x32DA226e5c6bC92653bC80A2D9c963905c94A0Cc
+[22:20:35] deployed in 71190 ms
+[22:20:58] funded 8 wallets with 0.0005 ETH each
+[22:21:14] launched coin 0 0x4806D19d1dA9A2CAde208167646613aaD2D3202F reflection 0 vault 0x0000000000000000000000000000000000000000 window={"elapsed":2,"totalBps":"219","penalty":"0.000000095","formulaMatch":true}
+[22:21:19] launched coin 1 0xf1131F57D86ffb1b72Cd7E3611598EE044486E2D reflection 100 vault 0xEb9C6bD3e35cd738c26623Cb1a1F0159A958c00F window={"elapsed":3,"totalBps":"300","penalty":"0.0","formulaMatch":true}
+[22:21:25] launched coin 2 0xEF13B3Cdb9cb367a0C9174732650fcb00afBC5d6 reflection 300 vault 0x7d906b9B46B0517DE6de8345F2588234A4D33B14 window={"elapsed":2,"totalBps":"519","penalty":"0.000000095","formulaMatch":true}
+[22:21:30] launched coin 3 0x4297C944EAd305906a5dD6ADf5A990D2F4Ec038C reflection 400 vault 0x0D054549D6393170B7442ac077810F229fCa9C14 window={"elapsed":3,"totalBps":"600","penalty":"0.0","formulaMatch":true}
+[22:23:43] trades 200/500 ok=200 reverted=0 mismatch=0
+[22:25:00] ERROR fatal/main: insufficient funds for gas * price + value: address 0xD0Df3361565E546e36B39ECE4C7927b18c7dd9bd have 2500593333334 want 3860160000000
+ProviderError: insufficient funds for gas * price + value: address 0xD0Df3361565E546e36B39ECE4C7927b18c7dd9bd have 2500593333334 want 3860160000000
+    at HttpProvider.request (C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\contracts\node_modules\hardhat\src\internal\core\providers\http.ts:116:21)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Promise.all (index 0)
+    at HardhatEthersProvider.broadcastTransaction (C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\contracts\node_modules\@nomicfoundation\hardhat-ethers\src\internal\hardhat-ethers-provider.ts:275:33)
+    at Wallet.sendTransaction (C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\contracts\node_modules\ethers\src.ts\providers\abstract-signer.ts:255:16)
+    at send (C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\contracts\node_modules\ethers\src.ts\contract\contract.ts:313:20)
+    at Proxy.buy (C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\contracts\node_modules\ethers\src.ts\contract\contract.ts:352:16)
+    at send (C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\contracts\scripts\stressTestnet.js:64:18)
+    at C:\Users\neilr\OneDrive\Documents\ChatGPT\Boxabl\Census-Core-Repo\contracts\scripts\stressTestnet.js:230:15
+    at async Promise.all (index 6)
+exit=1

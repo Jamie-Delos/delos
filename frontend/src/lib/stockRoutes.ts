@@ -460,3 +460,18 @@ export const STOCK_ROUTES: Record<string, StockRoute> = {
 };
 
 export const REACHABLE_TICKERS = ["NVDA","AAPL","MSFT","GOOGL","META","AMZN","TSLA","NFLX","TSM","MU","AMD","SNDK","INTC","QUBT","MRVL","RDDT","DJT","GME","AMC","RBLX","SNAP","COIN","MSTR","PLTR","HIMS","RIVN","CRCL","LULU","QQQ","SPY","GLD","SLV","USO","SGOV","LLY","PFE","MRNA","JNJ","BA","RCAT","SPCX","FIG","BABA","NET","DELL","IBM","COST","TTWO","F","UPS","USAR","HOOD"];
+
+// Testnet rehearsals: the mainnet catalogue above does not exist off mainnet, so a NON-mainnet build can
+// name test stock contracts via VITE_TEST_STOCKS="NVDA:0x...,AAPL:0x...". They are routed with an empty
+// path (a direct hop at the factory's stock fee tier through whatever router the testnet stack uses) and
+// only appear in the wizard if the curve's on-chain reward allowlist includes them. Ignored on mainnet.
+import { IS_MAINNET } from "../config";
+const TEST_STOCKS = (import.meta.env.VITE_TEST_STOCKS ?? "").trim();
+if (!IS_MAINNET && TEST_STOCKS) {
+  for (const entry of TEST_STOCKS.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [ticker, address] = entry.split(":").map((s) => s.trim());
+    if (!ticker || !/^0x[0-9a-fA-F]{40}$/.test(address ?? "")) continue;
+    const known = STOCK_ROUTES[ticker];
+    STOCK_ROUTES[ticker] = { ticker, name: known?.name ?? ticker, address: address as `0x${string}`, mode: "direct", path: "0x" };
+  }
+}
