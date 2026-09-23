@@ -136,7 +136,7 @@ async function main() {
   // Post-deploy assertions: the executable path is V4 and the economics constants are the agreed ones.
   if ((await curve.graduator()) !== graduatorAddr || (await graduator.hook()) !== predictedHook) throw new Error("curve/graduator wiring failed");
   if (Number(await curve.FEE_BPS()) !== 200 || Number(await curve.CURVE_PROTOCOL_BPS()) !== 9000) throw new Error("fee constants mismatch");
-  if ((await router.hook()) !== predictedHook || (await router.manager()) !== poolManager) throw new Error("router wiring failed");
+  if ((await router.hook()) !== predictedHook || (await router.manager()).toLowerCase() !== poolManager.toLowerCase()) throw new Error("router wiring failed"); // addresses.js may hold lowercase addresses
 
   const out = {
     network: netName, chainId, deployedAt: new Date().toISOString(), product: "v4", tag: tag || null,
