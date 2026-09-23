@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { zeroAddress, type Address, type Hex } from "viem";
-import { CONTRACTS } from "../config";
+import { CONTRACTS, CHAIN } from "../config";
 import { erc20Abi, censusCurveV4Abi } from "../abis";
 import { readTokenOffset } from "./curveOffset";
 import { readCurve, hasAnyCurve, type CurveVenue } from "./curves";
@@ -38,7 +38,7 @@ export type CoinQuote = {
 
 // `nonce` lets a caller force a re-read (e.g. a Retry button after an RPC failure).
 export function useCoinQuote(coin?: string, nonce = 0): CoinQuote {
-  const pc = usePublicClient();
+  const pc = usePublicClient({ chainId: CHAIN.id });
   const [info, setInfo] = useState<CoinQuote>({ quote: CONTRACTS.weth, resolved: false });
 
   useEffect(() => {

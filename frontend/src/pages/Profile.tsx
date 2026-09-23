@@ -15,7 +15,7 @@ type WalletReward = { coin: LaunchedCoin; rewards: Rewards };
 // Claimable holder rewards for a wallet across the V4 launches that have a reflection vault: one
 // withdrawableOf read per basket asset per vault, straight off the vaults (no indexer needed).
 function useWalletRewards(addr: Address | undefined, coins: LaunchedCoin[], nonce: number): { rewards: WalletReward[] | null; vaults: number } {
-  const pc = usePublicClient();
+  const pc = usePublicClient({ chainId: CHAIN.id });
   const [rewards, setRewards] = useState<WalletReward[] | null>(null);
   const vaultCoins = coins.filter((c) => c.venue === "v4" && !!c.vault);
   const key = vaultCoins.map((c) => c.address.toLowerCase()).sort().join(",");
@@ -65,7 +65,7 @@ export function Profile() {
   // Claimable reflection rewards across V4 launches this wallet holds (any vault with withdrawableOf > 0).
   const [rewardNonce, setRewardNonce] = useState(0);
   const { rewards: claimables, vaults } = useWalletRewards(addr, coins, rewardNonce);
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId: CHAIN.id });
   const { writeContractAsync } = useWriteContract();
   const [claimingVault, setClaimingVault] = useState<string | null>(null);
   const [claimStatus, setClaimStatus] = useState("");

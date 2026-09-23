@@ -95,7 +95,7 @@ export function Launch() {
   const loc = useLocation();
   const { isConnected, address } = useAccount();
   const { connect, signUp, connecting, pending, error: connectError, ensureChain } = useWalletConnect();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId: CHAIN.id });
   const { writeContractAsync, isPending } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
 
@@ -313,6 +313,10 @@ export function Launch() {
 
       // CensusCurve launch params: the coin's whole supply seeds a bonding curve priced in the anchor.
       // virtualQuote = starting FDV, graduationQuote = the reserve to raise before graduating to a pool.
+      // On Robinhood Chain FIRST: the wallet may sit on another network, and the pricing reads below (and the
+      // launch tx) must run against Robinhood Chain. Public clients are pinned to CHAIN.id everywhere for the
+      // same reason (a wallet on the wrong chain used to make ETH pricing fail with "couldn't price against ETH").
+      if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then launch.`); setLaunchPct(null); return; }
       setStatus("pricing the curve…");
       setLaunchPct(72);
       let cp;
@@ -320,8 +324,6 @@ export function Launch() {
       catch { setStatus(`Couldn't price against ${anchor.key} — try ETH, or retry.`); setLaunchPct(null); return; }
       const params = { name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, virtualQuote: cp.virtualQuote, graduationQuote: cp.graduationQuote };
 
-      // On Robinhood Chain first — otherwise the launch tx goes to whatever network the wallet is on.
-      if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then launch.`); setLaunchPct(null); return; }
       setStatus("confirm in wallet…");
       setLaunchPct(80);
 

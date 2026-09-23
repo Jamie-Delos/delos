@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { type Address } from "viem";
 import { erc20Abi } from "../abis";
+import { CHAIN } from "../config";
 import { cachedQuoteUsd, quoteInfo } from "./anchors";
 import { readTokenOffset, curveSpot } from "./curveOffset";
 import { readCurve, hasAnyCurve, type CurveVenue } from "./curves";
@@ -27,7 +28,7 @@ export type CurveStat = {
 const EMPTY: CurveStat = { priceUsd: null, mcapUsd: null, gradPct: null, graduated: false, venue: null, reflectionBps: 0, anchor: "ETH", anchorIsCoin: false, quoteAddress: "", reserve: 0, graduationTarget: null };
 
 export function useCurveStats(addresses: string[]): Record<string, CurveStat> {
-  const pc = usePublicClient();
+  const pc = usePublicClient({ chainId: CHAIN.id });
   const [stats, setStats] = useState<Record<string, CurveStat>>({});
   const key = addresses.map((a) => a.toLowerCase()).sort().join(",");
 

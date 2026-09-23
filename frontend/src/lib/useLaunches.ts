@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { zeroAddress, type Address } from "viem";
-import { CONTRACTS } from "../config";
+import { CONTRACTS, CHAIN } from "../config";
 import { factoryAbi, factoryV2Abi, factoryV4Abi, erc20Abi } from "../abis";
 import { fetchCoins, indexerEnabled, type IndexerCoin } from "./indexer";
 import type { CurveVenue } from "./curves";
@@ -54,7 +54,7 @@ let cache: { at: number; coins: LaunchedCoin[] } | null = null;
 const CACHE_MS = 30_000;
 
 export function useLaunches(enabled = true): { coins: LaunchedCoin[]; live: boolean; loading: boolean } {
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId: CHAIN.id });
   const fresh = cache && Date.now() - cache.at < CACHE_MS ? cache.coins : null;
   const [coins, setCoins] = useState<LaunchedCoin[]>(fresh ?? []);
   const [live, setLive] = useState(fresh != null);

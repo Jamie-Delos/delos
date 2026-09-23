@@ -35,7 +35,7 @@ export function Coin() {
   const coinAddr = param && isAddress(param) ? (param as Address) : undefined;
   const { address: me, isConnected } = useAccount();
   const { connect, signUp, connecting, pending, error: connectError, ensureChain } = useWalletConnect();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId: CHAIN.id });
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
   const [retryNonce, setRetryNonce] = useState(0); // bumped by the "couldn't reach the chain" retry

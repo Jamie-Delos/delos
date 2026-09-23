@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { zeroAddress, type Address, type PublicClient } from "viem";
-import { CONTRACTS } from "../config";
+import { CONTRACTS, CHAIN } from "../config";
 import { vaultAbi, erc20Abi, censusCurveV4Abi } from "../abis";
 import { STOCK_ROUTES } from "./stockRoutes";
 import { quoteInfo } from "./anchors";
@@ -63,7 +63,7 @@ async function readAllowedRewardAssets(pc: PublicClient, curve: Address): Promis
 }
 
 export function useAllowedRewardAssets(): AllowedRewardAssets {
-  const pc = usePublicClient();
+  const pc = usePublicClient({ chainId: CHAIN.id });
   const curve = CONTRACTS.curveV4;
   const [state, setState] = useState<AllowedRewardAssets>({ allowed: null, error: false });
   useEffect(() => {
