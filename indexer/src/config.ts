@@ -11,17 +11,16 @@ function optAddr(name: string): `0x${string}` | null {
   return v.trim().toLowerCase() as `0x${string}`;
 }
 const curveV4 = optAddr("CURVE_V4_ADDRESS");
-// Legacy V3 curve: an explicit CURVE_ADDRESS is always indexed; when it is unset the testnet default
-// applies only to a V3-only deployment (a V4 deployment that does not set it indexes V4 alone).
-const curve = process.env.CURVE_ADDRESS !== undefined ? optAddr("CURVE_ADDRESS") : curveV4 ? null : addr(undefined, "0x76969310D2300e934c9ba731105a6420d920ee60");
+// Contract addresses are deployment-specific: never silently index an old testnet stack.
+const curve = optAddr("CURVE_ADDRESS");
 
 export const cfg = {
   databaseUrl: process.env.DATABASE_URL ?? "",
-  rpcUrl: process.env.RPC_URL ?? "https://rpc.testnet.chain.robinhood.com",
-  chainId: Number(process.env.CHAIN_ID ?? 46630),
+  rpcUrl: process.env.RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com",
+  chainId: Number(process.env.CHAIN_ID ?? 4663),
   curve,
-  factory: addr(process.env.FACTORY_ADDRESS, "0xAfcDA11cdcB1EC228bAcB2d29Fc7eb0C45905358"),
-  factoryV2: addr(process.env.FACTORY_V2_ADDRESS, "0x96420b4248c42ef19eb87D3254569Ea730cadF59"),
+  factory: addr(process.env.FACTORY_ADDRESS, "0x0000000000000000000000000000000000000000"),
+  factoryV2: addr(process.env.FACTORY_V2_ADDRESS, "0x0000000000000000000000000000000000000000"),
   // V4 product (audit/V4-INTEGRATION-SPEC.md). All optional individually; the ingester indexes the V4
   // curve when CURVE_V4_ADDRESS is set, PoolManager swaps of graduated V4 coins when
   // POOL_MANAGER_ADDRESS is set, and hook fee events when HOOK_ADDRESS is set.
@@ -29,7 +28,7 @@ export const cfg = {
   factoryV4: optAddr("FACTORY_V4_ADDRESS"),
   poolManager: optAddr("POOL_MANAGER_ADDRESS"),
   hook: optAddr("HOOK_ADDRESS"),
-  weth: addr(process.env.WETH_ADDRESS, "0x823F4ef19CCE787C7D10483896eE0102F48A88eb"),
+  weth: addr(process.env.WETH_ADDRESS, "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"),
   startBlock: BigInt(process.env.START_BLOCK ?? 0),
   pollMs: Number(process.env.POLL_MS ?? 4000),
   logPage: BigInt(process.env.LOG_PAGE ?? 5000),

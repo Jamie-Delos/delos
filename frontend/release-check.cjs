@@ -6,6 +6,7 @@
 // Exit code 1 lists every failure with the variable or file that must change.
 const fs = require("node:fs");
 const path = require("node:path");
+const { checkNetwork } = require("./network-check.cjs");
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const ZERO = "0x" + "0".repeat(40);
@@ -45,13 +46,14 @@ function parseEnvFile(file) {
   return out;
 }
 
-// Vite precedence: .env.production overrides .env; the process environment overrides both.
+// Match Vite's precedence, including local files (which must never be uploaded to Vercel).
 function loadEnv(dir) {
-  return { ...parseEnvFile(path.join(dir, ".env")), ...parseEnvFile(path.join(dir, ".env.production")), ...process.env };
+  return { ...parseEnvFile(path.join(dir, ".env")), ...parseEnvFile(path.join(dir, ".env.local")), ...parseEnvFile(path.join(dir, ".env.production")), ...parseEnvFile(path.join(dir, ".env.production.local")), ...process.env };
 }
 
 function check({ env, srcDir, releaseChainId }) {
   const failures = [];
+  if (releaseChainId === 4663) failures.push(...checkNetwork(env));
   const warnings = [];
   const chainId = Number(env.VITE_CHAIN_ID ?? 4663);
   if (chainId !== releaseChainId) failures.push(`VITE_CHAIN_ID=${env.VITE_CHAIN_ID ?? "(unset => 4663)"} but this release targets chain ${releaseChainId}`);

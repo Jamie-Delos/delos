@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
-import { isAddress, parseUnits, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
+import { isAddress, parseUnits, zeroAddress, type Address, type Hex } from "viem";
 import { CONTRACTS, STANDARD, CHAIN, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS, REFLECTION_OPTIONS, MAX_REWARD_BASKET, REHEARSAL, REHEARSAL_GRADUATION_ETH, pctLabel, feeBreakdown, feeSplit } from "../config";
 import { factoryV4Abi } from "../abis";
 import { STOCK_ROUTES } from "../lib/stockRoutes";
@@ -17,6 +17,7 @@ import { putMetadata, type CoinMetadata } from "../lib/metadata";
 import { prepareImage, uploadImage, isHostedUrl } from "../lib/upload";
 import { useWalletConnect, CxAvatar, fmtUsd } from "../census";
 import { AssetLogo, StockLogo } from "../components/StockLogo";
+import { assertLaunchChain, confirmLaunch } from "../lib/launchReceipt";
 
 // Designer's 5-step launch wizard (Company → Anchors → Economics → Identity → Review), with an explicit
 // Prima/Maxima choice up front. Both launch through LaunchFactoryV4 with the same economics (2% base fee,
@@ -33,6 +34,14 @@ const QUOTE_KEY = "__quote";
 const isSpecialPick = (k: string) => k === QUOTE_KEY;
 const ZERO_SALT = ("0x" + "00".repeat(32)) as Hex;
 const DRAFT_KEY = "census:launch-draft";
+const PENDING_KEY = `census:pending-launch:${CHAIN.id}:${CONTRACTS.factoryV4.toLowerCase()}`;
+type PendingLaunch = { hash: Hex; meta: CoinMetadata };
+function loadPendingLaunch(): PendingLaunch | null {
+  try {
+    const pending = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "null");
+    return /^0x[0-9a-fA-F]{64}$/.test(pending?.hash ?? "") && pending?.meta ? pending : null;
+  } catch { return null; }
+}
 // Graduation targets by launch type. Prima (meme) coins always graduate at 4 ETH; Maxima (company) coins
 // choose 4 or 8. The 2 ETH "fast graduation" option was retired at mainnet launch (2026-09-23); older
 // drafts that still carry it are snapped back to 4 in loadDraft / on tier change / at launch.
@@ -103,6 +112,7 @@ export function Launch() {
   // A launch whose signed details write failed: the coin exists, the details don't yet. Offer a retry
   // (or go to the coin and save later) instead of dropping them.
   const [pendingMeta, setPendingMeta] = useState<{ token: Address; meta: CoinMetadata } | null>(null);
+  const [pendingLaunch, setPendingLaunch] = useState<PendingLaunch | null>(loadPendingLaunch);
   const [status, setStatus] = useState("");
   const [launchPct, setLaunchPct] = useState<number | null>(null); // 0..100 while launching; null when idle
   // `creator` is stored so a salt grinded for one wallet is never reused when signing with another —
@@ -265,6 +275,7 @@ export function Launch() {
     setStatus("");
     if (!publicClient) { setStatus("Couldn't reach the network — reload and try again."); return; }
     if (!hasFactory) { setStatus("Launches aren't enabled on this network yet."); return; }
+    if (pendingLaunch) { await finishLaunch(pendingLaunch); return; }
 
     const nm = draft.name.trim();
     const sym = ticker;
@@ -317,6 +328,7 @@ export function Launch() {
       // launch tx) must run against Robinhood Chain. Public clients are pinned to CHAIN.id everywhere for the
       // same reason (a wallet on the wrong chain used to make ETH pricing fail with "couldn't price against ETH").
       if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then launch.`); setLaunchPct(null); return; }
+      await assertLaunchChain(publicClient, CHAIN.id);
       setStatus("pricing the curve…");
       setLaunchPct(72);
       let cp;
@@ -324,28 +336,51 @@ export function Launch() {
       catch { setStatus(`Couldn't price against ${anchor.key} — try ETH, or retry.`); setLaunchPct(null); return; }
       const params = { name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, virtualQuote: cp.virtualQuote, graduationQuote: cp.graduationQuote };
 
+      setStatus("checking the launch…");
+      // Simulate against the actual deployment before asking for a paid transaction. This catches
+      // unsupported quote assets, deployment wiring errors and invalid baskets before gas is spent.
+      await publicClient.simulateContract({ address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunch", account: address, args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, []] });
+
       setStatus("confirm in wallet…");
       setLaunchPct(80);
 
       // One factory for both tiers. No basket / reflection 0 => no vault (the factory requires the basket
       // to be empty in that case). Empty `exemptBuyers`: no launch-bundle anti-snipe exemptions.
       hash = await writeContractAsync({ chainId: CHAIN.id, address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunch", args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, []] });
-      setStatus("launching…"); setLaunchPct(90);
-      const rc = await publicClient.waitForTransactionReceipt({ hash });
-      const token: Address | undefined = parseEventLogs({ abi: factoryV4Abi, eventName: "LaunchedV4", logs: rc.logs })[0]?.args.token;
-      if (!token) {
+      const pending = { hash, meta: { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: isHostedUrl(draft.image.trim()) ? draft.image.trim() : "" } };
+      setPendingLaunch(pending);
+      try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch { /* still held in memory */ }
+      await finishLaunch(pending);
+    } catch (e: any) {
+      const raw = String(e?.shortMessage ?? e?.message ?? e);
+      setStatus(/reject|denied|cancel/i.test(raw) ? "Cancelled in your wallet." : raw.slice(0, 240));
+      setLaunchPct(null);
+    }
+  }
+
+  async function finishLaunch(pending: PendingLaunch) {
+    if (!publicClient) return;
+    setStatus("Transaction submitted — waiting for confirmation…"); setLaunchPct(90);
+    let confirmed = false;
+    try {
+      const result = await confirmLaunch(publicClient, pending.hash, factoryAddr, CHAIN.id);
+      if (result.status === "reverted") {
+        setPendingLaunch(null);
+        try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+        setStatus("The launch transaction reverted. No coin was created. Check the transaction in your wallet or explorer.");
         setLaunchPct(null);
-        setStatus(`The transaction went through but the launch event wasn't found in its receipt.${EXPLORER ? ` Check it on the explorer: ${EXPLORER}/tx/${hash}` : ""}`);
         return;
       }
+      confirmed = true;
+      const token = result.token;
+      const meta = pending.meta;
+      setPendingMeta({ token, meta });
       setStatus("sign to publish the details…");
       setLaunchPct(97);
       try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
       // The store only accepts creator-signed writes. Persist a hosted logo URL only (a data-URL preview
       // would overflow the store's URL field). A failed or declined save is surfaced with a retry, and
       // the payload is kept locally so the coin page can save it later — the launch itself is done.
-      const savedImage = isHostedUrl(draft.image.trim()) ? draft.image.trim() : "";
-      const meta: CoinMetadata = { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: savedImage };
       const saved = await putMetadata(token, CHAIN.id, meta, signMessageAsync);
       if (!saved.ok) {
         setStatus(`Launched! The details weren't saved (${saved.reason}).${saved.retryable ? " Retry, or open the coin and save them later." : ""}`);
@@ -354,10 +389,13 @@ export function Launch() {
         return;
       }
       setLaunchPct(100);
+      setPendingLaunch(null);
+      try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
       nav(`/coin/${token}`, { state: { metaSaved: true } });
     } catch (e: any) {
-      const raw = String(e?.shortMessage ?? e?.message ?? e);
-      setStatus(/reject|denied|cancel/i.test(raw) ? "Cancelled in your wallet." : raw.slice(0, 160));
+      setStatus(confirmed
+        ? "Your coin was launched, but the details weren't saved. Retry saving them or open the coin."
+        : "Confirmation is unavailable. Check the transaction below, then use Check confirmation. This will not send another launch.");
       setLaunchPct(null);
     }
   }
@@ -406,6 +444,10 @@ export function Launch() {
           {step === 2 && <EconomicsStep draft={draft} set={set} anchor={anchor} ticker={ticker} ethUsd={ethUsd} picks={picks} pctOf={pctOf} setPct={setPct} togglePick={togglePick} pickLabel={pickLabel} allowed={allowedAssets} allowedError={allowedError} />}
           {step === 3 && <IdentityStep draft={draft} set={set} ticker={ticker} reserved={reserved} hasFactory={hasFactory} />}
           {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} picks={picks} pctOf={pctOf} pickLabel={pickLabel} reserved={reserved} onEdit={goTo} status={status} anchorKey={anchor.key} />}
+          {pendingLaunch && <div className="census-panel" role="status" style={{ marginTop: 16, overflowWrap: "anywhere" }}>
+            <p>A launch transaction has been submitted. Check its confirmation before starting another launch.</p>
+            {EXPLORER ? <a href={`${EXPLORER}/tx/${pendingLaunch.hash}`} target="_blank" rel="noopener noreferrer">View transaction on explorer ↗</a> : <span>{pendingLaunch.hash}</span>}
+          </div>}
         </main>
         <aside className="census-wizard__aside">
           <Preview draft={draft} ticker={ticker} isV2={isV2} picks={picks} pctOf={pctOf} pickLabel={pickLabel} reserved={reserved} anchor={anchor} />
@@ -430,13 +472,23 @@ export function Launch() {
           )}
           {pendingMeta ? (
             <span style={{ display: "inline-flex", gap: 10, flexWrap: "wrap" }}>
-              <button className="census-btn" onClick={async () => {
+              <button className="census-btn" disabled={launching} onClick={async () => {
                 const r = await putMetadata(pendingMeta.token, CHAIN.id, pendingMeta.meta, signMessageAsync);
-                if (r.ok) { setPendingMeta(null); nav(`/coin/${pendingMeta.token}`, { state: { metaSaved: true } }); }
+                if (r.ok) {
+                  try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+                  setPendingLaunch(null); setPendingMeta(null); nav(`/coin/${pendingMeta.token}`, { state: { metaSaved: true } });
+                }
                 else setStatus(`Still not saved (${r.reason}).`);
               }}>Retry saving details</button>
-              <button className="census-btn-ghost" onClick={() => nav(`/coin/${pendingMeta.token}`, { state: { metaSaved: false } })}>Open the coin <span aria-hidden="true">→</span></button>
+              <button className="census-btn-ghost" disabled={launching} onClick={() => {
+                try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+                nav(`/coin/${pendingMeta.token}`, { state: { metaSaved: false } });
+              }}>Open the coin <span aria-hidden="true">→</span></button>
             </span>
+          ) : pendingLaunch ? (
+            <button className="census-btn" disabled={launching} onClick={() => finishLaunch(pendingLaunch)}>
+              {launching ? "Checking confirmation…" : "Check confirmation"}
+            </button>
           ) : (
             <button className="census-btn" disabled={!valid[step] || launching} onClick={onContinue}>
               {launching ? "launching…" : ctaLabel} <span aria-hidden="true">→</span>

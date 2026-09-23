@@ -10,6 +10,11 @@ export const factoryV4Abi = parseAbi([
   "function createLaunch((string name,string symbol,uint256 totalSupply,uint8 decimals,uint256 virtualQuote,uint256 graduationQuote) p, address[] basket, uint16[] weights, bytes[] paths, bytes32 salt, address quote, uint16 reflectionBps, address[] exemptBuyers) returns (address token,address vault)",
   "event LaunchedV4(address indexed token,address indexed creator,address curve,address vault,uint16 reflectionBps,address quote)",
   "error AssetNotAllowed(address asset)",
+  "error QuoteNotSupported()",
+  "error NotConfigured()",
+  "error NotFactory()",
+  "error BadParams()",
+  "error BadBasket()",
 ]);
 
 // CensusCurveV4 — the bonding-curve venue every coin trades on until it graduates into the canonical

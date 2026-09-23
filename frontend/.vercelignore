@@ -1,0 +1,8 @@
+# CLI deployments run from frontend/, so do not rely on the parent .gitignore.
+# Deployment settings must come from the selected Vercel environment.
+.env
+.env.*
+node_modules
+dist
+.test-build
+*.tsbuildinfo

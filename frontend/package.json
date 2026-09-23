@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node network-check.cjs && tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:anchors": "node lib.anchors.test.cjs",
+    "test:launch": "node lib.launch.test.cjs",
     "release:check": "node release-check.cjs",
     "test:release-check": "node release-check.test.cjs"
   },

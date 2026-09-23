@@ -60,6 +60,8 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run build            # CX-V3: CI builds the deployed artifact (tsc -b && vite build), not just a type-check
+      - run: npm run test:anchors
+      - run: npm run test:launch
       - run: npx esbuild api/metadata.ts --bundle --platform=node --format=cjs --outfile=.test-build/metadata.cjs --external:viem
       - run: node api.metadata.test.cjs
       - run: npx esbuild api/upload.ts --bundle --platform=node --format=cjs --outfile=.test-build/upload.cjs --external:viem --external:@vercel/blob

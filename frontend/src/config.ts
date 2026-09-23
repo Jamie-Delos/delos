@@ -3,7 +3,9 @@ import { defineChain, zeroAddress, type Address } from "viem";
 // Chain + contract addresses are env-driven (frontend/.env), so one build targets Robinhood Chain
 // mainnet (4663, the default) or its testnet (46630).
 const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 4663);
-const RPC_URL = import.meta.env.VITE_RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com";
+const RPC_URL = import.meta.env.VITE_RPC_URL ?? (CHAIN_ID === 46630
+  ? "https://rpc.testnet.chain.robinhood.com"
+  : "https://rpc.mainnet.chain.robinhood.com");
 export const IS_MAINNET = CHAIN_ID === 4663;
 
 const CHAIN_META: Record<number, { name: string; explorer: string }> = {
