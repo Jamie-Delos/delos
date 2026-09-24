@@ -26,6 +26,7 @@
     "deploy:v4:local": "hardhat run scripts/deployV4.js --network hardhat",
     "deploy:v4:robinhoodTestnet": "hardhat run scripts/deployV4.js --network robinhoodTestnet",
     "deploy:v4:robinhood": "hardhat run scripts/deployV4.js --network robinhood",
+    "deploy:v4:devbuy:robinhood": "hardhat run scripts/deployDevBuyFactoryV4.js --network robinhood",
     "rehearse:v4": "hardhat run scripts/rehearseV4Lifecycle.js --network hardhat",
     "stress:local": "hardhat run scripts/stressTestnet.js --network hardhat",
     "stress:robinhoodTestnet": "hardhat run scripts/stressTestnet.js --network robinhoodTestnet"
