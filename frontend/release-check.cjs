@@ -57,6 +57,7 @@ function check({ env, srcDir, releaseChainId }) {
   const warnings = [];
   const chainId = Number(env.VITE_CHAIN_ID ?? 4663);
   if (chainId !== releaseChainId) failures.push(`VITE_CHAIN_ID=${env.VITE_CHAIN_ID ?? "(unset => 4663)"} but this release targets chain ${releaseChainId}`);
+  if ((env.VITE_REHEARSAL_GRADUATION_ETH ?? "").trim()) failures.push("VITE_REHEARSAL_GRADUATION_ETH must be removed for a live release");
 
   const seen = new Map();
   for (const [key, what] of REQUIRED_ADDRESSES) {

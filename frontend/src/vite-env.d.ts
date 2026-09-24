@@ -11,7 +11,6 @@ interface ImportMetaEnv {
   readonly VITE_POOL_MANAGER?: string;
   readonly VITE_STATE_VIEW?: string;
   readonly VITE_V4_QUOTER?: string;
-  readonly VITE_REHEARSAL_GRADUATION_ETH?: string; // rehearsal builds only: tiny graduation target (e.g. "0.02"); never set in production
   readonly VITE_TEST_STOCKS?: string; // testnet only: "TICKER:0xaddress,..." test stock contracts for the basket picker
   readonly VITE_QUOTER?: string;
   readonly VITE_FACTORY_ADDRESS?: string;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { isAddress, parseUnits, formatUnits, zeroAddress, type Address, type Hex } from "viem";
-import { CONTRACTS, STANDARD, CHAIN, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS, REFLECTION_OPTIONS, MAX_REWARD_BASKET, REHEARSAL, REHEARSAL_GRADUATION_ETH, pctLabel, feeBreakdown, feeSplit } from "../config";
+import { CONTRACTS, STANDARD, CHAIN, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS, REFLECTION_OPTIONS, MAX_REWARD_BASKET, pctLabel, feeBreakdown, feeSplit } from "../config";
 import { factoryV4Abi, erc20Abi } from "../abis";
 import { estimateDevBuy } from "../lib/devBuy";
 import { STOCK_ROUTES } from "../lib/stockRoutes";
@@ -53,9 +53,7 @@ const GRADS: Record<Tier, { eth: number; label: string }[]> = {
 };
 const DEFAULT_GRAD = 4;
 const isTier = (t: unknown): t is Tier => t === "v1" || t === "v2";
-// Rehearsal builds (VITE_REHEARSAL_GRADUATION_ETH, side deployment on a throwaway stack) add a tiny target
-// to both tiers so the whole lifecycle can be exercised on mainnet for cents. Never set in production.
-const gradsFor = (tier: Tier) => (REHEARSAL ? [...GRADS[tier], { eth: REHEARSAL_GRADUATION_ETH, label: "Rehearsal" }] : GRADS[tier]);
+const gradsFor = (tier: Tier) => GRADS[tier];
 const gradAllowed = (tier: Tier, eth: number) => gradsFor(tier).some((g) => g.eth === eth);
 const gradFor = (tier: Tier, eth: number) => (gradAllowed(tier, eth) ? eth : DEFAULT_GRAD);
 

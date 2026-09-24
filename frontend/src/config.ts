@@ -83,11 +83,6 @@ export const TRADE_FEE_LABEL = `${TRADE_FEE_BPS / 100}%`;
 export const REFLECTION_OPTIONS = [0, 100, 200, 300, 400] as const;
 export const MAX_REWARD_BASKET = 3; // CensusRewardVault.MAX_BASKET
 
-// Mainnet rehearsal build: a side deployment pointed at a throwaway contract stack, with a tiny graduation
-// target so a full launch -> fill -> auto-graduation -> pool run costs cents. Production never sets
-// VITE_REHEARSAL_GRADUATION_ETH, so the option (and the on-screen banner) cannot appear there.
-export const REHEARSAL_GRADUATION_ETH = Number(import.meta.env.VITE_REHEARSAL_GRADUATION_ETH ?? 0) || 0;
-export const REHEARSAL = REHEARSAL_GRADUATION_ETH > 0;
 export const pctLabel = (bps: number) => `${+(bps / 100).toFixed(2)}%`;
 // "Fee 3%" plus its breakdown ("2% base + 1% holder reflection") when a reflection applies.
 export const feeBreakdown = (reflectionBps: number) =>

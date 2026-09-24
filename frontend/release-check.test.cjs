@@ -58,6 +58,7 @@ failsWith({ ...GOOD, VITE_INDEXER_URL: undefined }, v4Src, /VITE_INDEXER_URL is 
 failsWith({ ...GOOD, VITE_INDEXER_URL: "http://indexer.example" }, v4Src, /must be an https/);
 // chain mismatch and off-mainnet Uniswap requirements
 failsWith({ ...GOOD, VITE_CHAIN_ID: "46630" }, v4Src, /VITE_CHAIN_ID=46630 but this release targets chain 4663/);
+failsWith({ ...GOOD, VITE_REHEARSAL_GRADUATION_ETH: "0.02" }, v4Src, /VITE_REHEARSAL_GRADUATION_ETH must be removed/);
 failsWith({ ...GOOD, VITE_CHAIN_ID: "46630" }, v4Src, /VITE_WETH is required off mainnet/, 46630);
 passes({ ...GOOD, VITE_CHAIN_ID: "46630", VITE_WETH: addr(7), VITE_SWAP_ROUTER: addr(8), VITE_V3_FACTORY: addr(9) }, v4Src, 46630);
 // secrets and Privy
