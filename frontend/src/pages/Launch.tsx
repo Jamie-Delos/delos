@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
-import { isAddress, parseUnits, zeroAddress, type Address, type Hex } from "viem";
+import { isAddress, parseUnits, formatUnits, zeroAddress, type Address, type Hex } from "viem";
 import { CONTRACTS, STANDARD, CHAIN, EXPLORER, TRADE_FEE_LABEL, TRADE_FEE_BPS, REFLECTION_OPTIONS, MAX_REWARD_BASKET, REHEARSAL, REHEARSAL_GRADUATION_ETH, pctLabel, feeBreakdown, feeSplit } from "../config";
-import { factoryV4Abi } from "../abis";
+import { factoryV4Abi, erc20Abi } from "../abis";
+import { estimateDevBuy } from "../lib/devBuy";
 import { STOCK_ROUTES } from "../lib/stockRoutes";
 import { basketPathFor } from "../lib/basket";
 import { useAllowedRewardAssets, isAllowedRewardAsset } from "../lib/rewards";
@@ -35,11 +36,12 @@ const isSpecialPick = (k: string) => k === QUOTE_KEY;
 const ZERO_SALT = ("0x" + "00".repeat(32)) as Hex;
 const DRAFT_KEY = "census:launch-draft";
 const PENDING_KEY = `census:pending-launch:${CHAIN.id}:${CONTRACTS.factoryV4.toLowerCase()}`;
-type PendingLaunch = { hash: Hex; meta: CoinMetadata };
+type PendingLaunch = { hash: Hex; factory: Address; meta: CoinMetadata };
 function loadPendingLaunch(): PendingLaunch | null {
   try {
     const pending = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "null");
-    return /^0x[0-9a-fA-F]{64}$/.test(pending?.hash ?? "") && pending?.meta ? pending : null;
+    return /^0x[0-9a-fA-F]{64}$/.test(pending?.hash ?? "") && pending?.meta
+      ? { ...pending, factory: isAddress(pending.factory) ? pending.factory : CONTRACTS.factoryV4 } : null;
   } catch { return null; }
 }
 // Graduation targets by launch type. Prima (meme) coins always graduate at 4 ETH; Maxima (company) coins
@@ -71,14 +73,14 @@ const gradLabel = (eth: number, anchorKey: string) => (anchorKey === "ETH" ? `~$
 type Draft = {
   tier: Tier; name: string; thesis: string; description: string;
   quoteKey: string; picks: string[]; weights: Record<string, number>;
-  graduationEth: number; reflectionBps: number; image: string; ticker: string; publicConsent: boolean;
+  graduationEth: number; reflectionBps: number; devBuy: string; image: string; ticker: string; publicConsent: boolean;
   quoteSymbol: string; // cached symbol when quoteKey is a company coin's address
 };
 type Setter = (p: Partial<Draft>) => void;
 // reflectionBps: the holder reflection charged ON TOP of the 2% base fee on every buy and sell — 0 (off)
 // or 100..400 — paid into the launch's reward basket. Frozen at launch. Maxima defaults to 2%, Prima to off.
 const DEFAULT_REFLECTION: Record<Tier, number> = { v1: 0, v2: 200 };
-const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 4, reflectionBps: 0, image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
+const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 4, reflectionBps: 0, devBuy: "", image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
 
 function loadDraft(): Draft {
   try {
@@ -119,6 +121,7 @@ export function Launch() {
   // the on-chain address is bound to the creator (CX-F1), so a mismatch would deploy off-address.
   const [reserved, setReserved] = useState<{ salt: Hex; address: Address; creator: Address } | null>(null);
   const [ethUsd, setEthUsd] = useState(ETH_USD_FALLBACK);
+  const [devEstimate, setDevEstimate] = useState<ReturnType<typeof estimateDevBuy>>(null);
   const set: Setter = (p) => setDraft((d) => ({ ...d, ...p }));
 
   // Persist the draft (this is what "Save & exit" resumes from).
@@ -148,7 +151,23 @@ export function Launch() {
     if (keep.length !== draft.picks.length) set({ picks: keep });
   }, [allowedAssets, draft.picks]); // eslint-disable-line react-hooks/exhaustive-deps
   const ticker = (draft.ticker || deriveTicker(draft.name)) || "—";
-  const factoryAddr = CONTRACTS.factoryV4; // one factory for both tiers; also the CREATE2 deployer for the …c0de grind
+  const hasDevBuy = draft.devBuy.trim() !== "";
+  const factoryAddr = hasDevBuy ? CONTRACTS.factoryV4DevBuy : CONTRACTS.factoryV4;
+  useEffect(() => {
+    let cancelled = false;
+    setDevEstimate(null);
+    if (!publicClient || !hasDevBuy) return;
+    (async () => {
+      try {
+        const amount = parseUnits(draft.devBuy, anchor.quoteDecimals);
+        if (amount <= 0n) return;
+        const cp = await curveLaunchParams(publicClient, anchor, gradFor(draft.tier, draft.graduationEth));
+        if (!cancelled) setDevEstimate(estimateDevBuy({ totalSupply: parseUnits(String(STANDARD.totalSupply), STANDARD.decimals), virtualQuote: cp.virtualQuote,
+          graduationQuote: cp.graduationQuote, grossQuoteIn: amount, reflectionBps: draft.reflectionBps }));
+      } catch { /* no estimate until the anchor can be priced */ }
+    })();
+    return () => { cancelled = true; };
+  }, [publicClient, draft.devBuy, draft.tier, draft.graduationEth, draft.reflectionBps, anchor.quote]);
   // CX-P2: warn (non-blocking) if the name/ticker duplicates an existing Census coin or impersonates a
   // real company. useLaunches is module-cached, so this shares AnchorStep's scan.
   const { coins: existingCoins } = useLaunches();
@@ -213,7 +232,7 @@ export function Launch() {
   // name/ticker means a different address, so the old one is dropped immediately (never shown, never
   // launched with) while the new grind runs.
   // The address depends on the connected wallet, so the grind key includes it and a wallet change re-grinds.
-  const grindKey = `${draft.name}|${ticker}|${address ?? ""}`;
+  const grindKey = `${draft.name}|${ticker}|${address ?? ""}|${factoryAddr}`;
   const lastGrind = useRef("");
   useEffect(() => {
     if (step < 3 || !draft.name.trim() || ticker === "—" || !address) return;
@@ -239,7 +258,7 @@ export function Launch() {
     `Anchored to ${anchor.key} — economics next.`,
     usesBasket && !picks.length ? "Pick at least one reward asset, or turn the reflection off." : `Fee ${pctLabel(totalFeeBps)}${usesBasket ? ` · rewards ${picks.map(pickLabel).join(" · ")}` : ""} · graduates at ${gradLabel(draft.graduationEth, anchor.key)}`,
     draft.publicConsent ? "Review next." : "Accept the moderation terms to continue.",
-    isConnected || !signUp ? "Everything looks right? Launch it." : "Everything looks right? Connect a wallet, or sign up above, to launch.",
+    hasDevBuy && !hasFactory ? "Creator buy awaits factory deployment. Clear the amount to launch without a buy." : isConnected || !signUp ? "Everything looks right? Launch it." : "Everything looks right? Connect a wallet, or sign up above, to launch.",
   ][step];
   const ctaLabel = ["Continue to Anchors", "Continue to Economics", "Continue to Identity", "Review launch", isConnected ? `Launch ${ticker}` : pending === "wallet" ? "Connecting…" : "Connect wallet"][step];
   const launching = launchPct != null || isPending;
@@ -274,8 +293,8 @@ export function Launch() {
   async function launch() {
     setStatus("");
     if (!publicClient) { setStatus("Couldn't reach the network — reload and try again."); return; }
-    if (!hasFactory) { setStatus("Launches aren't enabled on this network yet."); return; }
     if (pendingLaunch) { await finishLaunch(pendingLaunch); return; }
+    if (!hasFactory) { setStatus(hasDevBuy ? "Creator buy awaits factory deployment. Clear the amount to launch without a buy." : "Launches aren't enabled on this network yet."); return; }
 
     const nm = draft.name.trim();
     const sym = ticker;
@@ -335,19 +354,52 @@ export function Launch() {
       try { cp = await curveLaunchParams(publicClient, anchor, gradFor(draft.tier, draft.graduationEth)); }
       catch { setStatus(`Couldn't price against ${anchor.key} — try ETH, or retry.`); setLaunchPct(null); return; }
       const params = { name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, virtualQuote: cp.virtualQuote, graduationQuote: cp.graduationQuote };
+      let devAmount = 0n;
+      let devMinimum = 0n;
+      if (hasDevBuy) {
+        if (CONTRACTS.factoryV4DevBuy === zeroAddress) { setStatus("Creator buy is awaiting its factory deployment. Clear the amount to launch without a buy."); setLaunchPct(null); return; }
+        try { devAmount = parseUnits(draft.devBuy, anchor.quoteDecimals); } catch { /* validated below */ }
+        const estimate = estimateDevBuy({ totalSupply, virtualQuote: cp.virtualQuote, graduationQuote: cp.graduationQuote, grossQuoteIn: devAmount, reflectionBps: draft.reflectionBps });
+        if (!estimate || (devMinimum = estimate.tokens * 99n / 100n) === 0n) { setStatus("Enter a valid creator buy amount, or leave it empty."); setLaunchPct(null); return; }
+        if (cp.quote !== CONTRACTS.weth) {
+          const [balance, allowance] = await Promise.all([
+            publicClient.readContract({ address: cp.quote, abi: erc20Abi, functionName: "balanceOf", args: [address!] }),
+            publicClient.readContract({ address: cp.quote, abi: erc20Abi, functionName: "allowance", args: [address!, factoryAddr] }),
+          ]);
+          if (balance < devAmount) { setStatus(`You need ${anchor.key} in your wallet for the creator buy.`); setLaunchPct(null); return; }
+          if (allowance < devAmount) {
+            setStatus(`Approve ${anchor.key} for the creator buy…`);
+            const approval = await writeContractAsync({ chainId: CHAIN.id, address: cp.quote, abi: erc20Abi, functionName: "approve", args: [factoryAddr, devAmount] });
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: approval, timeout: 60_000 });
+            if (receipt.status !== "success") throw new Error("Creator buy approval reverted.");
+          }
+        }
+      }
 
       setStatus("checking the launch…");
       // Simulate against the actual deployment before asking for a paid transaction. This catches
       // unsupported quote assets, deployment wiring errors and invalid baskets before gas is spent.
-      await publicClient.simulateContract({ address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunch", account: address, args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, []] });
+      if (hasDevBuy) {
+        await publicClient.simulateContract({ address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunchWithDevBuy", account: address,
+          args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, [], devAmount, devMinimum],
+          ...(cp.quote === CONTRACTS.weth ? { value: devAmount } : {}) });
+      } else {
+        await publicClient.simulateContract({ address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunch", account: address, args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, []] });
+      }
 
       setStatus("confirm in wallet…");
       setLaunchPct(80);
 
       // One factory for both tiers. No basket / reflection 0 => no vault (the factory requires the basket
       // to be empty in that case). Empty `exemptBuyers`: no launch-bundle anti-snipe exemptions.
-      hash = await writeContractAsync({ chainId: CHAIN.id, address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunch", args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, []] });
-      const pending = { hash, meta: { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: isHostedUrl(draft.image.trim()) ? draft.image.trim() : "" } };
+      if (hasDevBuy) {
+        hash = await writeContractAsync({ chainId: CHAIN.id, address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunchWithDevBuy",
+          args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, [], devAmount, devMinimum],
+          ...(cp.quote === CONTRACTS.weth ? { value: devAmount } : {}) });
+      } else {
+        hash = await writeContractAsync({ chainId: CHAIN.id, address: factoryAddr, abi: factoryV4Abi, functionName: "createLaunch", args: [params, basket, weights, paths, salt, cp.quote, draft.reflectionBps, []] });
+      }
+      const pending = { hash, factory: factoryAddr, meta: { name: nm, thesis: draft.thesis.trim(), description: draft.description.trim(), image: isHostedUrl(draft.image.trim()) ? draft.image.trim() : "" } };
       setPendingLaunch(pending);
       try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch { /* still held in memory */ }
       await finishLaunch(pending);
@@ -363,7 +415,7 @@ export function Launch() {
     setStatus("Transaction submitted — waiting for confirmation…"); setLaunchPct(90);
     let confirmed = false;
     try {
-      const result = await confirmLaunch(publicClient, pending.hash, factoryAddr, CHAIN.id);
+      const result = await confirmLaunch(publicClient, pending.hash, pending.factory, CHAIN.id);
       if (result.status === "reverted") {
         setPendingLaunch(null);
         try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
@@ -441,9 +493,9 @@ export function Launch() {
         <main>
           {step === 0 && <CompanyStep draft={draft} set={set} ticker={ticker} warning={nameWarning} />}
           {step === 1 && <AnchorsStep draft={draft} set={set} anchor={anchor} />}
-          {step === 2 && <EconomicsStep draft={draft} set={set} anchor={anchor} ticker={ticker} ethUsd={ethUsd} picks={picks} pctOf={pctOf} setPct={setPct} togglePick={togglePick} pickLabel={pickLabel} allowed={allowedAssets} allowedError={allowedError} />}
+          {step === 2 && <EconomicsStep draft={draft} set={set} anchor={anchor} ticker={ticker} ethUsd={ethUsd} picks={picks} pctOf={pctOf} setPct={setPct} togglePick={togglePick} pickLabel={pickLabel} allowed={allowedAssets} allowedError={allowedError} devEstimate={devEstimate} />}
           {step === 3 && <IdentityStep draft={draft} set={set} ticker={ticker} reserved={reserved} hasFactory={hasFactory} />}
-          {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} picks={picks} pctOf={pctOf} pickLabel={pickLabel} reserved={reserved} onEdit={goTo} status={status} anchorKey={anchor.key} />}
+          {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} picks={picks} pctOf={pctOf} pickLabel={pickLabel} reserved={reserved} onEdit={goTo} status={status} anchorKey={anchor.key} devEstimate={devEstimate} />}
           {pendingLaunch && <div className="census-panel" role="status" style={{ marginTop: 16, overflowWrap: "anywhere" }}>
             <p>A launch transaction has been submitted. Check its confirmation before starting another launch.</p>
             {EXPLORER ? <a href={`${EXPLORER}/tx/${pendingLaunch.hash}`} target="_blank" rel="noopener noreferrer">View transaction on explorer ↗</a> : <span>{pendingLaunch.hash}</span>}
@@ -490,7 +542,7 @@ export function Launch() {
               {launching ? "Checking confirmation…" : "Check confirmation"}
             </button>
           ) : (
-            <button className="census-btn" disabled={!valid[step] || launching} onClick={onContinue}>
+            <button className="census-btn" disabled={!valid[step] || launching || (step === 4 && !hasFactory)} onClick={onContinue}>
               {launching ? "launching…" : ctaLabel} <span aria-hidden="true">→</span>
             </button>
           )}
@@ -771,8 +823,8 @@ function BasketPicker({ set, anchor, ticker, picks, pctOf, setPct, togglePick, p
   );
 }
 
-type EconomicsProps = { draft: Draft; set: Setter; anchor: Anchor; ticker: string; ethUsd: number; picks: string[]; pctOf: (t: string) => number; setPct: (t: string, p: number) => void; togglePick: (t: string) => void; pickLabel: (k: string) => string; allowed: Set<string> | null; allowedError: boolean };
-function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPct, togglePick, pickLabel, allowed, allowedError }: EconomicsProps) {
+type EconomicsProps = { draft: Draft; set: Setter; anchor: Anchor; ticker: string; ethUsd: number; picks: string[]; pctOf: (t: string) => number; setPct: (t: string, p: number) => void; togglePick: (t: string) => void; pickLabel: (k: string) => string; allowed: Set<string> | null; allowedError: boolean; devEstimate: ReturnType<typeof estimateDevBuy> };
+function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPct, togglePick, pickLabel, allowed, allowedError, devEstimate }: EconomicsProps) {
   const anchorKey = anchor.key;
   const reflection = draft.reflectionBps;
   const totalBps = TRADE_FEE_BPS + reflection;
@@ -817,6 +869,22 @@ function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPc
       <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>
         The base fee is shared between Census and you, the creator.{reflection > 0 ? ` The reflection goes to holders${picks.length ? ` as ${picks.map(pickLabel).join(", ")}` : ""}.` : ""}
       </div>
+
+      <label htmlFor="creator-buy" className="census-field-label" style={{ display: "block", marginTop: 30 }}>Creator buy (optional)</label>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <input id="creator-buy" className="census-input" inputMode="decimal" placeholder="Leave empty for no buy" value={draft.devBuy} onChange={e => set({ devBuy: e.target.value.trim() })} aria-describedby="creator-buy-help" style={{ width: "100%" }} />
+        <span className="census-mono">{anchor.key}</span>
+      </div>
+      <div id="creator-buy-help" style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-secondary)" }}>
+        Leave empty to buy nothing. If set, creation and your buy execute together. You pay the {pctLabel(totalBps)} trade fee; any amount above the graduation cap is refunded.
+      </div>
+      {draft.devBuy && <div className="census-card" style={{ marginTop: 12, fontSize: 13 }}>
+        {devEstimate ? <>
+          <div>Estimated receive: <strong>{Number(formatUnits(devEstimate.tokens, STANDARD.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ticker}</strong> · {devEstimate.sharePercent.toFixed(2)}% of total supply</div>
+          <div style={{ marginTop: 5 }}>Estimated fee: {formatUnits(devEstimate.fee, anchor.quoteDecimals)} {anchor.key}{devEstimate.refund > 0n ? ` · refund ${formatUnits(devEstimate.refund, anchor.quoteDecimals)} ${anchor.key}` : ""}</div>
+        </> : <div>Enter a positive amount and wait for the anchor price to estimate your tokens.</div>}
+        {CONTRACTS.factoryV4DevBuy === zeroAddress && <div style={{ marginTop: 8, color: "#e06c60" }}>The updated factory must be deployed before this option can be used. Clear the field to launch without a buy.</div>}
+      </div>}
 
       <div className="census-field-label" style={{ marginTop: 30 }}>Graduation target</div>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(2, gradsFor(draft.tier).length)},1fr)`, gap: 12 }}>
@@ -962,7 +1030,7 @@ const Row = ({ k, v, accent }: { k: ReactNode; v: ReactNode; accent?: boolean })
 );
 
 type ReviewProps = { draft: Draft; ticker: string; isV2: boolean; picks: string[]; pctOf: (t: string) => number; pickLabel: (k: string) => string; reserved: { address: Address } | null; onEdit: (step: number) => void; status: string; anchorKey: string };
-function ReviewStep({ draft, ticker, isV2, picks, pctOf, pickLabel, reserved, onEdit, status, anchorKey }: ReviewProps) {
+function ReviewStep({ draft, ticker, isV2, picks, pctOf, pickLabel, reserved, onEdit, status, anchorKey, devEstimate }: ReviewProps & { devEstimate: ReturnType<typeof estimateDevBuy> }) {
   const reflection = draft.reflectionBps;
   return (
     <>
@@ -981,6 +1049,7 @@ function ReviewStep({ draft, ticker, isV2, picks, pctOf, pickLabel, reserved, on
         <Row k="Holder reflection" v={reflection > 0 ? pctLabel(reflection) : "Off"} accent={reflection > 0} />
         {reflection > 0 && picks.map((t) => <Row key={t} k={`Basket · ${pickLabel(t)}`} v={`${pctOf(t)}%`} />)}
         <Row k="Graduation" v={gradLabel(draft.graduationEth, anchorKey)} />
+        <Row k="Creator buy" v={draft.devBuy ? `${draft.devBuy} ${anchorKey}${devEstimate ? ` → ~${Number(formatUnits(devEstimate.tokens, STANDARD.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ticker} (${devEstimate.sharePercent.toFixed(2)}% supply)` : " · estimate unavailable"}` : "None"} />
         {reflection > 0 && <div style={{ fontSize: 12, color: "var(--census-text-muted)", marginTop: 6 }}>Reflection and basket are frozen at launch.</div>}
       </Group>
       <Group title="Identity" onEdit={() => onEdit(3)}>

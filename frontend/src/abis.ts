@@ -8,7 +8,9 @@ import { parseAbi } from "viem";
 // token is never a reward; any other asset reverts `AssetNotAllowed`. No pool tier: the V4 pool key is fixed.
 export const factoryV4Abi = parseAbi([
   "function createLaunch((string name,string symbol,uint256 totalSupply,uint8 decimals,uint256 virtualQuote,uint256 graduationQuote) p, address[] basket, uint16[] weights, bytes[] paths, bytes32 salt, address quote, uint16 reflectionBps, address[] exemptBuyers) returns (address token,address vault)",
+  "function createLaunchWithDevBuy((string name,string symbol,uint256 totalSupply,uint8 decimals,uint256 virtualQuote,uint256 graduationQuote) p, address[] basket, uint16[] weights, bytes[] paths, bytes32 salt, address quote, uint16 reflectionBps, address[] exemptBuyers, uint256 devBuyQuoteIn, uint256 devBuyMinTokensOut) payable returns (address token,address vault)",
   "event LaunchedV4(address indexed token,address indexed creator,address curve,address vault,uint16 reflectionBps,address quote)",
+  "event DevBought(address indexed token,address indexed creator,address quote,uint256 quoteSpent,uint256 tokensReceived,uint256 quoteRefunded)",
   "error AssetNotAllowed(address asset)",
   "error QuoteNotSupported()",
   "error NotConfigured()",

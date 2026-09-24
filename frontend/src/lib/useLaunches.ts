@@ -80,16 +80,17 @@ export function useLaunches(enabled = true): { coins: LaunchedCoin[]; live: bool
       return () => { cancelled = true; };
     }
 
-    const v4 = CONTRACTS.factoryV4, v1 = CONTRACTS.factory, v2 = CONTRACTS.factoryV2;
-    if (!publicClient || (v4 === zeroAddress && v1 === zeroAddress && v2 === zeroAddress)) { setLoading(false); return; }
+    const v4Factories = [...new Set([CONTRACTS.factoryV4, CONTRACTS.factoryV4DevBuy].filter(a => a !== zeroAddress).map(a => a.toLowerCase()))] as Address[];
+    const v1 = CONTRACTS.factory, v2 = CONTRACTS.factoryV2;
+    if (!publicClient || (v4Factories.length === 0 && v1 === zeroAddress && v2 === zeroAddress)) { setLoading(false); return; }
     (async () => {
       try {
         // Launch events carry (token, creator, curve, …) — no pool at launch, since trading is on the
         // curve until graduation. Token + creator + block (+ the V4 vault/reflection/quote) are all the list needs.
         type Ev = { token: Address; creator: Address; block: bigint; venue: CurveVenue; quote?: Address; vault?: Address; reflectionBps?: number };
         const evs: Ev[] = [];
-        if (v4 !== zeroAddress) {
-          const logs = await publicClient.getContractEvents({ address: v4, abi: factoryV4Abi, eventName: "LaunchedV4", fromBlock: FROM_BLOCK });
+        for (const factory of v4Factories) {
+          const logs = await publicClient.getContractEvents({ address: factory, abi: factoryV4Abi, eventName: "LaunchedV4", fromBlock: FROM_BLOCK });
           for (const l of logs) if (l.args.token && l.args.creator) {
             evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, venue: "v4", quote: l.args.quote, vault: isAddr(l.args.vault) ? l.args.vault : undefined, reflectionBps: Number(l.args.reflectionBps ?? 0) });
           }

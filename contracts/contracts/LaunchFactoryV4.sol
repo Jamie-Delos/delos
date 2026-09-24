@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {LaunchToken} from "./LaunchToken.sol";
 
 interface ICensusCurveV4 {
@@ -11,6 +12,8 @@ interface ICensusCurveV4 {
     ) external;
     function graduator() external view returns (address);
     function allowedRewardAsset(address asset) external view returns (bool);
+    function buyWithETH(address coin, uint256 minTokensOut) external payable returns (uint256 tokensOut);
+    function buy(address coin, uint256 quoteIn, uint256 minTokensOut) external returns (uint256 tokensOut);
 }
 
 interface ICensusV4RouterView {
@@ -37,6 +40,7 @@ interface IRewardVaultDeployer {
 ///         Compiled with the legacy settings so the embedded LaunchToken creation code (and therefore
 ///         every predicted `…c0de` address) is byte-identical to the audited artifact.
 contract LaunchFactoryV4 {
+    using SafeERC20 for IERC20;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     address public immutable weth;
@@ -57,9 +61,17 @@ contract LaunchFactoryV4 {
     }
 
     event LaunchedV4(address indexed token, address indexed creator, address curve, address vault, uint16 reflectionBps, address quote);
+    event DevBought(address indexed token, address indexed creator, address quote, uint256 quoteSpent, uint256 tokensReceived, uint256 quoteRefunded);
 
     error BadBasket();
     error AssetNotAllowed(address asset);
+    error InvalidDevBuy();
+    error RefundFailed();
+
+    receive() external payable {
+        // Only a capped ETH buy on the curve may refund native ETH to this factory.
+        if (msg.sender != curve) revert RefundFailed();
+    }
 
     constructor(address weth_, address curve_, address router_, uint24 stockSwapFee_, address allowanceHolder_, address v4Router_, address vaultDeployer_) {
         require(weth_ != address(0) && curve_ != address(0) && router_ != address(0) && v4Router_.code.length > 0 && vaultDeployer_.code.length > 0, "zero");
@@ -85,6 +97,54 @@ contract LaunchFactoryV4 {
         address[] calldata basket, uint16[] calldata weights, bytes[] calldata paths,
         bytes32 salt, address quote, uint16 reflectionBps, address[] calldata exemptBuyers
     ) external returns (address token, address vault) {
+        return _createLaunch(p, basket, weights, paths, salt, quote, reflectionBps, exemptBuyers, false);
+    }
+
+    /// @notice Optional creator buy in the creation transaction. WETH launches take native ETH;
+    ///         other anchors take the quote ERC20, requiring approval before creation. Empty/zero
+    ///         dev buys use createLaunch() and do not buy. The factory is exempted only for this
+    ///         coin's launch window; purchased tokens and any capped-fill refund go to msg.sender.
+    function createLaunchWithDevBuy(
+        LaunchParams calldata p,
+        address[] calldata basket, uint16[] calldata weights, bytes[] calldata paths,
+        bytes32 salt, address quote, uint16 reflectionBps, address[] calldata exemptBuyers,
+        uint256 devBuyQuoteIn, uint256 devBuyMinTokensOut
+    ) external payable returns (address token, address vault) {
+        if (devBuyQuoteIn == 0 || devBuyMinTokensOut == 0 || exemptBuyers.length >= 32) revert InvalidDevBuy();
+        address q = quote == address(0) ? weth : quote;
+        if ((q == weth && msg.value != devBuyQuoteIn) || (q != weth && msg.value != 0)) revert InvalidDevBuy();
+        (token, vault) = _createLaunch(p, basket, weights, paths, salt, q, reflectionBps, exemptBuyers, true);
+
+        uint256 tokensOut;
+        uint256 refunded;
+        if (q == weth) {
+            uint256 balanceBefore = address(this).balance - msg.value;
+            tokensOut = ICensusCurveV4(curve).buyWithETH{value: devBuyQuoteIn}(token, devBuyMinTokensOut);
+            refunded = address(this).balance - balanceBefore;
+            if (refunded != 0) {
+                (bool ok,) = payable(msg.sender).call{value: refunded}("");
+                if (!ok) revert RefundFailed();
+            }
+        } else {
+            IERC20 asset = IERC20(q);
+            uint256 balanceBefore = asset.balanceOf(address(this));
+            asset.safeTransferFrom(msg.sender, address(this), devBuyQuoteIn);
+            if (asset.balanceOf(address(this)) - balanceBefore != devBuyQuoteIn) revert InvalidDevBuy();
+            asset.forceApprove(curve, devBuyQuoteIn);
+            tokensOut = ICensusCurveV4(curve).buy(token, devBuyQuoteIn, devBuyMinTokensOut);
+            asset.forceApprove(curve, 0);
+            refunded = asset.balanceOf(address(this)) - balanceBefore;
+            if (refunded != 0) asset.safeTransfer(msg.sender, refunded);
+        }
+        IERC20(token).safeTransfer(msg.sender, tokensOut);
+        emit DevBought(token, msg.sender, q, devBuyQuoteIn - refunded, tokensOut, refunded);
+    }
+
+    function _createLaunch(
+        LaunchParams calldata p,
+        address[] calldata basket, uint16[] calldata weights, bytes[] calldata paths,
+        bytes32 salt, address quote, uint16 reflectionBps, address[] calldata exemptBuyers, bool devBuy
+    ) internal returns (address token, address vault) {
         address q = quote == address(0) ? weth : quote;
         if ((reflectionBps == 0) != (basket.length == 0)) revert BadBasket();
 
@@ -108,7 +168,10 @@ contract LaunchFactoryV4 {
         }
 
         IERC20(token).transfer(curve, p.totalSupply);
-        ICensusCurveV4(curve).registerWithExemptions(token, q, msg.sender, vault, reflectionBps, p.virtualQuote, p.totalSupply, p.graduationQuote, exemptBuyers);
+        address[] memory exemptions = new address[](exemptBuyers.length + (devBuy ? 1 : 0));
+        for (uint256 i; i < exemptBuyers.length; ++i) exemptions[i] = exemptBuyers[i];
+        if (devBuy) exemptions[exemptBuyers.length] = address(this);
+        ICensusCurveV4(curve).registerWithExemptions(token, q, msg.sender, vault, reflectionBps, p.virtualQuote, p.totalSupply, p.graduationQuote, exemptions);
         emit LaunchedV4(token, msg.sender, curve, vault, reflectionBps, q);
     }
 

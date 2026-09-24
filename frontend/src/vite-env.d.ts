@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_CHAIN_ID?: string;
   readonly VITE_RPC_URL?: string;
   readonly VITE_FACTORY_V4_ADDRESS?: string;
+  readonly VITE_FACTORY_V4_DEV_BUY?: string;
   readonly VITE_CURVE_V4_ADDRESS?: string;
   readonly VITE_V4_ROUTER?: string;
   readonly VITE_V4_HOOK?: string;

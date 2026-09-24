@@ -32,6 +32,7 @@ const addr = (v: string | undefined, fallback: Address = zeroAddress): Address =
 export const CONTRACTS = {
   // --- V4 product (required for a release; see release-check.cjs) ---
   factoryV4: addr(import.meta.env.VITE_FACTORY_V4_ADDRESS), // LaunchFactoryV4 — every new launch (Prima and Maxima); CREATE2 deployer for the …c0de grind
+  factoryV4DevBuy: addr(import.meta.env.VITE_FACTORY_V4_DEV_BUY), // optional replacement factory supporting an atomic creator buy; zero until deployed and authorised
   curveV4: addr(import.meta.env.VITE_CURVE_V4_ADDRESS), // CensusCurveV4 — the bonding-curve venue until graduation
   v4Router: addr(import.meta.env.VITE_V4_ROUTER), // CensusV4Router — post-graduation trades in the hooked pool
   v4Hook: addr(import.meta.env.VITE_V4_HOOK), // CensusV4Hook — charges the fee in the canonical pool (part of the PoolKey)

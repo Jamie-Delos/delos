@@ -6,7 +6,7 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "test:v4": "hardhat test test/v4.lifecycle.test.js test/v4.isolation.test.js test/v4.fees.test.js test/v4.readiness.test.js test/v4.adversarial.test.js",
+    "test:v4": "hardhat test test/v4.lifecycle.test.js test/v4.isolation.test.js test/v4.fees.test.js test/v4.readiness.test.js test/v4.adversarial.test.js test/v4.devbuy.test.js",
     "rehearse:bonding": "hardhat run scripts/rehearseBondingLifecycle.js --network hardhat",
     "devnet": "hardhat run scripts/devnetLaunch.js",
     "devnet:v2": "hardhat run scripts/devnetCurveV2.js --network hardhat",
