@@ -76,3 +76,6 @@ Thumbs.db
 
 # Stress-run resume state: holds the throwaway test wallets' private keys. Never commit.
 audit/testnet-stress-state.*.json
+
+.vercel
+.env*
