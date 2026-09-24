@@ -15,6 +15,21 @@ import "./styles/census-app.css";
 const queryClient = new QueryClient();
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 
+// The public domain may temporarily point at a disposable mainnet stack for team testing.
+// Make that phase explicit: the later production cutover cannot migrate coins or pools.
+if (import.meta.env.VITE_TEAM_TEST === "1") {
+  document.title = `Team test · ${document.title}`;
+  const meta = document.createElement("meta");
+  meta.name = "robots";
+  meta.content = "noindex,nofollow";
+  document.head.appendChild(meta);
+  const strip = document.createElement("div");
+  strip.textContent = "MAINNET TEAM TEST · temporary contracts · coins launched here stay on this stack after the final cutover";
+  strip.setAttribute("style", "position:fixed;top:0;left:0;right:0;z-index:9999;background:#e6ad42;color:#151b14;font:600 12px/1.4 system-ui,sans-serif;text-align:center;padding:5px 12px;letter-spacing:.02em");
+  document.body.prepend(strip);
+  document.body.style.paddingTop = "26px";
+}
+
 // Default: wallets only (EIP-6963 picker). With a Privy App ID set, Privy adds "Sign up" and runs
 // "Connect wallet" through its modal; its SDK is a separate chunk fetched only in that case.
 const WalletsOnlyTree = () => (

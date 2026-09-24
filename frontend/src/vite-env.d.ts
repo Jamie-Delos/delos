@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_TEAM_TEST?: string; // visible, noindex mainnet team-test banner; remove at final cutover
   readonly VITE_CHAIN_ID?: string;
   readonly VITE_RPC_URL?: string;
   readonly VITE_FACTORY_V4_ADDRESS?: string;
