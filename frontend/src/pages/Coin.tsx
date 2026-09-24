@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
-import { parseUnits, formatUnits, isAddress, zeroAddress, type Address } from "viem";
-import { CONTRACTS, CHAIN, TRADE_FEE_BPS, TRADE_FEE_LABEL, LEGACY_V3_POOL_FEE, pctLabel, feeBreakdown } from "../config";
+import { parseUnits, formatUnits, isAddress, zeroAddress, parseEventLogs, type Address, type Hex } from "viem";
+import { CONTRACTS, CHAIN, EXPLORER, TRADE_FEE_BPS, TRADE_FEE_LABEL, LEGACY_V3_POOL_FEE, pctLabel, feeBreakdown } from "../config";
 import { wethAbi, erc20Abi, censusCurveV4Abi, v4RouterAbi, vaultAbi } from "../abis";
 import { cachedQuoteUsd, quoteInfo, type QuoteInfo } from "../lib/anchors";
 import { poolSpotOut } from "../lib/pool";
-import { v4Configured, v4QuoteOut, v4SpotOut, v4SpotPrice, swapRequest } from "../lib/v4pool";
-import { hasAnyCurve } from "../lib/curves";
+import { v4Configured, v4QuoteOut, v4SpotPrice, swapRequest } from "../lib/v4pool";
+import { hasAnyCurve, watchGraduation, readCurve } from "../lib/curves";
+import { assertLaunchChain } from "../lib/launchReceipt";
+import { PaymentConversion } from "../components/PaymentConversion";
 import { useCoinQuote } from "../lib/useCoinQuote";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
@@ -18,7 +20,7 @@ import { CxAvatar, AnchorMark, HomeRow, Num, StatBand, PendingPanel, GraduationB
 
 const SLIPPAGE_BPS = 200; // 2% — the default minimum-out tolerance; user-adjustable (see SLIPPAGE_PRESETS)
 const SLIPPAGE_PRESETS = [50, 200, 500, 1000]; // 0.5% / 2% / 5% / 10% — a shallow post-graduation pool may need more
-const BUY_PRESETS = ["0.01", "0.1", "0.5", "1"];
+const BUY_PRESETS = ["0.001", "0.01", "0.1", "1"];
 const SELL_PRESETS = [25, 50, 75, 100]; // % of the coins you hold
 
 const friendly = (e: any) => {
@@ -43,11 +45,19 @@ export function Coin() {
   const cq = useCoinQuote(coinAddr, retryNonce);
 
   const [buy, setBuy] = useState(true);
+  const [useNative, setUseNative] = useState(true); // ETH vs WETH for both input and payout
   const [amount, setAmount] = useState("0.1");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [conversionBusy, setConversionBusy] = useState(false);
+  const [pendingTrade, setPendingTrade] = useState<Hex | null>(null);
+  const tradeStorageKey = `census:trade:${CHAIN.id}:${me?.toLowerCase()}`;
+  useEffect(() => {
+    const saved = localStorage.getItem(tradeStorageKey);
+    setPendingTrade(saved && /^0x[0-9a-f]{64}$/i.test(saved) ? saved as Hex : null);
+  }, [tradeStorageKey]);
   const [quoteOut, setQuoteOut] = useState<bigint | null>(null); // what you'd receive, raw units of the out-asset
-  const [via, setVia] = useState<"" | "curve" | "pool" | "pool-spot">("");
+  const [via, setVia] = useState<"" | "curve" | "pool">("");
   const [gradBps, setGradBps] = useState<number | null>(null);
   const [meta, setMeta] = useState<CoinMetadata | null>(null);
   const [copied, setCopied] = useState(false);
@@ -70,6 +80,7 @@ export function Coin() {
   const quoteDec = qi?.decimals ?? 18;
   const anchorIsCoin = !!qi?.isCoin;
   const isWethQuote = quote.toLowerCase() === CONTRACTS.weth.toLowerCase();
+  const paymentSymbol = isWethQuote ? (useNative ? "ETH" : "WETH") : anchor;
   const hasCurve = hasAnyCurve();
   const registered = !!cq.routed;
   const graduated = !!cq.graduated;
@@ -92,6 +103,11 @@ export function Coin() {
     : graduated && isV4 && cq.poolIdMismatch ? "The pool doesn't match the coin's registration — trading is paused here."
     : "";
   const canTrade = hasCurve && cq.resolved && registered && !!qi && (onCurve || onPool);
+
+  useEffect(() => {
+    if (!publicClient || !coinAddr || !onCurve) return;
+    return watchGraduation(publicClient, curveAddr, coinAddr, () => setRetryNonce(n => n + 1));
+  }, [publicClient, coinAddr, onCurve, curveAddr]);
 
   // Coins anchored to THIS coin (only possible once it has graduated — its pool is what they trade through).
   const pairable = graduated && isV4;
@@ -167,13 +183,13 @@ export function Coin() {
       try {
         const [c, q] = await Promise.all([
           publicClient.readContract({ address: coinAddr, abi: erc20Abi, functionName: "balanceOf", args: [me] }),
-          isWethQuote ? publicClient.getBalance({ address: me }) : publicClient.readContract({ address: quote, abi: erc20Abi, functionName: "balanceOf", args: [me] }),
+          isWethQuote && useNative ? publicClient.getBalance({ address: me }) : publicClient.readContract({ address: quote, abi: erc20Abi, functionName: "balanceOf", args: [me] }),
         ]);
         if (!cancelled) { setCoinBal(c); setQuoteBal(q); }
       } catch { /* leave unknown */ }
     })();
     return () => { cancelled = true; };
-  }, [publicClient, coinAddr, me, quote, isWethQuote, cq.resolved, tick]);
+  }, [publicClient, coinAddr, me, quote, isWethQuote, useNative, cq.resolved, tick]);
 
   // Reflection launches: the basket, what the connected wallet can claim from the vault, and what's
   // waiting to be distributed.
@@ -222,8 +238,7 @@ export function Coin() {
 
   // Indicative "you receive ~" as the user types (debounced). On the curve this is quoteBuyFor/quoteSell
   // (fee-net) straight off the contract. In the canonical pool it's the V4Quoter's simulated output
-  // (hook fee included, price impact included); without a quoter, a spot estimate net of the hook fee
-  // that the user's slippage has to cover. Blank when there's no price for the amount.
+  // (hook fee included, price impact included). Blank when no executable quote is available.
   useEffect(() => {
     let cancelled = false;
     setQuoteOut(null); setVia("");
@@ -244,8 +259,10 @@ export function Coin() {
           return;
         }
         const quoted = await v4QuoteOut(publicClient, coinAddr, quote, buy, amt);
-        const out = quoted ?? (await v4SpotOut(publicClient, coinAddr, quote, buy, amt, standingFeeBps));
-        if (!cancelled) { setQuoteOut(out); setVia(out ? (quoted != null ? "pool" : "pool-spot") : ""); }
+        // A spot ratio ignores price impact. Never use it as an executable quote/minimum on a
+        // shallow graduated pool; a missing executable quote is a retry state.
+        const out = quoted;
+        if (!cancelled) { setQuoteOut(out); setVia(out ? "pool" : ""); }
       } catch { if (!cancelled) { setQuoteOut(null); setVia(""); } }
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
@@ -258,11 +275,32 @@ export function Coin() {
     if (current >= amountIn) return;
     setStatus("Approving…");
     const a = await writeContractAsync({ chainId: CHAIN.id, address: token, abi: erc20Abi, functionName: "approve", args: [spender, amountIn] });
-    await publicClient.waitForTransactionReceipt({ hash: a });
+    await confirmedTrade(a);
+  }
+
+  async function confirmedTrade(hash: Hex) {
+    if (!publicClient) throw new Error("Network unavailable");
+    setPendingTrade(hash); localStorage.setItem(tradeStorageKey, hash);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+    localStorage.removeItem(tradeStorageKey); setPendingTrade(null);
+    if (receipt.status === "reverted") throw new Error("Transaction reverted — the requested step did not complete.");
+    return receipt;
+  }
+
+  async function checkPendingTrade() {
+    if (!pendingTrade || busy) return;
+    setBusy(true);
+    try {
+      await confirmedTrade(pendingTrade);
+      setStatus("Submitted step confirmed. Check your updated balances before trading again. Any wrapped ETH or sale proceeds may be in WETH.");
+      if (isWethQuote) setUseNative(false);
+      setAmount("");
+    } catch (e) { setStatus(friendly(e)); }
+    finally { setBusy(false); setTick(t => t + 1); setRetryNonce(n => n + 1); }
   }
 
   async function trade() {
-    if (!coinAddr || !publicClient || busy) return;
+    if (!coinAddr || !publicClient || busy || conversionBusy || pendingTrade) return;
     setStatus("");
     if (!isConnected || !me) { setStatus("Connect your wallet to trade."); return; }
     if (!canTrade) { setStatus(tradeBlock || "Still loading — try again in a moment."); return; }
@@ -277,34 +315,41 @@ export function Coin() {
     try {
       // On the right network first — otherwise the trade goes to whatever chain the wallet is on and fails.
       if (!(await ensureChain())) { setStatus(`Switch your wallet to ${CHAIN.name}, then trade.`); return; }
+      await assertLaunchChain(publicClient, CHAIN.id);
+      const latest = await readCurve(publicClient, coinAddr);
+      if (!latest || latest.graduated !== graduated) {
+        setRetryNonce(n => n + 1);
+        setStatus("The coin's trading venue changed. Refreshing the quote — review it and place your trade again.");
+        return;
+      }
 
       if (onCurve) {
         // Pre-graduation: trade against the Census curve (the fee is taken on-chain). BUY: an ETH-anchored
         // coin takes native ETH in one tx (buyWithETH wraps for you); another anchor means approving that
         // token, then curve.buy. SELL approves the coin, then sells — ETH-anchored coins pay out native ETH.
         if (buy) {
-          if (isWethQuote) {
+          if (isWethQuote && useNative) {
             setStatus("Confirm in your wallet…");
             const h = await writeContractAsync({ chainId: CHAIN.id, address: curveAddr, abi: censusCurveV4Abi, functionName: "buyWithETH", args: [coinAddr, minOut], value: amountIn });
             setStatus("Buying…");
-            await publicClient.waitForTransactionReceipt({ hash: h });
+            await confirmedTrade(h);
             setStatus("Bought ✓");
           } else {
-            if (quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${anchor} in your wallet to buy this coin.`); return; }
+            if (quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${paymentSymbol} in your wallet to buy this coin.`); return; }
             await ensureAllowance(quote, curveAddr, amountIn);
             setStatus("Confirm in your wallet…");
             const h = await writeContractAsync({ chainId: CHAIN.id, address: curveAddr, abi: censusCurveV4Abi, functionName: "buy", args: [coinAddr, amountIn, minOut] });
             setStatus("Buying…");
-            await publicClient.waitForTransactionReceipt({ hash: h });
+            await confirmedTrade(h);
             setStatus("Bought ✓");
           }
         } else {
           await ensureAllowance(coinAddr, curveAddr, amountIn);
           setStatus("Confirm in your wallet…");
-          const h = await writeContractAsync({ chainId: CHAIN.id, address: curveAddr, abi: censusCurveV4Abi, functionName: isWethQuote ? "sellForETH" : "sell", args: [coinAddr, amountIn, minOut] });
+          const h = await writeContractAsync({ chainId: CHAIN.id, address: curveAddr, abi: censusCurveV4Abi, functionName: isWethQuote && useNative ? "sellForETH" : "sell", args: [coinAddr, amountIn, minOut] });
           setStatus("Selling…");
-          await publicClient.waitForTransactionReceipt({ hash: h });
-          setStatus(isWethQuote ? "Sold ✓ — paid out in ETH" : "Sold ✓");
+          await confirmedTrade(h);
+          setStatus(`Sold ✓ — paid out in ${paymentSymbol}`);
         }
         return;
       }
@@ -314,11 +359,12 @@ export function Coin() {
       // SELL approves the coin to the router and swaps. The hook charges the fee inside the swap; the
       // quoter's number already includes it.
       if (buy) {
-        if (quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${anchor} in your wallet to buy this coin.`); return; }
-        if (isWethQuote) {
+        if (quoteBal != null && quoteBal < amountIn) { setStatus(`You need ${paymentSymbol} in your wallet to buy this coin.`); return; }
+        if (isWethQuote && useNative) {
           setStatus("Wrapping ETH…");
           const w = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.weth, abi: wethAbi, functionName: "deposit", value: amountIn });
-          await publicClient.waitForTransactionReceipt({ hash: w });
+          await confirmedTrade(w);
+          setUseNative(false); // A cancelled next step can resume using the WETH already wrapped.
         }
         await ensureAllowance(quote, CONTRACTS.v4Router, amountIn);
       } else {
@@ -333,13 +379,24 @@ export function Coin() {
       try { gas = ((await publicClient.estimateContractGas({ address: CONTRACTS.v4Router, abi: v4RouterAbi, functionName: "swapExactInput", args: [req], account: me })) * 13n) / 10n; } catch { gas = undefined; }
       const h = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.v4Router, abi: v4RouterAbi, functionName: "swapExactInput", args: [req], ...(gas ? { gas } : {}) });
       setStatus("Swapping in the pool…");
-      await publicClient.waitForTransactionReceipt({ hash: h });
-      setStatus(buy ? "Bought ✓" : isWethQuote ? "Sold ✓ — paid out in WETH" : "Sold ✓");
+      const receipt = await confirmedTrade(h);
+      if (!buy && isWethQuote && useNative) {
+        // Unwrap only this swap's proceeds, never the wallet's pre-existing WETH balance.
+        const swap = parseEventLogs({ abi: v4RouterAbi, eventName: "Swap", logs: receipt.logs.filter(l => l.address.toLowerCase() === CONTRACTS.v4Router.toLowerCase()) })[0];
+        try {
+          if (!swap || swap.args.recipient.toLowerCase() !== me.toLowerCase()) throw new Error("Swap receipt unavailable");
+          setStatus("Sold ✓ — confirm conversion of the received WETH to ETH…");
+          const unwrap = await writeContractAsync({ chainId: CHAIN.id, address: CONTRACTS.weth, abi: wethAbi, functionName: "withdraw", args: [swap.args.amountOut] });
+          await confirmedTrade(unwrap);
+          setStatus("Sold ✓ — paid out in ETH");
+        } catch { setStatus("Sold ✓ — check WETH/ETH balances and any pending conversion confirmation. Don't repeat the sale."); }
+      } else setStatus(buy ? "Bought ✓" : `Sold ✓ — paid out in ${paymentSymbol}`);
     } catch (e: any) {
       setStatus(friendly(e));
     } finally {
       setBusy(false);
       setTick((t) => t + 1);
+      setRetryNonce((n) => n + 1);
     }
   }
 
@@ -428,9 +485,9 @@ export function Coin() {
   const feeDisp = buy
     ? `${fmtAmount((Number(amount) || 0) * feeRate, 5)} ${anchor}`
     : outHuman != null ? `${fmtAmount((outHuman * feeRate) / (1 - feeRate), 5)} ${anchor}` : "—";
-  const routeDisp = onCurve ? "The Census curve" : graduated ? (isV4 ? (via === "pool-spot" ? "Canonical pool (spot est.)" : "Canonical pool") : "Uniswap V3 pool (legacy)") : "—";
+  const routeDisp = onCurve ? "The Census curve" : graduated ? (isV4 ? "Canonical pool" : "Uniswap V3 pool (legacy)") : "—";
   const balDisp = !me ? "" : buy
-    ? quoteBal != null ? `Balance ${fmtAmount(Number(formatUnits(quoteBal, quoteDec)))} ${anchor}` : ""
+    ? quoteBal != null ? `Balance ${fmtAmount(Number(formatUnits(quoteBal, quoteDec)))} ${paymentSymbol}` : ""
     : coinBal != null ? `Balance ${fmtAmount(Number(formatUnits(coinBal, 18)), 2)} ${coinSym}` : "";
   const sellPreset = (pct: number) => { if (coinBal == null) return; setAmount(formatUnits((coinBal * BigInt(pct)) / 100n, 18)); };
   const claimable = hasClaimable(rewards);
@@ -584,7 +641,7 @@ export function Coin() {
             {(["buy", "sell"] as const).map((side) => {
               const on = buy === (side === "buy");
               return (
-                <button key={side} onClick={() => { setBuy(side === "buy"); setAmount(side === "buy" ? "0.1" : ""); }} aria-pressed={on}
+                <button key={side} disabled={busy || conversionBusy} onClick={() => { setBuy(side === "buy"); setAmount(side === "buy" ? "0.1" : ""); }} aria-pressed={on}
                   style={{ background: "none", border: 0, cursor: "pointer", fontSize: 15, paddingTop: 15, paddingBottom: 14, marginBottom: -1,
                     fontWeight: on ? 500 : 400, color: on ? "var(--census-text)" : "var(--census-text-muted)",
                     borderBottom: `1px solid ${on ? "var(--census-lime)" : "transparent"}` }}>
@@ -595,13 +652,23 @@ export function Coin() {
           </div>
 
           <div className="cx-field" style={{ marginTop: 26, paddingBottom: 14 }}>
-            <input value={amount} inputMode="decimal" aria-label="Amount" placeholder="0" onChange={(e) => setAmount(e.target.value)}
+            <input value={amount} disabled={busy || conversionBusy} inputMode="decimal" aria-label="Amount" placeholder="0" onChange={(e) => setAmount(e.target.value)}
               style={{ fontFamily: "var(--census-font-mono)", fontSize: 30, fontVariantNumeric: "tabular-nums" }} />
             <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
               {buy ? <AnchorMark anchor={anchor} isCoin={anchorIsCoin} size={20} /> : <CxAvatar name={coinName} image={meta?.image} size={20} />}
-              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>{buy ? anchor : coinSym || "coin"}</span>
+              <span className="cx-num" style={{ fontSize: 13, color: "var(--census-text-secondary)" }}>{buy ? paymentSymbol : coinSym || "coin"}</span>
             </span>
           </div>
+
+          {isWethQuote && <label className="cx-label" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14 }}>
+            {buy ? "Pay with" : "Receive"}
+            <select aria-label={buy ? "Payment asset" : "Receive asset"} value={useNative ? "ETH" : "WETH"} disabled={busy} onChange={e => setUseNative(e.target.value === "ETH")}>
+              <option value="ETH">ETH</option><option value="WETH">WETH</option>
+            </select>
+          </label>}
+          {onPool && isWethQuote && useNative && <div className="cx-label" style={{ marginTop: 10 }}>
+            {buy ? "ETH is wrapped before the swap. Your wallet will confirm each required step." : "The pool pays WETH, then your wallet confirms converting the proceeds to ETH."}
+          </div>}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
             <div style={{ display: "flex", gap: 22 }}>
@@ -613,7 +680,7 @@ export function Coin() {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 28 }}>
-            <QuoteRow label="You receive ~" value={outHuman != null ? `${fmtAmount(outHuman, 6)} ${buy ? coinSym : anchor}` : "—"} bright />
+            <QuoteRow label="You receive ~" value={outHuman != null ? `${fmtAmount(outHuman, 6)} ${buy ? coinSym : paymentSymbol}` : "—"} bright />
             <QuoteRow label={`Fee ${feePctLabel}`} value={feeDisp} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span className="cx-label">Max slippage</span>
@@ -635,14 +702,9 @@ export function Coin() {
               Only {fmtAmount(Number(formatUnits(maxIn, quoteDec)), 5)} {anchor} of room is left before the curve fills; anything above that is refunded in the same transaction.
             </div>
           )}
-          {onPool && via === "pool-spot" && (
-            <div className="cx-label" style={{ marginTop: 12, color: "var(--census-text-secondary)" }}>
-              Estimated from the pool's spot price, before price impact — your slippage setting covers the difference.
-            </div>
-          )}
 
           {isConnected ? (
-            <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={busy || !canTrade} onClick={trade}>
+            <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={busy || conversionBusy || !!pendingTrade || !canTrade || quoteOut == null} onClick={trade}>
               {busy ? "Working…" : !cq.resolved || (!qi && !tradeBlock) ? "Loading…" : "Place trade"}
             </button>
           ) : (
@@ -657,6 +719,7 @@ export function Coin() {
               )}
             </>
           )}
+          {!busy && <button className="cx-link-control" style={{ marginTop: 12 }} onClick={() => { setTick(t => t + 1); setRetryNonce(n => n + 1); }}>Refresh price and trading status</button>}
           <div className="cx-label" style={{ textAlign: "center", marginTop: 14 }}>
             {onCurve ? `Fee ${feePctLabel} · ${feeNote}` : onPool ? `Fee ${standingFeeLabel} · ${feeBreakdown(reflectionBps)}` : "—"}
           </div>
@@ -669,6 +732,10 @@ export function Coin() {
           {!isConnected && connectError && <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: "#e06c60" }}>{connectError}</div>}
           {isConnected && tradeBlock && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{tradeBlock}</div>}
           {status && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>{status}</div>}
+          {pendingTrade && <p className="cx-label">Submitted transaction awaiting confirmation. <a href={`${EXPLORER}/tx/${pendingTrade}`} target="_blank" rel="noreferrer">View transaction</a> · <button className="cx-link-control" disabled={busy} onClick={checkPendingTrade}>Check confirmation</button></p>}
+          {isWethQuote && canTrade && <PaymentConversion coin={coinAddr} disabled={busy || !!pendingTrade} ensureChain={ensureChain} onBusy={setConversionBusy} onFunded={received => {
+            setBuy(true); setUseNative(false); setQuoteOut(null); setAmount(formatUnits(received, 18)); setTick(t => t + 1);
+          }} />}
         </div>
 
         <div className="cx-panel cx-panel--plain" style={{ marginTop: 16 }}>

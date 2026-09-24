@@ -44,6 +44,8 @@ export const CONTRACTS = {
   locker: addr(import.meta.env.VITE_LOCKER_ADDRESS), // LaunchLocker — legacy locked V3 positions
   curve: addr(import.meta.env.VITE_CURVE_ADDRESS), // CensusCurve — legacy curve (V3 graduation)
   quoter: addr(import.meta.env.VITE_QUOTER, zeroAddress), // Uniswap V3 QuoterV2 — legacy pool quotes only
+  // Official deployment registry + factory()/WETH9() verified on mainnet, 2026-09-24.
+  conversionQuoter: addr(import.meta.env.VITE_CONVERSION_QUOTER, IS_MAINNET ? "0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7" : zeroAddress),
   // Chain-gated like v3Factory/ethPricePool below (CX-H3): a non-mainnet build with these env vars unset
   // must NOT silently fall back to mainnet WETH/router. Off-mainnet it's zeroAddress (a loud failure)
   // until VITE_WETH/VITE_SWAP_ROUTER are set to that chain's addresses (see uniswap.<net>.json).

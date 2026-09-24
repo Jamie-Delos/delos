@@ -28,6 +28,23 @@ export const hasV4Curve = () => CONTRACTS.curveV4 !== zeroAddress;
 export const hasLegacyCurve = () => CONTRACTS.curve !== zeroAddress;
 export const hasAnyCurve = () => hasV4Curve() || hasLegacyCurve();
 
+// Watch the lifecycle flag independently of quotes: a filling buy closes the curve immediately.
+// Poll serially, stop after graduation, and never report a failed read as a change of venue.
+export function watchGraduation(pc: PublicClient, curve: Address, coin: Address, onGraduated: () => void, interval = 5000) {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const check = async () => {
+    try {
+      const graduated = await pc.readContract({ address: curve, abi: censusCurveV4Abi, functionName: "isGraduated", args: [coin] });
+      if (stopped) return;
+      if (graduated) { stopped = true; onGraduated(); return; }
+    } catch { /* retry the read; never send a transaction */ }
+    if (!stopped) timer = setTimeout(check, interval);
+  };
+  void check();
+  return () => { stopped = true; if (timer) clearTimeout(timer); };
+}
+
 export async function readCurve(pc: PublicClient, coin: Address): Promise<CurveRecord | null> {
   if (hasV4Curve()) {
     // V4 tuple: quote@0, creator@1, vault@2, reflectionBps@3, virtualQuote@4, tokenReserve@5,

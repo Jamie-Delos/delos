@@ -202,6 +202,7 @@ export const poolAbi = parseAbi([
 
 export const wethAbi = parseAbi([
   "function deposit() payable",
+  "function withdraw(uint256 amount)",
   "function balanceOf(address) view returns (uint256)",
   "function approve(address spender,uint256 amount) returns (bool)",
 ]);
@@ -209,6 +210,7 @@ export const wethAbi = parseAbi([
 // SwapRouter02 (Robinhood Chain): exactInputSingle without a deadline field.
 export const swapRouterAbi = parseAbi([
   "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
+  "function exactInput((bytes path,address recipient,uint256 amountIn,uint256 amountOutMinimum) params) payable returns (uint256 amountOut)",
 ]);
 
 // CensusRewardVault (per V4 launch with reflection; the legacy DividendVault shares this surface) — the

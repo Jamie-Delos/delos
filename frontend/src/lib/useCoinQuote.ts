@@ -71,7 +71,7 @@ export function useCoinQuote(coin?: string, nonce = 0): CoinQuote {
           try {
             const onChain = await pc.readContract({ address: rec.curve, abi: censusCurveV4Abi, functionName: "poolIds", args: [coin as Address] });
             poolIdMismatch = onChain.toLowerCase() !== poolId.toLowerCase();
-          } catch { poolIdMismatch = undefined; }
+          } catch { throw new Error("Couldn't verify the registered pool"); }
         }
         if (cancelled) return;
         setInfo((prev) => ({
