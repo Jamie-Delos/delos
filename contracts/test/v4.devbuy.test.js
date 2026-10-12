@@ -3,7 +3,7 @@ const { ethers } = require('hardhat');
 const { deploy, deployHook } = require('./helpers/v4');
 const path = require('node:path');
 const Module = require('node:module');
-const { buildSync } = require('../../frontend/node_modules/esbuild');
+const { buildSync } = require('esbuild'); // own devDependency; the test must not reach into the sibling frontend install
 const filename = path.join(__dirname, '..', '..', 'frontend', 'src', 'lib', 'devBuy.ts');
 const compiled = buildSync({ entryPoints:[filename], bundle:true, platform:'node', format:'cjs', write:false }).outputFiles[0].text;
 const loaded = new Module(filename, module); loaded.filename=filename; loaded.paths=module.paths; loaded._compile(compiled,filename);
