@@ -11,6 +11,7 @@ import { hasAnyCurve, watchGraduation, readCurve } from "../lib/curves";
 import { assertLaunchChain } from "../lib/launchReceipt";
 import { PaymentConversion } from "../components/PaymentConversion";
 import { MarketChart } from "../components/MarketChart";
+import { CoinCommunity } from "../components/CoinCommunity";
 import { useCoinQuote } from "../lib/useCoinQuote";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
@@ -542,6 +543,7 @@ export function Coin() {
 
         <div className="cx-section-title" style={{ margin: "44px 0 16px" }}>Price and trades</div>
         <MarketChart address={coinAddr} symbol={coinSym} quoteSymbol={anchor} quoteDecimals={quoteDec} />
+        <CoinCommunity coin={coinAddr} symbol={coinSym} decimals={18} />
 
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "44px 0 14px" }}>
           <div className="cx-section-title">Graduation</div>
@@ -574,9 +576,6 @@ export function Coin() {
                 : <PendingPanel line={`No launches anchored to $${coinSym} yet`} note="Any new coin can pick this company as its anchor at launch." />}
           </>
         )}
-
-        <div className="cx-section-title" style={{ marginTop: 44, marginBottom: 16 }}>Holders</div>
-        <PendingPanel line="Distribution appears once the indexer is connected." />
 
         {hasVault ? (
           <>

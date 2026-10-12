@@ -1,0 +1,38 @@
+.delos-community { margin-top: 34px; display: grid; gap: 34px; }
+.delos-community__section { border: 1px solid var(--census-border); border-radius: 14px; background: rgba(255,255,255,.025); overflow: hidden; }
+.delos-community__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px; }
+.delos-community__heading h2 { margin: 0 0 5px; font-size: 18px; }
+.delos-community__heading p, .delos-community__heading > span { margin: 0; color: var(--census-text-secondary); font-size: 12px; line-height: 1.5; }
+.delos-community__heading > span { white-space: nowrap; }
+.delos-community__empty { margin: 0; padding: 28px 20px; border-top: 1px solid var(--census-border); color: var(--census-text-secondary); font-size: 13px; }
+.delos-community__holder-wrap { overflow-x: auto; }
+.delos-community__holders { width: 100%; min-width: 510px; border-collapse: collapse; font: 13px var(--census-font-mono, monospace); font-variant-numeric: tabular-nums; }
+.delos-community__holders th, .delos-community__holders td { padding: 12px 20px; border-top: 1px solid var(--census-border); text-align: left; }
+.delos-community__holders th { color: var(--census-text-secondary); font-weight: 500; }
+.delos-community__holders td:last-child { color: var(--census-lime); }
+.delos-community__mine { background: rgba(180,240,61,.07); }
+.delos-community__composer { margin: 0 20px 20px; padding: 17px; border: 1px solid var(--census-border); border-radius: 10px; background: rgba(0,0,0,.13); }
+.delos-community__composer label { display: block; margin-bottom: 9px; font-size: 13px; font-weight: 600; }
+.delos-community__composer textarea { box-sizing: border-box; width: 100%; min-height: 110px; resize: vertical; padding: 12px; border: 1px solid var(--census-border); border-radius: 7px; outline: none; color: var(--census-text); background: rgba(0,0,0,.22); font: inherit; line-height: 1.5; }
+.delos-community__composer textarea:focus { border-color: var(--census-lime); }
+.delos-community__composer-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.delos-community__composer-foot span, .delos-community__own, .delos-community__notice { color: var(--census-text-secondary); font-size: 12px; }
+.delos-community__composer-foot button { padding: 10px 15px; border: 0; border-radius: 7px; background: var(--census-lime); color: #10210c; font-weight: 750; cursor: pointer; }
+.delos-community__composer-foot button:disabled { cursor: not-allowed; opacity: .5; }
+.delos-community__own { margin-bottom: 12px; }
+.delos-community__own button { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--census-lime); text-decoration: underline; cursor: pointer; }
+.delos-community__notice { margin: 10px 0 0; }
+.delos-community__cards { display: grid; gap: 10px; padding: 0 20px 20px; }
+.delos-community__card { position: relative; padding: 17px; border: 1px solid var(--census-border); border-radius: 10px; background: rgba(255,255,255,.025); }
+.delos-community__card--company { border: 1px solid rgba(180,240,61,.85); background: linear-gradient(120deg, rgba(180,240,61,.23), rgba(92,255,148,.07) 63%, rgba(6,20,11,.4)); box-shadow: 0 0 24px rgba(180,240,61,.11), inset 3px 0 var(--census-lime); }
+.delos-community__card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.delos-community__card-head strong, .delos-community__card-head span { display: block; }
+.delos-community__card-head strong { color: var(--census-text-secondary); font-size: 10px; letter-spacing: .11em; }
+.delos-community__card--company .delos-community__card-head strong { color: var(--census-lime); }
+.delos-community__card-head span { margin-top: 5px; color: var(--census-text-secondary); font-size: 12px; }
+.delos-community__verified { margin: 0 !important; padding: 5px 8px; border-radius: 4px; background: var(--census-lime); color: #11220d !important; font-size: 10px !important; font-weight: 800; white-space: nowrap; }
+.delos-community__card p { margin: 14px 0; color: var(--census-text); font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.delos-community__card > button { padding: 5px 9px; border: 1px solid var(--census-border); border-radius: 6px; background: transparent; color: var(--census-text-secondary); cursor: pointer; }
+.delos-community__card > button.delos-community__liked { color: var(--census-lime); border-color: var(--census-lime); }
+.delos-community__card > button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 640px) { .delos-community__heading { flex-direction: column; } .delos-community__verified { white-space: normal; } }

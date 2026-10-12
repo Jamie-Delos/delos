@@ -46,6 +46,7 @@ model Coin {
   volumeQuote     Float    @default(0) // cumulative quote volume
   volumeUsd       Float? // null once any trade could not be priced; rebuild after configuring a price
   tradeCount      Int      @default(0)
+  holdersIndexed  Boolean  @default(false) // true only when Transfer history was indexed from mint
 
   createdBlock    BigInt   @default(0)
   createdAt       DateTime @default(now())
@@ -58,6 +59,46 @@ model Coin {
   @@index([createdAt])
   @@index([marketCapUsd])
   @@index([updatedAt])
+}
+
+model HolderBalance {
+  coinAddress String
+  holder      String
+  balance     Decimal @default(0) @db.Decimal(78, 0)
+
+  @@id([coinAddress, holder])
+  @@index([coinAddress, balance])
+}
+
+model Callout {
+  id          String   @id @default(cuid())
+  coinAddress String
+  author      String
+  text        String   @db.VarChar(1200)
+  hidden      Boolean  @default(false) // operator can suppress abusive content in Postgres
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  likes       CalloutLike[]
+
+  @@unique([coinAddress, author])
+  @@index([coinAddress, updatedAt])
+}
+
+model CalloutLike {
+  calloutId String
+  wallet    String
+  createdAt DateTime @default(now())
+  callout   Callout @relation(fields: [calloutId], references: [id], onDelete: Cascade)
+
+  @@id([calloutId, wallet])
+}
+
+model SocialNonce {
+  nonce     String   @id
+  wallet    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model Trade {

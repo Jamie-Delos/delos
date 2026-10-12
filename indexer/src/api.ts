@@ -7,6 +7,7 @@ import { bus, type Update } from "./bus.js";
 import { serializeCoin } from "./ingest.js";
 import { ingestion } from "./status.js";
 import rateLimit from "@fastify/rate-limit";
+import { registerSocialRoutes } from "./social.js";
 
 function limitOf(value: string | undefined, fallback: number, maximum: number) {
   if (value === undefined) return fallback;
@@ -35,6 +36,7 @@ export async function runApi() {
   await app.register(cors, { origin: cfg.corsOrigin });
   await app.register(websocket);
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  registerSocialRoutes(app);
 
   app.get("/live", async () => ({ ok: true }));
   app.get("/health", async (_req, reply) => {

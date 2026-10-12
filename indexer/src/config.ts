@@ -43,7 +43,21 @@ export const cfg = {
   // of trusted hops (e.g. 1) or a comma-separated list of proxy IPs/CIDRs; never a bare "true"
   // (anyone could then spoof the header and share or escape the rate-limit bucket). Unset = direct.
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+  // Explicitly reviewed token=wallet pairs. A launch creator is not automatically a verified company.
+  companyCalloutWallets: parseCompanyWallets(process.env.COMPANY_CALLOUT_WALLETS),
 };
+
+function parseCompanyWallets(v: string | undefined): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const entry of (v ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+    const [coin, wallet, extra] = entry.split("=");
+    if (extra !== undefined || !/^0x[0-9a-fA-F]{40}$/.test(coin ?? "") || !/^0x[0-9a-fA-F]{40}$/.test(wallet ?? "")) {
+      throw new Error("COMPANY_CALLOUT_WALLETS must contain comma-separated coin=wallet addresses");
+    }
+    (out[coin.toLowerCase()] ??= []).push(wallet.toLowerCase());
+  }
+  return out;
+}
 
 function parseUsd(v: string | undefined): number | null {
   if (v === undefined || v.trim() === "") return null;

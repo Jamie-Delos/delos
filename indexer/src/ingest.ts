@@ -66,6 +66,7 @@ const VAULT_DISTRIBUTED = parseAbiItem("event Distributed(uint256 quoteSpent)");
 const VAULT_CLAIMED = parseAbiItem("event Claimed(address indexed holder, address indexed stock, uint256 amount)");
 const VAULT_CONVERTED = parseAbiItem("event LaunchFeesConverted(uint256 tokenIn, uint256 quoteOut)");
 const EXT_EVENTS = [POOL_SWAP, VAULT_DISTRIBUTED, VAULT_CLAIMED, VAULT_CONVERTED] as const;
+const TOKEN_TRANSFER = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 
 const CURSOR_ID = "curve"; // One chain/deployment per database; deployment identity is checked on startup.
 // Deployment identity stored on the cursor. Adding or removing a curve changes it, which forces a
@@ -78,7 +79,7 @@ type Notify = (u: Update) => void;
 const lc = (a: string) => a.toLowerCase();
 
 // Which watched contract a log came from; set by prefetchPage and used to dispatch in commitPage.
-type Source = "curve" | "curveV4" | "pool" | "vault" | "poolManager" | "hook";
+type Source = "curve" | "curveV4" | "pool" | "vault" | "poolManager" | "hook" | "token";
 // Per-trade fee split attached to a Traded (from FeeAllocated) or a PoolManager Swap (from FeeAccrued).
 type FeeSplit = { protocol: bigint; creator: bigint; holders: bigint; penalty: bigint; gross?: bigint; buy?: boolean };
 const feeColumns = (f?: FeeSplit) => ({
@@ -98,7 +99,25 @@ type PageContext = {
   poolMap: Map<string, string>;                 // V3 pool address -> coin
   poolIdMap: Map<string, string>;               // V4 poolId (bytes32) -> coin
   vaultMap: Map<string, { coin: string; quote: string }>;
+  tokenMap: Set<string>;
 };
+
+async function onTokenTransfer(log: any, db: Db) {
+  const coinAddress = lc(log.address);
+  const from = lc(log.args.from);
+  const to = lc(log.args.to);
+  const value = log.args.value as bigint;
+  if (value < 0n || from === to) return;
+  for (const [holder, change] of [[from, -value], [to, value]] as const) {
+    if (holder === ZERO || change === 0n) continue;
+    const key = { coinAddress_holder: { coinAddress, holder } };
+    const prior = await db.holderBalance.findUnique({ where: key });
+    const next = BigInt(prior?.balance.toString() ?? "0") + change;
+    if (next < 0n) throw new Error(`Incomplete Transfer history for ${coinAddress}; rebuild holder index from mint`);
+    if (prior) await db.holderBalance.update({ where: key, data: { balance: next.toString() } });
+    else await db.holderBalance.create({ data: { coinAddress, holder, balance: next.toString() } });
+  }
+}
 
 // ---- block-timestamp cache (fallback for callers without a page context) ----
 const tsCache = new Map<string, Date>();
@@ -185,8 +204,8 @@ async function onRegistered(log: any, db: Db, notify: Notify, ctx?: PageContext,
   const d = derive(base);
   const row = await db.coin.upsert({
     where: { address: coin },
-    create: { address: coin, ...base, ...d, volumeUsd: quoteUsdFor(quote) == null ? null : 0 },
-    update: { ...base, ...d },
+    create: { address: coin, ...base, ...d, holdersIndexed: !!ctx?.tokenMap.has(coin), volumeUsd: quoteUsdFor(quote) == null ? null : 0 },
+    update: { ...base, ...d, holdersIndexed: !!ctx?.tokenMap.has(coin) },
   });
   notify({ type: "coin", data: serializeCoin(row) });
 }
@@ -493,6 +512,13 @@ async function prefetchPage(from: bigint, to: bigint): Promise<PageContext> {
     if (log.eventName === "Graduated" && log._src === "curveV4") poolIdMap.set(lc(log.args.poolId), lc(log.args.coin));
     if (log.eventName === "Registered" && lc(log.args.vault) !== ZERO) vaultMap.set(lc(log.args.vault), { coin: lc(log.args.coin), quote: lc(log.args.quote) });
   }
+  // Include tokens registered inside this page: mint/creator-buy Transfer logs may precede Registered.
+  const tokenMap = new Set<string>([...known.map((k) => lc(k.address)), ...logs.filter((l) => l.eventName === "Registered").map((l) => lc(l.args.coin))]);
+  const tokenAddresses = [...tokenMap] as `0x${string}`[];
+  const transferLogs: any[] = [];
+  for (let i = 0; i < tokenAddresses.length; i += 100) {
+    transferLogs.push(...tag(await client.getLogs({ address: tokenAddresses.slice(i, i + 100), event: TOKEN_TRANSFER, fromBlock: from, toBlock: to }) as any[], "token"));
+  }
   const extAddrs = [...poolMap.keys(), ...vaultMap.keys()];
   const extLogs: any[] = extAddrs.length
     ? (await client.getLogs({ address: extAddrs as `0x${string}`[], events: EXT_EVENTS as any, fromBlock: from, toBlock: to }))
@@ -508,7 +534,7 @@ async function prefetchPage(from: bigint, to: bigint): Promise<PageContext> {
     ? tag((await client.getLogs({ address: cfg.hook, events: HOOK_EVENTS as any, fromBlock: from, toBlock: to }) as any[])
         .filter((l: any) => (l.eventName === "FeeAccrued" && poolIdMap.has(lc(l.args.poolId))) || (l.eventName === "FeesClaimed" && vaultMap.has(lc(l.args.recipient)))), "hook")
     : [];
-  const all = [...logs, ...extLogs, ...pmLogs, ...hookLogs].sort(byPosition);
+  const all = [...logs, ...transferLogs, ...extLogs, ...pmLogs, ...hookLogs].sort(byPosition);
 
   // One getBlock per distinct block: canonical hash check + timestamp, shared by every handler.
   const blocks = new Map<string, { hash: string; ts: Date }>();
@@ -530,7 +556,7 @@ async function prefetchPage(from: bigint, to: bigint): Promise<PageContext> {
   }
   const check = await client.getBlock({ blockNumber: to });
   if (!anchor.hash || anchor.hash !== check.hash) throw new Error("Chain changed while reading page");
-  return { from, to, anchorHash: anchor.hash as string, logs: pairFees(all), blocks, tokenMeta, poolMap, poolIdMap, vaultMap };
+  return { from, to, anchorHash: anchor.hash as string, logs: pairFees(all), blocks, tokenMeta, poolMap, poolIdMap, vaultMap, tokenMap };
 }
 
 // Phase 2: apply the prefetched page in ONE serializable transaction (receipts, writes and cursor).
@@ -559,6 +585,7 @@ async function commitPage(page: PageContext): Promise<Update[]> {
       else if (src === "vault" && page.vaultMap.has(addr)) await onVaultEvent(log, page.vaultMap.get(addr)!.coin, page.vaultMap.get(addr)!.quote, db, notify, page);
       else if (src === "poolManager" && log.eventName === "Swap" && page.poolIdMap.has(lc(log.args.id))) await onPoolSwapV4(log, page.poolIdMap.get(lc(log.args.id))!, db, notify, page);
       else if (src === "hook" && log.eventName === "FeesClaimed" && page.vaultMap.has(lc(log.args.recipient))) { const v = page.vaultMap.get(lc(log.args.recipient))!; await onVaultEvent(log, v.coin, v.quote, db, notify, page); }
+      else if (src === "token" && log.eventName === "Transfer" && page.tokenMap.has(addr)) await onTokenTransfer(log, db);
       else throw new Error("Event from unwatched address");
     }
     const data = { lastBlock: to, lastHash: page.anchorHash, chainId: cfg.chainId, curve: IDENTITY };
@@ -645,7 +672,7 @@ export function serializeCoin(c: any) {
     graduationQuote: c.graduationQuote, graduated: c.graduated, pool: c.pool ?? null, poolId: c.poolId ?? null, progressBps: c.progressBps,
     priceQuote: c.priceQuote, priceUsd: c.priceUsd, marketCapUsd: c.marketCapUsd,
     volumeQuote: c.volumeQuote, volumeUsd: c.volumeUsd, tradeCount: c.tradeCount,
-    createdBlock: c.createdBlock?.toString?.() ?? String(c.createdBlock ?? "0"),
+    createdBlock: c.createdBlock?.toString?.() ?? String(c.createdBlock ?? "0"), holdersIndexed: c.holdersIndexed ?? false,
     createdAt: c.createdAt, updatedAt: c.updatedAt,
   };
 }
