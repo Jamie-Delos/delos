@@ -390,7 +390,7 @@ async function main() {
     const ingestion = { lastSuccessAt: Date.now(), lastBlock: stream.endBlock.toString(), error: null };
     const apiContext = {
       exports: {}, console: { log() {} }, Fastify: () => app,
-      cors: require('@fastify/cors'), websocket: require('@fastify/websocket'), rateLimit: require('@fastify/rate-limit'),
+      cors: require('@fastify/cors'), websocket: require('@fastify/websocket'), rateLimit: require('@fastify/rate-limit'), registerSocialRoutes: () => {},
       cfg: { chainId: CFG.chainId, curve: CFG.curve, curveV4: CFG.curveV4, corsOrigin: '*', port: 0, pollMs: 4000 },
       bus: new EventEmitter(), serializeCoin: (x) => JSON.parse(jsonBig(x)), ingestion, prisma: ref,
     };
