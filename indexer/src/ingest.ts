@@ -498,7 +498,7 @@ async function prefetchPage(from: bigint, to: bigint): Promise<PageContext> {
   // Post-graduation coverage: this page's events from the graduated pools and vaults of every
   // indexed coin — including coins registered/graduated within THIS page, so a swap or reward
   // landing right after graduation is never skipped.
-  const known = await prisma.coin.findMany({ select: { address: true, pool: true, poolId: true, vault: true, quote: true } });
+  const known = await prisma.coin.findMany({ select: { address: true, pool: true, poolId: true, vault: true, quote: true, holdersIndexed: true } });
   const poolMap = new Map<string, string>();
   const poolIdMap = new Map<string, string>();
   const vaultMap = new Map<string, { coin: string; quote: string }>();
@@ -513,7 +513,9 @@ async function prefetchPage(from: bigint, to: bigint): Promise<PageContext> {
     if (log.eventName === "Registered" && lc(log.args.vault) !== ZERO) vaultMap.set(lc(log.args.vault), { coin: lc(log.args.coin), quote: lc(log.args.quote) });
   }
   // Include tokens registered inside this page: mint/creator-buy Transfer logs may precede Registered.
-  const tokenMap = new Set<string>([...known.map((k) => lc(k.address)), ...logs.filter((l) => l.eventName === "Registered").map((l) => lc(l.args.coin))]);
+  // Legacy coins lack pre-migration Transfer history. Skip their transfers until a
+  // verified backfill has populated balances and enabled holdersIndexed.
+  const tokenMap = new Set<string>([...known.filter((k) => k.holdersIndexed).map((k) => lc(k.address)), ...logs.filter((l) => l.eventName === "Registered").map((l) => lc(l.args.coin))]);
   const tokenAddresses = [...tokenMap] as `0x${string}`[];
   const transferLogs: any[] = [];
   for (let i = 0; i < tokenAddresses.length; i += 100) {
