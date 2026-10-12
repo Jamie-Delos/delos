@@ -10,6 +10,7 @@ import { v4Configured, v4QuoteOut, v4SpotPrice, swapRequest } from "../lib/v4poo
 import { hasAnyCurve, watchGraduation, readCurve } from "../lib/curves";
 import { assertLaunchChain } from "../lib/launchReceipt";
 import { PaymentConversion } from "../components/PaymentConversion";
+import { MarketChart } from "../components/MarketChart";
 import { useCoinQuote } from "../lib/useCoinQuote";
 import { useLaunches } from "../lib/useLaunches";
 import { useCurveStats } from "../lib/useCurveStats";
@@ -51,7 +52,7 @@ export function Coin() {
   const [busy, setBusy] = useState(false);
   const [conversionBusy, setConversionBusy] = useState(false);
   const [pendingTrade, setPendingTrade] = useState<Hex | null>(null);
-  const tradeStorageKey = `census:trade:${CHAIN.id}:${me?.toLowerCase()}`;
+  const tradeStorageKey = `delos:trade:${CHAIN.id}:${me?.toLowerCase()}`;
   useEffect(() => {
     const saved = localStorage.getItem(tradeStorageKey);
     setPendingTrade(saved && /^0x[0-9a-f]{64}$/i.test(saved) ? saved as Hex : null);
@@ -97,8 +98,8 @@ export function Coin() {
   const reflectionBps = cq.reflectionBps ?? 0;
   const standingFeeBps = TRADE_FEE_BPS + reflectionBps; // base + reflection: the fee outside the launch window, on the curve and in the pool
   const tradeBlock = !hasCurve ? "Trading isn't configured on this deployment."
-    : cq.resolved && !registered ? "This address isn't a Census coin."
-    : legacyGraduated ? "Graduated to a Uniswap V3 pool under the previous Census release. Trade it on Uniswap."
+    : cq.resolved && !registered ? "This address isn't a Delos coin."
+    : legacyGraduated ? "Graduated to a legacy Uniswap V3 pool. Trade it on Uniswap."
     : graduated && isV4 && !v4Configured() ? "Pool trading isn't configured on this deployment."
     : graduated && isV4 && cq.poolIdMismatch ? "The pool doesn't match the coin's registration — trading is paused here."
     : "";
@@ -437,7 +438,7 @@ export function Coin() {
     return (
       <div className="cx-panel cx-empty">
         <div className="cx-empty__title">That's not a coin address</div>
-        <div className="cx-empty__body">A Census coin address is 42 characters long and ends in c0de. Check the link and try again.</div>
+        <div className="cx-empty__body">A Delos coin address is 42 characters long and ends in c0de. Check the link and try again.</div>
         <Link className="cx-cta" style={{ marginTop: 26 }} to="/board">Open the market</Link>
       </div>
     );
@@ -460,8 +461,8 @@ export function Coin() {
   if (hasCurve && cq.resolved && !registered) {
     return (
       <div className="cx-panel cx-empty">
-        <div className="cx-empty__title">Not a Census coin</div>
-        <div className="cx-empty__body">{shortAddr(coinAddr)} isn't a coin launched on Census. Only Census launches trade here.</div>
+        <div className="cx-empty__title">Not a Delos coin</div>
+        <div className="cx-empty__body">{shortAddr(coinAddr)} isn't a coin launched on this Delos deployment. Only its launches trade here.</div>
         <Link className="cx-cta" style={{ marginTop: 26 }} to="/board">Open the market</Link>
       </div>
     );
@@ -485,7 +486,7 @@ export function Coin() {
   const feeDisp = buy
     ? `${fmtAmount((Number(amount) || 0) * feeRate, 5)} ${anchor}`
     : outHuman != null ? `${fmtAmount((outHuman * feeRate) / (1 - feeRate), 5)} ${anchor}` : "—";
-  const routeDisp = onCurve ? "The Census curve" : graduated ? (isV4 ? "Canonical pool" : "Uniswap V3 pool (legacy)") : "—";
+  const routeDisp = onCurve ? "The Delos curve" : graduated ? (isV4 ? "Canonical pool" : "Uniswap V3 pool (legacy)") : "—";
   const balDisp = !me ? "" : buy
     ? quoteBal != null ? `Balance ${fmtAmount(Number(formatUnits(quoteBal, quoteDec)))} ${paymentSymbol}` : ""
     : coinBal != null ? `Balance ${fmtAmount(Number(formatUnits(coinBal, 18)), 2)} ${coinSym}` : "";
@@ -509,7 +510,7 @@ export function Coin() {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
           <CxAvatar name={coinName} image={meta?.image} size={80} />
           <div style={{ minWidth: 0 }}>
-            <div className="cx-label">{cq.resolved ? <>{isV4 ? "Census coin" : "Legacy coin"} · anchored to {anchorNode}{reflectionBps > 0 ? ` · ${pctLabel(reflectionBps)} holder reflection` : ""}{pairable ? " · Company coin" : ""}</> : "Loading"}</div>
+            <div className="cx-label">{cq.resolved ? <>{isV4 ? "Delos coin" : "Legacy coin"} · anchored to {anchorNode}{reflectionBps > 0 ? ` · ${pctLabel(reflectionBps)} holder reflection` : ""}{pairable ? " · Company coin" : ""}</> : "Loading"}</div>
             <h1 className="cx-h1" style={{ fontSize: 40, marginTop: 10 }}>{coinName}</h1>
             {meta?.thesis && <p style={{ margin: "10px 0 0", fontSize: 15, color: "var(--census-text-secondary)" }}>{meta.thesis}</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
@@ -529,8 +530,6 @@ export function Coin() {
           <StatBand stats={[
             { label: "Market cap", value: mcapDisp, note: liveNote, key: true },
             { label: "Price", value: priceDisp, note: liveNote },
-            { label: "24h", value: "—", note: "Pending indexer" },
-            { label: "Holders", value: "—", note: "Pending indexer" },
           ]} />
         </div>
 
@@ -541,8 +540,8 @@ export function Coin() {
           </>
         )}
 
-        <div className="cx-section-title" style={{ margin: "44px 0 16px" }}>Price</div>
-        <PendingPanel line="Price history appears once the indexer is connected" note="Price and market cap above are live." />
+        <div className="cx-section-title" style={{ margin: "44px 0 16px" }}>Price and trades</div>
+        <MarketChart address={coinAddr} symbol={coinSym} quoteSymbol={anchor} quoteDecimals={quoteDec} />
 
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "44px 0 14px" }}>
           <div className="cx-section-title">Graduation</div>
@@ -555,11 +554,11 @@ export function Coin() {
         <p style={{ margin: "16px 0 0", fontSize: 14, color: "var(--census-text-secondary)" }}>
           {graduated
             ? isV4
-              ? `The curve closed. Liquidity is locked permanently in the canonical Census pool, where the Census hook keeps charging the ${standingFeeLabel} fee.`
-              : "The curve closed. Liquidity is locked permanently in a Uniswap V3 pool (previous Census release)."
+              ? `The curve closed. Liquidity is locked permanently in the canonical Delos pool, where the hook keeps charging the ${standingFeeLabel} fee.`
+              : "The curve closed. Liquidity is locked permanently in a legacy Uniswap V3 pool."
             : graduationTarget != null
-              ? `At ${fmtAmount(graduationTarget, 2)} ${anchor} the curve closes and liquidity moves to the canonical Census pool, locked permanently. The same ${standingFeeLabel} fee applies there.`
-              : `When the curve fills, liquidity moves to the canonical Census pool, locked permanently. The same ${standingFeeLabel} fee applies there.`}
+              ? `At ${fmtAmount(graduationTarget, 2)} ${anchor} the curve closes and liquidity moves to the canonical Delos pool, locked permanently. The same ${standingFeeLabel} fee applies there.`
+              : `When the curve fills, liquidity moves to the canonical Delos pool, locked permanently. The same ${standingFeeLabel} fee applies there.`}
         </p>
 
         {pairable && (
@@ -725,7 +724,7 @@ export function Coin() {
           </div>
           {onPool && (
             <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>
-              Charged by the Census hook in the canonical pool. Trades in other venues aren't charged and don't fund creator or holder rewards.
+              Charged by the Delos hook in the canonical pool. Trades in other venues aren't charged and don't fund creator or holder rewards.
             </div>
           )}
           {anchorIsCoin && <div className="cx-label" style={{ textAlign: "center", marginTop: 10, color: "var(--census-text-secondary)" }}>Trades settle in ${anchor} — hold some to buy.</div>}
@@ -745,7 +744,7 @@ export function Coin() {
           <CurveRow k="Graduation at" v={graduationTarget != null ? `${fmtAmount(graduationTarget, 2)} ${anchor}` : "—"} />
           <CurveRow k="Trade fee" v={cq.resolved ? `${standingFeeLabel} (${feeBreakdown(reflectionBps)})` : TRADE_FEE_LABEL} />
           {hasVault && <CurveRow k="Holder reflection" v={`${pctLabel(reflectionBps)} → ${basketDisp || "reward basket"}`} />}
-          <CurveRow k="Trades on" v={onCurve ? "The Census curve" : graduated ? (isV4 ? "Canonical pool · Census hook" : "Uniswap V3 pool (legacy)") : "—"} />
+          <CurveRow k="Trades on" v={onCurve ? "The Delos curve" : graduated ? (isV4 ? "Canonical pool · Delos hook" : "Uniswap V3 pool (legacy)") : "—"} />
         </div>
       </div>
     </div>

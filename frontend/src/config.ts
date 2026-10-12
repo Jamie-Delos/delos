@@ -71,7 +71,7 @@ export const INDEXER_URL = (import.meta.env.VITE_INDEXER_URL ?? "").replace(/\/$
 
 // Initial virtual quote reserve V0 (in ETH terms) for a new coin's curve, converted to the anchor asset
 // at launch (lib/anchors.ts curveLaunchParams). With the PF-style offset the starting FDV is a little
-// below V0: V0·S/(S+X), about 1.39 ETH for the standard 4 ETH target. Name kept for history.
+// below V0: V0·S/(S+X), about 0.96 ETH for the temporary 1 ETH team test target. Name kept for history.
 export const START_FDV_ETH = 1.5;
 
 // Base trade fee, mirrored from CensusCurveV4.FEE_BPS (also the hook's base fee after graduation) for

@@ -55,7 +55,7 @@ function TopBar({ path }: { path: string }) {
   ) : path.startsWith("/home") ? (
     <Tape />
   ) : (
-    <Link className="cx-wordmark cx-mobile-only" to="/" style={{ fontSize: 18 }}>census.fund</Link>
+    <Link className="cx-wordmark cx-mobile-only" to="/" style={{ fontSize: 18 }}>Delos</Link>
   );
   return <>{left}<CensusConnect /></>;
 }

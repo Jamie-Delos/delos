@@ -101,6 +101,9 @@
   transition: border-color var(--census-transition-slow), background var(--census-transition-slow);
 }
 .cx-cta:hover { border-color: var(--census-lime-border-strong); background: rgba(180, 240, 61, 0.07); }
+.delos-test-cta { background: #b4f03d; border-color: #b4f03d; color: #07130d; font-weight: 800; letter-spacing: .04em; box-shadow: 0 0 22px rgba(180,240,61,.22); }
+.delos-test-cta:hover { background: #d3ff78; border-color: #d3ff78; }
+.delos-test-cta::after { color: #07130d; }
 .cx-cta::after { content: "→"; color: var(--census-lime); }
 .cx-cta:disabled,
 .cx-cta[aria-disabled="true"] { border-color: var(--census-hairline); color: var(--census-text-muted); cursor: not-allowed; }

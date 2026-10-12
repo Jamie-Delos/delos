@@ -21,7 +21,7 @@ export function PaymentConversion({ coin, disabled, ensureChain, onFunded, onBus
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Hex | null>(null);
-  const storageKey = `census:conversion:${CHAIN.id}:${me?.toLowerCase()}`;
+  const storageKey = `delos:conversion:${CHAIN.id}:${me?.toLowerCase()}`;
   useEffect(() => { onBusy(busy || !!pending); return () => onBusy(false); }, [busy, pending, onBusy]);
 
   useEffect(() => {
@@ -67,7 +67,7 @@ export function PaymentConversion({ coin, disabled, ensureChain, onFunded, onBus
     // A confirmed conversion must never be resubmitted, even if an unusual token omitted its logs.
     localStorage.removeItem(storageKey); setPending(null); setRoute(null);
     if (received <= 0n) throw new Error("Conversion confirmed. Check your WETH balance before continuing.");
-    setMessage(`Converted to ${formatUnits(received, 18)} WETH. Review the refreshed Census quote, then place your purchase above.`);
+    setMessage(`Converted to ${formatUnits(received, 18)} WETH. Review the refreshed Delos quote, then place your purchase above.`);
     onFunded(received);
   }
 
@@ -105,11 +105,11 @@ export function PaymentConversion({ coin, disabled, ensureChain, onFunded, onBus
 
   return <details style={{ marginTop: 20 }}>
     <summary style={{ cursor: "pointer" }}>Buy using another token</summary>
-    <p className="cx-label">1. Convert to WETH. 2. Review and confirm your Census purchase. Separate transactions; any unspent WETH stays in your wallet. ETH is still required for gas.</p>
+    <p className="cx-label">1. Convert to WETH. 2. Review and confirm your Delos purchase. Separate transactions; any unspent WETH stays in your wallet. ETH is still required for gas.</p>
     <p className="cx-label">Same-network ERC20 tokens with a direct or USDG route on Uniswap V3. Unsupported tokens and other networks need a separate swap or bridge.</p>
     <input className="cx-field" aria-label="Payment token contract address" placeholder="Payment token address (0x…)" value={token} disabled={busy || !!pending || disabled} onChange={e => setToken(e.target.value.trim())} style={{ width: "100%" }} />
     <input className="cx-field" aria-label="Payment token amount" inputMode="decimal" placeholder="Amount to convert" value={amount} disabled={busy || !!pending || disabled} onChange={e => setAmount(e.target.value)} style={{ width: "100%", marginTop: 10 }} />
-    {route && asset && <p className="cx-label">{asset.symbol}{route.viaUSDG ? " → USDG" : ""} → WETH: ~{formatUnits(route.amountOut, 18)} WETH. Conversion pool fees: {route.fees.map(f => `${f / 10000}%`).join(" + ")} (included). Conversion slippage: 1%. Census fees apply separately to the next purchase.</p>}
+    {route && asset && <p className="cx-label">{asset.symbol}{route.viaUSDG ? " → USDG" : ""} → WETH: ~{formatUnits(route.amountOut, 18)} WETH. Conversion pool fees: {route.fees.map(f => `${f / 10000}%`).join(" + ")} (included). Conversion slippage: 1%. Delos fees apply separately to the next purchase.</p>}
     <button className="cx-cta" style={{ marginTop: 12 }} disabled={busy || disabled || !me || (!pending && !route)} onClick={convert}>{busy ? "Working…" : pending ? "Check submitted conversion" : "Convert to WETH"}</button>
     {pending && <p className="cx-label">Conversion submitted. Check confirmation before repeating: <a href={`${EXPLORER}/tx/${pending}`} target="_blank" rel="noreferrer">View transaction</a></p>}
     {message && <p role="status" className="cx-label">{message}</p>}

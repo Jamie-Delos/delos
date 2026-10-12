@@ -34,8 +34,8 @@ const MAX_BASKET = MAX_REWARD_BASKET; // CensusRewardVault.MAX_BASKET = 3
 const QUOTE_KEY = "__quote";
 const isSpecialPick = (k: string) => k === QUOTE_KEY;
 const ZERO_SALT = ("0x" + "00".repeat(32)) as Hex;
-const DRAFT_KEY = "census:launch-draft";
-const PENDING_KEY = `census:pending-launch:${CHAIN.id}:${CONTRACTS.factoryV4.toLowerCase()}`;
+const DRAFT_KEY = "delos:launch-draft";
+const PENDING_KEY = `delos:pending-launch:${CHAIN.id}:${CONTRACTS.factoryV4.toLowerCase()}`;
 type PendingLaunch = { hash: Hex; factory: Address; meta: CoinMetadata };
 function loadPendingLaunch(): PendingLaunch | null {
   try {
@@ -44,14 +44,13 @@ function loadPendingLaunch(): PendingLaunch | null {
       ? { ...pending, factory: isAddress(pending.factory) ? pending.factory : CONTRACTS.factoryV4 } : null;
   } catch { return null; }
 }
-// Graduation targets by launch type. Prima (meme) coins always graduate at 4 ETH; Maxima (company) coins
-// choose 4 or 8. The 2 ETH "fast graduation" option was retired at mainnet launch (2026-09-23); older
-// drafts that still carry it are snapped back to 4 in loadDraft / on tier change / at launch.
+// Delos team deployment test: all new launches graduate at 1 ETH of net quote reserve.
+// Existing on-chain launches retain the graduation target stored at their creation.
 const GRADS: Record<Tier, { eth: number; label: string }[]> = {
-  v1: [{ eth: 4, label: "Standard" }],
-  v2: [{ eth: 4, label: "Standard" }, { eth: 8, label: "High conviction" }],
+  v1: [{ eth: 1, label: "Team test target" }],
+  v2: [{ eth: 1, label: "Team test target" }],
 };
-const DEFAULT_GRAD = 4;
+const DEFAULT_GRAD = 1;
 const isTier = (t: unknown): t is Tier => t === "v1" || t === "v2";
 const gradsFor = (tier: Tier) => GRADS[tier];
 const gradAllowed = (tier: Tier, eth: number) => gradsFor(tier).some((g) => g.eth === eth);
@@ -78,7 +77,7 @@ type Setter = (p: Partial<Draft>) => void;
 // reflectionBps: the holder reflection charged ON TOP of the 2% base fee on every buy and sell — 0 (off)
 // or 100..400 — paid into the launch's reward basket. Frozen at launch. Maxima defaults to 2%, Prima to off.
 const DEFAULT_REFLECTION: Record<Tier, number> = { v1: 0, v2: 200 };
-const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 4, reflectionBps: 0, devBuy: "", image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
+const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 1, reflectionBps: 0, devBuy: "", image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
 
 function loadDraft(): Draft {
   try {
@@ -87,7 +86,7 @@ function loadDraft(): Draft {
       const { ipfsConsent, holdersBps, ...saved } = JSON.parse(raw); // older drafts: consent under another name, and the retired holdersBps model
       const d: Draft = { ...EMPTY, ...saved, publicConsent: !!(saved.publicConsent ?? ipfsConsent) };
       if (!isTier(d.tier)) d.tier = "v1";
-      d.graduationEth = gradFor(d.tier, Number(d.graduationEth)); // retired targets (2 ETH) and Maxima-only ones on a Prima draft
+      d.graduationEth = gradFor(d.tier, Number(d.graduationEth)); // old drafts snap to the current team test target
       if (!anchorAvailable(anchorByKey(d.quoteKey))) { d.quoteKey = "ETH"; d.quoteSymbol = ""; }
       if (!(REFLECTION_OPTIONS as readonly number[]).includes(d.reflectionBps)) d.reflectionBps = holdersBps != null ? DEFAULT_REFLECTION[d.tier] ?? 0 : 0;
       // Older drafts may hold the retired "this coin" pick; it (and any unroutable ticker) is dropped here,
@@ -455,7 +454,7 @@ export function Launch() {
       <header className="census-wizard__header">
         {/* No `background` here — the class paints the chrome gradient onto the text (background-clip),
             so overriding background makes the wordmark invisible. Only reset the button chrome. */}
-        <button className="census-wordmark-serif" onClick={() => nav("/")} style={{ appearance: "none", border: 0, cursor: "pointer", padding: 0 }} aria-label="Census home">Census</button>
+        <button className="census-wordmark-serif" onClick={() => nav("/")} style={{ appearance: "none", border: 0, cursor: "pointer", padding: 0 }} aria-label="Delos home">Delos</button>
         <nav className="census-steprail" aria-label="Launch steps">
           {STEPS.map((label, i, all) => (
             <span key={label} style={{ display: "inline-flex", alignItems: "center" }}>
@@ -486,6 +485,10 @@ export function Launch() {
           <button onClick={() => nav("/home")} style={{ color: "var(--census-text-secondary)", fontSize: 14, background: "none", border: 0, cursor: "pointer" }}>Save &amp; exit</button>
         </div>
       </header>
+
+      <div role="status" style={{ padding: "10px 24px", textAlign: "center", background: "rgba(180,240,61,.12)", color: "var(--census-text)", fontSize: 13 }}>
+        DELOS TEAM TEST · New launches target 1 ETH of net reserve. Mainnet transactions use real funds.
+      </div>
 
       <div className="census-wizard__body">
         <main>
@@ -865,7 +868,7 @@ function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPc
         <FeeRow label="Fee total" value={usd(base + refl)} accent={reflection === 0} />
       </div>
       <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>
-        The base fee is shared between Census and you, the creator.{reflection > 0 ? ` The reflection goes to holders${picks.length ? ` as ${picks.map(pickLabel).join(", ")}` : ""}.` : ""}
+        The base fee is shared between Delos and you, the creator.{reflection > 0 ? ` The reflection goes to holders${picks.length ? ` as ${picks.map(pickLabel).join(", ")}` : ""}.` : ""}
       </div>
 
       <label htmlFor="creator-buy" className="census-field-label" style={{ display: "block", marginTop: 30 }}>Creator buy (optional)</label>
@@ -892,14 +895,14 @@ function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPc
             <button key={t.eth} className={"census-card" + (on ? " census-card--selected" : "")} onClick={() => set({ graduationEth: t.eth })} aria-pressed={on} style={{ textAlign: "left", color: "var(--census-text)", cursor: "pointer" }}>
               <span className="census-mono" style={{ fontSize: 17, fontWeight: 500, color: on ? "var(--census-lime)" : "var(--census-text)" }}>{t.eth} ETH</span>
               <div style={{ fontSize: 13, color: "var(--census-text-secondary)", marginTop: 5 }}>{t.label}</div>
-              <span className="census-mono" style={{ fontSize: 12, color: t.label === "Rehearsal" ? "#e06c60" : "var(--census-text-muted)", marginTop: 3, display: "block" }}>{t.label === "Rehearsal" ? "mainnet test run — not a real target" : `≈ ${usdK(graduationFdvEth(t.eth) * ethUsd)} mcap at graduation`}</span>
+              <span className="census-mono" style={{ fontSize: 12, color: "var(--census-text-muted)", marginTop: 3, display: "block" }}>{`≈ ${usdK(graduationFdvEth(t.eth) * ethUsd)} mcap at graduation`}</span>
             </button>
           );
         })}
       </div>
       <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>
-        {draft.tier === "v1" ? "Prima (meme) coins graduate at 4 ETH. " : "Company coins choose 4 or 8 ETH. "}
-        At the target the bonding curve graduates into the canonical Census pool — a milestone; liquidity stays locked and the same fee keeps applying there.
+        Both meme and company test launches graduate at about 1 ETH of net quote reserve. On mainnet, this uses real funds.
+        At the target the bonding curve graduates into the canonical hooked pool; liquidity stays locked and the same fee keeps applying there.
         {anchorKey !== "ETH" && ` Targets are set in ETH terms and converted to ${anchorKey} at launch.`}
       </div>
     </>
@@ -1001,7 +1004,7 @@ function IdentityStep({ draft, set, ticker, reserved, hasFactory }: IdentityProp
             : hasFactory ? "grinding a …c0de address…" : "assigned at launch on this network"}
         </span>
       </div>
-      <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 8 }}>Every Census token address ends in <span className="census-mono" style={{ color: "var(--census-lime)" }}>c0de</span>. Held for you until you launch.</div>
+      <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 8 }}>Every Delos token address ends in <span className="census-mono" style={{ color: "var(--census-lime)" }}>c0de</span>. Held for you until you launch.</div>
 
       <label style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 26, cursor: "pointer" }}>
         <input type="checkbox" checked={draft.publicConsent} onChange={(e) => set({ publicConsent: e.target.checked })} style={{ marginTop: 3, accentColor: "var(--census-lime)" }} />
@@ -1112,11 +1115,11 @@ function FeeSplitTip({ reflectionBps, basket, block, children }: { reflectionBps
       <span className="census-tip__pop" role="tooltip">
         <span className="census-tip__title">Where the {pctLabel(s.total)} goes</span>
         Charged on every buy and sell. Nothing else is ever taken from a trade.
-        <span className="census-tip__row"><span>Base fee — Census and you</span><span className="census-mono">{pctLabel(s.base)}</span></span>
+        <span className="census-tip__row"><span>Base fee — Delos and you</span><span className="census-mono">{pctLabel(s.base)}</span></span>
         {s.phases.map((p) => (
           <span key={p.phase} className="census-tip__sub">
             <span>{p.phase} ({p.censusShare / 100} / {100 - p.censusShare / 100})</span>
-            <span className="census-mono" style={{ flex: "none" }}>Census {pctLabel(p.census)} · you {pctLabel(p.creator)}</span>
+            <span className="census-mono" style={{ flex: "none" }}>Delos {pctLabel(p.census)} · you {pctLabel(p.creator)}</span>
           </span>
         ))}
         {s.reflection > 0 ? (
@@ -1130,7 +1133,7 @@ function FeeSplitTip({ reflectionBps, basket, block, children }: { reflectionBps
         ) : (
           <span className="census-tip__sub"><span>No holder reflection on this launch — holders receive nothing from the fee.</span></span>
         )}
-        <span className="census-tip__foot">Census's share goes to the Census treasury; your share goes to the wallet that launches the coin. The split is fixed by the contracts for the life of the coin.</span>
+        <span className="census-tip__foot">Delos's share goes to the Delos treasury; your share goes to the wallet that launches the coin. The split is fixed by the contracts for the life of the coin.</span>
       </span>
     </Wrap>
   );

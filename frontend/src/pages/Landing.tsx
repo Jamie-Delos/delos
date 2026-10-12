@@ -14,7 +14,7 @@ function FlipWord({ front = "Companies", back = "Memes" }) {
 }
 
 // Same order and labels as the app's sidebar, so the two navs read as one.
-const NAV = [["Companies", "/home"], ["Market", "/board"], ["CensusPaper", "/paper"]] as const;
+const NAV = [["Companies", "/home"], ["Market", "/board"], ["Protocol", "/paper"]] as const;
 
 // Brand-first splash from the designer handoff. Chrome wordmark asset, the Companies↔Memes flip, one
 // lime CTA into the app.
@@ -23,7 +23,7 @@ export function Landing() {
   return (
     <div className="census-landing census-body census-body--landing">
       <nav className="census-landing__nav">
-        <span style={{ fontFamily: "var(--census-font-serif)", fontWeight: 600, fontSize: 20, color: "var(--census-silver)" }}>census.fund</span>
+        <span style={{ fontFamily: "var(--census-font-serif)", fontWeight: 600, fontSize: 20, color: "var(--census-silver)" }}>Delos</span>
         <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 15 }}>
           {NAV.map(([label, to], i) => (
             <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 14 }}>
@@ -38,7 +38,7 @@ export function Landing() {
       </nav>
 
       <main className="census-landing__hero">
-        <img className="census-wordmark census-rise" src="/census-logo.svg" alt="Census" />
+        <span className="delos-wordmark census-rise">Delos<span className="census-dot">.</span></span>
         <h1 className="census-landing__h1 census-rise" style={{ animationDelay: "0.25s" }}>
           <FlipWord /> become <span className="census-dot">markets.</span>
         </h1>
@@ -52,10 +52,12 @@ export function Landing() {
         >
           Enter the market <span className="census-cta__arrow" aria-hidden="true">→</span>
         </button>
+        <Link className="delos-test-button census-rise" to="/create" style={{ animationDelay: "0.6s" }}>TEST LAUNCH · 1 ETH</Link>
+        <span className="delos-test-note">Team test target. Mainnet launches and trades use real funds.</span>
       </main>
 
       <footer className="census-landing__footer">
-        <span className="census-mono">Crack the <span className="census-dot">c0de</span>.</span>
+        <span className="census-mono">Delos team test · 1 ETH graduation</span>
       </footer>
     </div>
   );

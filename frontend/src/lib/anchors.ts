@@ -170,7 +170,7 @@ export function quoteInfo(pc: PublicClient, quote: string): Promise<QuoteInfo> {
 
 // Fully-diluted market cap (in ETH terms) at graduation after raising `g` ETH net. PF-style curve:
 // unminted offset X = S·V0²/(g·(g+2V0)), so the exit price is g·(g+2V0)/(V0·S) and FDV = g·(2V0+g)/V0
-// (6.67 / 18.67 / 58.67 ETH for 2 / 4 / 8 ETH with V0 = 1.5). The pool opens at exactly this price.
+// (2.67 ETH for the temporary 1 ETH target with V0 = 1.5). The pool opens at exactly this price.
 export const graduationFdvEth = (g: number) => (g * (2 * START_FDV_ETH + g)) / START_FDV_ETH;
 
 // CensusCurve launch params for an anchor + graduation target. The curve is priced in the anchor's own

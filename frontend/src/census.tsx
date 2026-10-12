@@ -135,7 +135,7 @@ export const Icon = ({ name, size = 18 }: { name: string; size?: number }) => (
 const NAV = [
   { key: "companies", label: "Companies", to: "/home", icon: "home" },
   { key: "market", label: "Market", to: "/board", icon: "board" },
-  { key: "paper", label: "CensusPaper", to: "/paper", icon: "paper" },
+  { key: "paper", label: "Protocol", to: "/paper", icon: "paper" },
   { key: "profile", label: "Profile", to: "/profile", icon: "profile" },
 ];
 const MOBILE_TABS = [
@@ -345,7 +345,7 @@ export function AppShell({ active, topbar, children }: { active: string; topbar:
   return (
     <div className="cx-app">
       <aside className="cx-side">
-        <Link className="cx-wordmark" to="/">census.fund</Link>
+        <Link className="cx-wordmark" to="/">Delos</Link>
         <nav className="cx-nav">
           {NAV.map((n) => (
             <Link key={n.key} to={n.to} aria-current={active === n.key ? "page" : undefined}>
@@ -353,11 +353,11 @@ export function AppShell({ active, topbar, children }: { active: string; topbar:
             </Link>
           ))}
         </nav>
-        <Link className="cx-cta" to="/create">Create coin</Link>
+        <Link className="cx-cta delos-test-cta" to="/create">TEST LAUNCH · 1 ETH</Link>
         <div className="cx-side-meta">
           <div>{CHAIN.name}</div>
           <div>chainId {CHAIN.id}</div>
-          <b>Crack the <i>c0de</i>.</b>
+          <b>Team test · <i>real funds on mainnet</i></b>
         </div>
       </aside>
       <div style={{ minWidth: 0 }}>

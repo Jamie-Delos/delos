@@ -17,7 +17,7 @@ export type IndexerCoin = {
 };
 export type IndexerTrade = {
   coin: string; trader: string; isBuy: boolean; amountIn: string; amountOut: string; fee: string;
-  priceQuote: number; block: string; txHash: string; ts: string;
+  priceQuote: number; venue?: "curve" | "pool" | string; block: string; txHash: string; ts: string;
 };
 
 export const indexerEnabled = () => !!INDEXER_URL;

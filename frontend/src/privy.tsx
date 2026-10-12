@@ -20,8 +20,8 @@ const privyConfig: PrivyClientConfig = {
   appearance: {
     theme: "#07130d", // Census ground
     accentColor: "#b4f03d", // the one accent
-    logo: `${window.location.origin}/census-logo.svg`,
-    landingHeader: "Sign up to Census",
+    logo: `${window.location.origin}/delos-mark.svg`,
+    landingHeader: "Sign up to Delos",
     loginMessage: `We create a wallet on ${CHAIN.name} for you. You can export its key any time.`,
     showWalletLoginFirst: false,
     walletChainType: "ethereum-only",

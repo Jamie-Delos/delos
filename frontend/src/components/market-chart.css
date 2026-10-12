@@ -1,0 +1,27 @@
+.delos-market { border: 1px solid var(--census-border); border-radius: 14px; background: rgba(255,255,255,.025); overflow: hidden; }
+.delos-market__header, .delos-market__feed-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; }
+.delos-market__header strong, .delos-market__feed-head strong { display: block; font-size: 15px; }
+.delos-market__header span, .delos-market__feed-head span { display: block; margin-top: 4px; color: var(--census-text-secondary); font-size: 12px; }
+.delos-market__last { margin-top: 10px; font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.delos-market__last small { margin-left: 12px; font-size: 13px; }
+.delos-market__windows { display: flex; gap: 4px; }
+.delos-market__windows button { border: 1px solid transparent; border-radius: 6px; padding: 7px 9px; background: transparent; color: var(--census-text-secondary); cursor: pointer; }
+.delos-market__windows button[aria-pressed="true"] { border-color: var(--census-border); color: var(--census-text); background: rgba(255,255,255,.07); }
+.delos-market__plot { padding: 0 10px 10px; overflow-x: auto; }
+.delos-market__plot svg { width: 100%; min-width: 500px; display: block; }
+.delos-market__grid { stroke: var(--census-border); stroke-width: 1; stroke-dasharray: 3 5; }
+.delos-market__last-line { stroke: var(--census-lime); stroke-width: 1; stroke-dasharray: 5 5; opacity: .75; }
+.delos-market__axis { fill: var(--census-text-secondary); font: 11px sans-serif; }
+.delos-market__up { fill: #31c48d; stroke: #31c48d; stroke-width: 1.5; }
+.delos-market__down { fill: #f87171; stroke: #f87171; stroke-width: 1.5; }
+.delos-market__empty { min-height: 260px; display: grid; place-items: center; padding: 24px; color: var(--census-text-secondary); text-align: center; font-size: 14px; }
+.delos-market__empty--small { min-height: 90px; }
+.delos-market__feed-head { border-top: 1px solid var(--census-border); }
+.delos-market__table-wrap { overflow-x: auto; max-height: 405px; overflow-y: auto; }
+.delos-market__table { width: 100%; border-collapse: collapse; min-width: 600px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.delos-market__table th, .delos-market__table td { padding: 10px 14px; text-align: left; white-space: nowrap; border-top: 1px solid var(--census-border); }
+.delos-market__table th { color: var(--census-text-secondary); font-weight: 500; }
+.delos-market__table a { color: var(--census-lime); }
+.delos-market__buy { color: #31c48d; font-weight: 600; }
+.delos-market__sell { color: #f87171; font-weight: 600; }
+@media (max-width: 640px) { .delos-market__header { align-items: flex-start; flex-direction: column; } }
