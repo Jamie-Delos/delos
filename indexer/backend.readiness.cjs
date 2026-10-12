@@ -7,7 +7,7 @@ async function apiChecks(){
   const app=require('fastify')({logger:false});app.listen=async()=>{};
   const ingestion={lastSuccessAt:0,lastBlock:null,error:'starting'};
   let failDb=false,chartQuery;
-  const context={exports:{},console:{log(){}},Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),cfg:{chainId:1,curve:'0xcurve',corsOrigin:'*',port:0,pollMs:4000},bus:new EventEmitter(),serializeCoin:x=>x,ingestion,
+  const context={exports:{},console:{log(){}},Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),registerSocialRoutes:()=>{},cfg:{chainId:1,curve:'0xcurve',corsOrigin:'*',port:0,pollMs:4000},bus:new EventEmitter(),serializeCoin:x=>x,ingestion,
     prisma:{$queryRaw:async()=>{if(failDb)throw Error('offline');},coin:{findMany:async()=>[]},pricePoint:{findMany:async(q)=>{chartQuery=q;return[{ts:3,priceQuote:3},{ts:2,priceQuote:2}];}}}};
   vm.runInNewContext(code('api.ts'),context);await context.exports.runApi();
   try{
@@ -220,7 +220,7 @@ async function v4Checks(){
   await reject([accrued('0xbad4',8,0,POOL_A,false,10n**18n,200),swap('0xbad4',8,1,POOL_A,10n,-10n,Q96)],/direction mismatch/);
   // API surface: products from the configured curves; fee split on trades; product/reflection/poolId on coins.
   const app=require('fastify')({logger:false});app.listen=async()=>{};
-  const apiCtx={exports:{},console:{log(){}},Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),cfg:{chainId:1,curve:'0xcurve',curveV4:'0xcurvev4',corsOrigin:'*',port:0,pollMs:4000},bus:new EventEmitter(),serializeCoin:context.exports.serializeCoin,ingestion:{lastSuccessAt:Date.now(),lastBlock:'7',error:null},
+  const apiCtx={exports:{},console:{log(){}},Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),registerSocialRoutes:()=>{},cfg:{chainId:1,curve:'0xcurve',curveV4:'0xcurvev4',corsOrigin:'*',port:0,pollMs:4000},bus:new EventEmitter(),serializeCoin:context.exports.serializeCoin,ingestion:{lastSuccessAt:Date.now(),lastBlock:'7',error:null},
     prisma:{$queryRaw:async()=>{},coin:{findMany:async()=>[...state.coins.values()],findUnique:async({where})=>state.coins.get(where.address)||null},trade:{findMany:async({where})=>[...state.trades.values()].filter(t=>t.coinAddress===where.coinAddress)}}};
   vm.runInNewContext(code('api.ts'),apiCtx);await apiCtx.exports.runApi();
   try{
