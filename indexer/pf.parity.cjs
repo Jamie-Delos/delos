@@ -15,7 +15,8 @@ const context={exports:{},cfg:{chainId:1,weth:fixture.quote.toLowerCase(),ethUsd
 vm.runInNewContext(code('ingest.ts','\nexport { onRegistered,onTraded,derive };'),context);
 (async()=>{
   const coin=fixture.coin.toLowerCase();
-  const ctx={tokenMeta:new Map([[coin,{name:'PF test',symbol:'PFT',decimals:18,totalSupply:fixture.totalSupply}]]),blocks:new Map([['1',{hash:'hash1',ts:new Date(1000)}]])};
+  // onRegistered flags holdersIndexed from the page's tokenMap (holder backfill); no token transfers are indexed here.
+  const ctx={tokenMeta:new Map([[coin,{name:'PF test',symbol:'PFT',decimals:18,totalSupply:fixture.totalSupply}]]),blocks:new Map([['1',{hash:'hash1',ts:new Date(1000)}]]),tokenMap:new Map()};
   for(const [i,e] of fixture.events.entries()){
     const decoded=decodeEventLog({abi:abis.exports.curveAbi,topics:e.encoded.topics,data:e.encoded.data,strict:true});
     const log={...decoded,blockNumber:1n,transactionHash:'tx'+i,logIndex:i};
