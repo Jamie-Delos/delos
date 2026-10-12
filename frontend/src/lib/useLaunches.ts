@@ -25,6 +25,18 @@ export type LaunchedCoin = {
 };
 
 const FROM_BLOCK = BigInt(import.meta.env.VITE_FROM_BLOCK ?? 0); // set to the factory deploy block on mainnet
+// The Robinhood Chain RPC caps one eth_getLogs query at 10,000,000 blocks and the factories' history already
+// spans more than that, so a scan runs in fixed windows (oldest first) and concatenates the results.
+const SCAN_WINDOW = 5_000_000n;
+type BlockWindow = { fromBlock: bigint; toBlock: bigint };
+function blockWindows(from: bigint, head: bigint): BlockWindow[] {
+  const out: BlockWindow[] = [];
+  for (let start = from; start <= head; start += SCAN_WINDOW) {
+    const end = start + SCAN_WINDOW - 1n;
+    out.push({ fromBlock: start, toBlock: end < head ? end : head });
+  }
+  return out;
+}
 const ago = (ts: number) => {
   if (!ts) return "—";
   const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
@@ -89,18 +101,24 @@ export function useLaunches(enabled = true): { coins: LaunchedCoin[]; live: bool
         // curve until graduation. Token + creator + block (+ the V4 vault/reflection/quote) are all the list needs.
         type Ev = { token: Address; creator: Address; block: bigint; venue: CurveVenue; quote?: Address; vault?: Address; reflectionBps?: number };
         const evs: Ev[] = [];
+        const windows = blockWindows(FROM_BLOCK, await publicClient.getBlockNumber());
+        const scan = async <T>(read: (w: BlockWindow) => Promise<T[]>): Promise<T[]> => {
+          const out: T[] = [];
+          for (const w of windows) out.push(...(await read(w)));
+          return out;
+        };
         for (const factory of v4Factories) {
-          const logs = await publicClient.getContractEvents({ address: factory, abi: factoryV4Abi, eventName: "LaunchedV4", fromBlock: FROM_BLOCK });
+          const logs = await scan((w) => publicClient.getContractEvents({ address: factory, abi: factoryV4Abi, eventName: "LaunchedV4", ...w }));
           for (const l of logs) if (l.args.token && l.args.creator) {
             evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, venue: "v4", quote: l.args.quote, vault: isAddr(l.args.vault) ? l.args.vault : undefined, reflectionBps: Number(l.args.reflectionBps ?? 0) });
           }
         }
         if (v1 !== zeroAddress) {
-          const logs = await publicClient.getContractEvents({ address: v1, abi: factoryAbi, eventName: "Launched", fromBlock: FROM_BLOCK });
+          const logs = await scan((w) => publicClient.getContractEvents({ address: v1, abi: factoryAbi, eventName: "Launched", ...w }));
           for (const l of logs) if (l.args.token && l.args.creator) evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, venue: "legacy" });
         }
         if (v2 !== zeroAddress) {
-          const logs = await publicClient.getContractEvents({ address: v2, abi: factoryV2Abi, eventName: "LaunchedV2", fromBlock: FROM_BLOCK });
+          const logs = await scan((w) => publicClient.getContractEvents({ address: v2, abi: factoryV2Abi, eventName: "LaunchedV2", ...w }));
           for (const l of logs) if (l.args.token && l.args.creator) evs.push({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, venue: "legacy", vault: isAddr(l.args.vault) ? l.args.vault : undefined });
         }
         evs.sort((a, b) => Number(b.block - a.block)); // newest first
