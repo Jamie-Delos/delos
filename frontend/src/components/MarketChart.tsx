@@ -76,7 +76,7 @@ export function MarketChart({ address, symbol, quoteSymbol, quoteDecimals }: { a
       <button type="button" aria-pressed={showSma50} onClick={() => setShowSma50(!showSma50)}>SMA 50</button></div>
       <div><button type="button" onClick={() => setVisibleCount(Math.max(30, Math.round(visibleCount / 1.5)))} aria-label="Zoom in">＋</button>
         <button type="button" onClick={() => setVisibleCount(Math.min(500, Math.round(visibleCount * 1.5)))} aria-label="Zoom out">－</button>
-        <button type="button" disabled={!first || state !== "ready"} onClick={() => setPageTo(new Date(Date.parse(first.t) - 1))}>Older</button>
+        <button type="button" disabled={state !== "ready"} onClick={() => setPageTo(new Date(first ? Date.parse(first.t) - 1 : (pageTo?.getTime() ?? Date.now()) - resolution * 1000 * 500))}>Older</button>
         <button type="button" disabled={!pageTo} onClick={() => setPageTo(null)}>Latest</button></div></div>
     {state === "loading" ? <div className="delos-market__empty">Loading indexed trades…</div>
       : state === "unavailable" ? <div className="delos-market__empty">Live chart unavailable. Connect the Delos indexer to show verified candles and trades.</div>

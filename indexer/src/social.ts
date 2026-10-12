@@ -57,7 +57,7 @@ function profileUrl(raw: unknown, hosts?: string[]): string | null {
     const url = new URL(raw.trim());
     if (url.protocol !== "https:" || url.username || url.password || !url.hostname.includes(".")) return null;
     if (hosts && !hosts.some((h) => url.hostname === h)) return null;
-    return url.toString();
+    return url.toString().length <= 200 ? url.toString() : null;
   } catch { return null; }
 }
 function profileImage(raw: unknown): string | null {
@@ -65,7 +65,7 @@ function profileImage(raw: unknown): string | null {
   if (!raw) return "";
   try {
     const url = new URL(raw);
-    return url.protocol === "https:" && url.hostname.endsWith(".public.blob.vercel-storage.com") && !url.username && !url.password ? url.toString() : null;
+    return url.protocol === "https:" && url.hostname.endsWith(".public.blob.vercel-storage.com") && !url.username && !url.password && url.toString().length <= 500 ? url.toString() : null;
   } catch { return null; }
 }
 function cleanProfile(raw: unknown): ProfileFields | null {

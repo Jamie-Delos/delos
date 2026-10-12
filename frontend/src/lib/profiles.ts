@@ -8,6 +8,7 @@ function url(raw: string, hosts?: string[]): string {
   if (!raw.trim()) return "";
   const value = new URL(raw.trim());
   if (value.protocol !== "https:" || value.username || value.password || !value.hostname.includes(".") || (hosts && !hosts.includes(value.hostname))) throw new Error("Use a valid https link for each social.");
+  if (value.toString().length > 200) throw new Error("Social link is too long.");
   return value.toString();
 }
 export function cleanProfile(raw: ProfileFields): ProfileFields {
