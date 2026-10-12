@@ -40,7 +40,7 @@ export function ProfileIdentity({ wallet, isMine }: { wallet: string; isMine: bo
       for (const [kind, data] of [["avatar", avatarFile], ["banner", bannerFile]] as const) {
         if (!data) continue;
         const result = await uploadImage(data, { address: wallet, chainId: CHAIN.id, signMessage: signMessageAsync });
-        if (!result.url) throw new Error(`${kind === "avatar" ? "Photo" : "Banner"} upload: ${result.reason}`);
+        if (result.url === null) throw new Error(`${kind === "avatar" ? "Photo" : "Banner"} upload: ${result.reason}`);
         next[kind] = result.url;
       }
       const saved = await putProfile(wallet, next, (message) => signMessageAsync({ message }));
