@@ -16,11 +16,11 @@ export type UploadSigner = {
 };
 export type UploadResult = { url: string } | { url: null; reason: string };
 
-export async function prepareImage(file: File): Promise<string> {
+export async function prepareImage(file: File, maxDim = MAX_DIM): Promise<string> {
   const src = await readAsDataUrl(file);
   try {
     const img = await loadImage(src);
-    const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
     const w = Math.max(1, Math.round(img.width * scale));
     const h = Math.max(1, Math.round(img.height * scale));
     if (scale >= 1) return src; // already small enough — keep the original bytes
@@ -30,7 +30,7 @@ export async function prepareImage(file: File): Promise<string> {
     const ctx = canvas.getContext("2d");
     if (!ctx) return src;
     ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL("image/png"); // PNG keeps logo transparency
+    return maxDim > MAX_DIM ? canvas.toDataURL("image/jpeg", 0.82) : canvas.toDataURL("image/png"); // larger banners stay below upload cap
   } catch {
     return src; // decode failed (e.g. SVG/odd format) — fall back to the raw data URL for preview
   }

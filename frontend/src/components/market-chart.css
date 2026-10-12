@@ -9,6 +9,18 @@
 .delos-market__windows button[aria-pressed="true"] { border-color: var(--census-border); color: var(--census-text); background: rgba(255,255,255,.07); }
 .delos-market__plot { padding: 0 10px 10px; overflow-x: auto; }
 .delos-market__plot svg { width: 100%; min-width: 500px; display: block; }
+.delos-market__toolbar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 0 20px 12px; }
+.delos-market__toolbar > div { display: flex; gap: 5px; }
+.delos-market__toolbar button { background: rgba(255,255,255,.035); color: var(--census-text-secondary); border: 1px solid var(--census-border); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+.delos-market__toolbar button[aria-pressed="true"] { border-color: var(--census-lime); color: var(--census-lime); }
+.delos-market__toolbar button:disabled { opacity: .4; cursor: default; }
+.delos-market__ohlcv { min-height: 30px; display: flex; gap: 13px; flex-wrap: wrap; align-items: center; padding: 0 12px; color: var(--census-text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.delos-market__ohlcv b { color: var(--census-text); font-weight: 550; }
+.delos-market__source { margin: 0; padding: 0 12px 7px; font-size: 11px; color: var(--census-text-secondary); }
+.delos-market__sma20, .delos-market__sma50 { fill: none; stroke-width: 2; pointer-events: none; }
+.delos-market__sma20 { stroke: #e3b366; }
+.delos-market__sma50 { stroke: #9d86ec; }
+.delos-market__crosshair { stroke: #d9e0ea; stroke-dasharray: 4 4; stroke-width: 1; opacity: .65; pointer-events: none; }
 .delos-market__grid { stroke: var(--census-border); stroke-width: 1; stroke-dasharray: 3 5; }
 .delos-market__last-line { stroke: var(--census-lime); stroke-width: 1; stroke-dasharray: 5 5; opacity: .75; }
 .delos-market__axis { fill: var(--census-text-secondary); font: 11px sans-serif; }

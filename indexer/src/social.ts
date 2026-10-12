@@ -45,11 +45,91 @@ function systemHolders(coin: { address: string; vault: string | null; pool: stri
     .filter((a): a is string => !!a).map(lower))];
 }
 
+type ProfileFields = { displayName: string; bio: string; avatar: string; banner: string; x: string; telegram: string; website: string };
+const publicProfile = (p: ProfileFields & { wallet: string; updatedAt: Date }) => ({
+  wallet: p.wallet, displayName: p.displayName, bio: p.bio, avatar: p.avatar, banner: p.banner,
+  x: p.x, telegram: p.telegram, website: p.website, updatedAt: p.updatedAt,
+});
+function profileUrl(raw: unknown, hosts?: string[]): string | null {
+  if (typeof raw !== "string" || raw.length > 200) return null;
+  if (!raw.trim()) return "";
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== "https:" || url.username || url.password || !url.hostname.includes(".")) return null;
+    if (hosts && !hosts.some((h) => url.hostname === h)) return null;
+    return url.toString();
+  } catch { return null; }
+}
+function profileImage(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > 500) return null;
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" && url.hostname.endsWith(".public.blob.vercel-storage.com") && !url.username && !url.password ? url.toString() : null;
+  } catch { return null; }
+}
+function cleanProfile(raw: unknown): ProfileFields | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.displayName !== "string" || typeof p.bio !== "string" || p.displayName.length > 48 || p.bio.length > 500) return null;
+  const avatar = profileImage(p.avatar), banner = profileImage(p.banner);
+  const x = profileUrl(p.x, ["x.com", "www.x.com", "twitter.com", "www.twitter.com"]);
+  const telegram = profileUrl(p.telegram, ["t.me", "telegram.me"]);
+  const website = profileUrl(p.website);
+  if ([avatar, banner, x, telegram, website].some((v) => v === null)) return null;
+  return { displayName: p.displayName.trim(), bio: p.bio.trim(), avatar: avatar!, banner: banner!, x: x!, telegram: telegram!, website: website! };
+}
+// Keep byte-for-byte identical to frontend/src/lib/profiles.ts.
+function profileMessage(wallet: string, profile: ProfileFields, issuedAt: number, nonce: string) {
+  return `Delos profile\nChain: ${cfg.chainId}\nWallet: ${wallet}\nProfile: ${JSON.stringify(profile)}\nIssued: ${issuedAt}\nNonce: ${nonce}`;
+}
+
 export function registerSocialRoutes(app: FastifyInstance) {
   const prune = () => { void prisma.socialNonce.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - EDIT_WAIT_MS) } } }).catch(() => {}); };
   const pruneTimer = setInterval(prune, 60 * 60 * 1000);
   pruneTimer.unref();
   app.addHook("onClose", async () => { clearInterval(pruneTimer); });
+
+  app.get("/profiles/:wallet", async (req, reply) => {
+    const { wallet } = req.params as { wallet: string };
+    if (!isAddress(wallet)) return bad(reply, 400, "Invalid wallet address");
+    const row = await prisma.walletProfile.findUnique({ where: { wallet: lower(wallet) } });
+    return { profile: row && !row.hidden ? publicProfile(row) : null };
+  });
+
+  app.put("/profiles/:wallet", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const { wallet } = req.params as { wallet: string };
+    if (!isAddress(wallet)) return bad(reply, 400, "Invalid wallet address");
+    const body = req.body as Record<string, unknown> | null;
+    const profile = cleanProfile(body?.profile);
+    const issuedAt = body?.issuedAt, nonce = body?.nonce, signature = body?.signature;
+    if (!profile || typeof issuedAt !== "number" || !Number.isSafeInteger(issuedAt) || Math.abs(Date.now() - issuedAt) > SIGNATURE_WINDOW_MS ||
+      typeof nonce !== "string" || !/^[0-9a-fA-F-]{36}$/.test(nonce) || typeof signature !== "string" || !/^0x(?:[0-9a-fA-F]{2}){1,2048}$/.test(signature)) {
+      return bad(reply, 400, "Invalid profile or signature payload");
+    }
+    const owner = lower(wallet);
+    let valid = false;
+    try { valid = await chainClient.verifyMessage({ address: owner as `0x${string}`, message: profileMessage(owner, profile, issuedAt, nonce), signature: signature as Hex }); }
+    catch { /* fail closed */ }
+    if (!valid) return bad(reply, 401, "Wallet signature did not verify");
+    try {
+      const row = await prisma.$transaction(async (db) => {
+        await db.socialNonce.create({ data: { nonce, wallet: owner } });
+        const prior = await db.walletProfile.findUnique({ where: { wallet: owner } });
+        if (!prior) return db.walletProfile.create({ data: { wallet: owner, ...profile, signedAt: BigInt(issuedAt) } });
+        if (prior.hidden) throw new Error("PROFILE_HIDDEN");
+        const updated = await db.walletProfile.updateMany({ where: { wallet: owner, signedAt: { lt: BigInt(issuedAt) } }, data: { ...profile, signedAt: BigInt(issuedAt) } });
+        if (!updated.count) throw new Error("STALE_PROFILE");
+        return db.walletProfile.findUniqueOrThrow({ where: { wallet: owner } });
+      }, { isolationLevel: "Serializable" });
+      return { profile: publicProfile(row) };
+    } catch (e) {
+      if (e instanceof Error && e.message === "PROFILE_HIDDEN") return bad(reply, 403, "Profile unavailable");
+      if (e instanceof Error && e.message === "STALE_PROFILE") return bad(reply, 409, "A newer profile edit was already saved");
+      if (e instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(e.code)) return bad(reply, 409, "Profile edit collided; retry with a fresh signature");
+      throw e;
+    }
+  });
 
   app.get("/coins/:address/holders", async (req, reply) => {
     const { address } = req.params as { address: string };

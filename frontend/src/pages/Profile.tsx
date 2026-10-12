@@ -7,8 +7,9 @@ import { useCurveStats } from "../lib/useCurveStats";
 import { readRewards, hasClaimable, type Rewards } from "../lib/rewards";
 import { readCurve } from "../lib/curves";
 import { vaultAbi } from "../abis";
-import { CxAvatar, HomeRow, StatBand, PendingPanel, EmptyPanel, Icon, Num, fmtUsd, fmtAmount, shortAddr, CHAIN, useWalletConnect, type DisplayCoin } from "../census";
+import { CxAvatar, HomeRow, StatBand, PendingPanel, EmptyPanel, Num, fmtUsd, fmtAmount, CHAIN, useWalletConnect, type DisplayCoin } from "../census";
 import { IS_MAINNET, pctLabel } from "../config";
+import { ProfileIdentity } from "../components/ProfileIdentity";
 
 type WalletReward = { coin: LaunchedCoin; rewards: Rewards };
 
@@ -111,22 +112,12 @@ export function Profile() {
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 24 }}>
-        <CxAvatar name={addr.slice(2, 4)} wallet />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="cx-label">On {CHAIN.name}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 14 }}>
-            <h1 className="cx-num" style={{ margin: 0, fontWeight: 400, fontSize: 31, letterSpacing: "-0.01em" }}>{shortAddr(addr)}</h1>
-            <button className="cx-link-control" onClick={copy} aria-label="Copy address">{copied ? "Copied" : <Icon name="copy" size={16} />}</button>
-            {/* Lets people switch wallets: disconnect (or sign out), then connect again. */}
-            {isMine && <button className="cx-link-control" onClick={() => { signOut(); }}>{session.method ? "Sign out" : "Disconnect"}</button>}
-            {isMine && exportWallet && (
-              <button className="cx-link-control" disabled={exporting} onClick={async () => { setExporting(true); try { await exportWallet(); } finally { setExporting(false); } }}>Export wallet</button>
-            )}
-          </div>
-          {isMine && session.method && <div className="cx-label" style={{ marginTop: 10 }}>Signed in with {session.method}</div>}
-        </div>
-      </div>
+      <ProfileIdentity wallet={addr} isMine={isMine} />
+      {isMine && <div style={{ display: "flex", gap: 16, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+        <button className="cx-link-control" onClick={() => { signOut(); }}>{session.method ? "Sign out" : "Disconnect"}</button>
+        {exportWallet && <button className="cx-link-control" disabled={exporting} onClick={async () => { setExporting(true); try { await exportWallet(); } finally { setExporting(false); } }}>Export wallet</button>}
+        {session.method && <span className="cx-label">Signed in with {session.method}</span>}
+      </div>}
 
       {/* A wallet created at sign-up starts empty: say plainly how to fund it. */}
       {isMine && session.embedded && bal.data && bal.data.value === 0n && (

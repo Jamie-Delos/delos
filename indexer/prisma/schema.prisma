@@ -101,6 +101,20 @@ model SocialNonce {
   @@index([createdAt])
 }
 
+model WalletProfile {
+  wallet       String   @id // lowercased owner wallet
+  hidden       Boolean  @default(false) // operator can suppress abusive public profiles
+  displayName  String   @default("") @db.VarChar(48)
+  bio          String   @default("") @db.VarChar(500)
+  avatar       String   @default("") @db.VarChar(500)
+  banner       String   @default("") @db.VarChar(500)
+  x            String   @default("") @db.VarChar(200)
+  telegram     String   @default("") @db.VarChar(200)
+  website      String   @default("") @db.VarChar(200)
+  signedAt     BigInt   @default(0) // prevents older signed edits overwriting newer ones
+  updatedAt    DateTime @updatedAt
+}
+
 model Trade {
   id          String   @id @default(cuid())
   coin        Coin     @relation(fields: [coinAddress], references: [address])

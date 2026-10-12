@@ -392,7 +392,7 @@ async function main() {
       exports: {}, console: { log() {} }, Fastify: () => app,
       cors: require('@fastify/cors'), websocket: require('@fastify/websocket'), rateLimit: require('@fastify/rate-limit'), registerSocialRoutes: () => {},
       cfg: { chainId: CFG.chainId, curve: CFG.curve, curveV4: CFG.curveV4, corsOrigin: '*', port: 0, pollMs: 4000 },
-      bus: new EventEmitter(), serializeCoin: (x) => JSON.parse(jsonBig(x)), ingestion, prisma: ref,
+      bus: new EventEmitter(), serializeCoin: (x) => JSON.parse(jsonBig(x)), ingestion, prisma: ref, Prisma: require('@prisma/client').Prisma,
     };
     vm.runInNewContext(code('api.ts'), apiContext);
     await apiContext.exports.runApi();
@@ -425,6 +425,16 @@ async function main() {
       const chart = (await app.inject(`/coins/${COINS[0]}/chart?limit=50`)).json();
       assert.ok(chart.points.length > 0 && chart.points.length <= 50);
       for (let i = 1; i < chart.points.length; i++) assert.ok(chart.points[i].t >= chart.points[i - 1].t, 'chart ascending, recent window');
+      const candleResponse = await app.inject(`/coins/${COINS[0]}/candles?resolution=3600&from=2023-11-14T00:00:00.000Z&to=2023-11-15T00:00:00.000Z`);
+      assert.equal(candleResponse.statusCode, 200, candleResponse.body);
+      const candle = candleResponse.json().candles[0];
+      assert.ok(candle && candle.open > 0 && candle.high >= candle.open && candle.high >= candle.close && candle.low <= candle.open && candle.low <= candle.close);
+      assert.ok(BigInt(candle.volumeRaw) > 0n && candle.trades > 0, 'OHLCV is aggregated from real trades');
+      assert.equal((await app.inject(`/coins/${COINS[0]}/candles?resolution=7`)).statusCode, 400);
+      const profileWallet = '0x' + 'ab'.repeat(20);
+      await ref.walletProfile.create({ data: { wallet: profileWallet, displayName: 'Test trader', bio: 'Charting real launches', signedAt: 100n } });
+      assert.equal((await ref.walletProfile.findUnique({ where: { wallet: profileWallet } })).displayName, 'Test trader');
+      assert.equal((await ref.walletProfile.updateMany({ where: { wallet: profileWallet, signedAt: { lt: 99n } }, data: { bio: 'stale' } })).count, 0);
       assert.equal((await app.inject('/coins?limit=abc')).statusCode, 400);
       t0 = Date.now();
       const failures = [];

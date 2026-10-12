@@ -8,6 +8,7 @@ import { serializeCoin } from "./ingest.js";
 import { ingestion } from "./status.js";
 import rateLimit from "@fastify/rate-limit";
 import { registerSocialRoutes } from "./social.js";
+import { Prisma } from "@prisma/client";
 
 function limitOf(value: string | undefined, fallback: number, maximum: number) {
   if (value === undefined) return fallback;
@@ -101,6 +102,34 @@ export async function runApi() {
       where: { coinAddress: address.toLowerCase() }, orderBy: [{ ts: "desc" }, { id: "desc" }], take: limit,
     });
     return { points: rows.reverse().map((p) => ({ t: p.ts, priceQuote: p.priceQuote, priceUsd: p.priceUsd })) };
+  });
+
+  // Real OHLCV from canonical indexed trades. This includes curve trades and the canonical
+  // graduated pool, and never invents candles in intervals where no trade occurred.
+  app.get("/coins/:address/candles", async (req, reply) => {
+    const { address } = req.params as { address: string };
+    const q = req.query as Record<string, string | undefined>;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return reply.code(400).send({ error: "invalid coin address" });
+    const seconds = Number(q.resolution ?? "300");
+    if (![60, 300, 900, 3600, 14400, 86400].includes(seconds)) return reply.code(400).send({ error: "invalid candle resolution" });
+    const to = q.to ? new Date(q.to) : new Date();
+    if (!Number.isFinite(to.getTime())) return reply.code(400).send({ error: "invalid end time" });
+    const from = q.from ? new Date(q.from) : new Date(to.getTime() - seconds * 1000 * 500);
+    if (!Number.isFinite(from.getTime()) || from >= to || to.getTime() - from.getTime() > seconds * 1000 * 500) return reply.code(400).send({ error: "range must contain at most 500 candles" });
+    const rows = await prisma.$queryRaw<{ bucket: Date; open: number; high: number; low: number; close: number; trades: number; volumeRaw: string }[]>(Prisma.sql`
+      SELECT date_bin(make_interval(secs => ${seconds}::int), "ts", TIMESTAMP '1970-01-01') AS bucket,
+        (array_agg("priceQuote" ORDER BY "block", "logIndex"))[1] AS open,
+        MAX("priceQuote") AS high, MIN("priceQuote") AS low,
+        (array_agg("priceQuote" ORDER BY "block" DESC, "logIndex" DESC))[1] AS close,
+        COUNT(*)::int AS trades,
+        SUM(CASE WHEN "isBuy" THEN "amountIn"::numeric ELSE "amountOut"::numeric + "fee"::numeric END)::text AS "volumeRaw"
+      FROM "Trade"
+      WHERE "coinAddress" = ${address.toLowerCase()} AND "ts" >= ${from} AND "ts" < ${to} AND "priceQuote" > 0
+      GROUP BY bucket ORDER BY bucket ASC`);
+    return { resolution: seconds, from: from.toISOString(), to: to.toISOString(), candles: rows.map((r) => ({
+      t: r.bucket.toISOString(), open: r.open, high: r.high, low: r.low, close: r.close,
+      trades: r.trades, volumeRaw: r.volumeRaw,
+    })) };
   });
 
   app.get("/stats", async () => {

@@ -37,6 +37,9 @@ export const fetchCoins = (sort = "new", limit = 50) => get<{ coins: IndexerCoin
 export const fetchCoin = (address: string) => get<{ coin: IndexerCoin }>(`/coins/${address.toLowerCase()}`);
 export const fetchTrades = (address: string, limit = 50) => get<{ trades: IndexerTrade[] }>(`/coins/${address.toLowerCase()}/trades?limit=${limit}`);
 export const fetchChart = (address: string, limit = 500) => get<{ points: { t: string; priceQuote: number; priceUsd: number | null }[] }>(`/coins/${address.toLowerCase()}/chart?limit=${limit}`);
+export type IndexedCandle = { t: string; open: number; high: number; low: number; close: number; trades: number; volumeRaw: string };
+export const fetchCandles = (address: string, resolution: number, from: Date, to: Date) =>
+  get<{ resolution: number; from: string; to: string; candles: IndexedCandle[] }>(`/coins/${address.toLowerCase()}/candles?resolution=${resolution}&from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`);
 
 // WebSocket URL for live updates (new coins / trades / graduations), or null if the indexer isn't set.
 export const indexerWsUrl = () => (INDEXER_URL ? INDEXER_URL.replace(/^http/, "ws") + "/ws" : null);

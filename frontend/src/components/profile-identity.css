@@ -1,0 +1,22 @@
+.delos-profile { overflow: hidden; border: 1px solid var(--census-border); border-radius: 18px; background: #141923; }
+.delos-profile__banner { height: 180px; background: radial-gradient(circle at 82% 10%, rgba(157,255,92,.32), transparent 38%), linear-gradient(120deg, #17272b, #17172e 62%, #322240); background-size: cover; background-position: center; }
+.delos-profile__body { padding: 0 26px 26px; }
+.delos-profile__avatar { width: 92px; height: 92px; margin-top: -44px; border: 5px solid #141923; border-radius: 20px; background: #b8fc58; color: #17200b; display: grid; place-items: center; font-weight: 800; font-size: 21px; overflow: hidden; position: relative; }
+.delos-profile__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.delos-profile__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-top: 12px; }
+.delos-profile__heading h1 { margin: 0 0 4px; font-size: 29px; line-height: 1.15; }
+.delos-profile__wallet { padding: 0; border: 0; background: none; color: var(--census-text-secondary); cursor: pointer; font: inherit; font-size: 13px; }
+.delos-profile__wallet:hover, .delos-profile__socials a:hover { color: var(--census-lime); }
+.delos-profile__bio { max-width: 700px; margin: 20px 0 0; white-space: pre-wrap; line-height: 1.55; }
+.delos-profile__socials { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.delos-profile__socials a { border: 1px solid var(--census-border); border-radius: 99px; padding: 7px 12px; color: var(--census-text); text-decoration: none; font-size: 13px; }
+.delos-profile__hint { color: var(--census-text-secondary); font-size: 12px; }
+.delos-profile__editor { display: grid; gap: 18px; border-top: 1px solid var(--census-border); margin-top: 25px; padding-top: 24px; }
+.delos-profile__editor label { display: grid; gap: 7px; color: var(--census-text-secondary); font-size: 13px; }
+.delos-profile__editor input:not([type=file]), .delos-profile__editor textarea { width: 100%; border: 1px solid var(--census-border); border-radius: 9px; background: #0e121a; color: var(--census-text); padding: 12px; font: inherit; }
+.delos-profile__editor textarea { min-height: 92px; resize: vertical; }
+.delos-profile__editor input[type=file] { max-width: 100%; }
+.delos-profile__image-fields, .delos-profile__links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.delos-profile__actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--census-text-secondary); font-size: 12px; }
+.delos-profile__error { color: #ff8888; font-size: 13px; }
+@media (max-width: 640px) { .delos-profile__banner { height: 135px; } .delos-profile__body { padding: 0 16px 20px; } .delos-profile__image-fields, .delos-profile__links { grid-template-columns: 1fr; } .delos-profile__actions { align-items: flex-start; flex-direction: column; } }

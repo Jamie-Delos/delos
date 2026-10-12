@@ -703,7 +703,7 @@ export function Coin() {
 
           {isConnected ? (
             <button className="cx-cta" style={{ width: "100%", marginTop: 26, padding: 16, fontSize: 16 }} disabled={busy || conversionBusy || !!pendingTrade || !canTrade || quoteOut == null} onClick={trade}>
-              {busy ? "Working…" : !cq.resolved || (!qi && !tradeBlock) ? "Loading…" : "Place trade"}
+              {busy ? "Working…" : !cq.resolved || (!qi && !tradeBlock) ? "Loading…" : `${buy ? "Buy" : "Sell"} ${coinSym || "coin"} on Delos`}
             </button>
           ) : (
             <>
