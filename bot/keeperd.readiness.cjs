@@ -385,7 +385,7 @@ const silent = () => {};
       // A current CensusRewardVault basket: the quote asset and/or allow-listed stocks, never the launch token.
       basket4: [QUOTE, STOCK], weights4: [WEIGHT_QUOTE, WEIGHT_STOCK],
       withdrawable4: { [HOLDER1]: E('0.002') },
-      curveReads: [], v3Quotes: [],
+      curveReads: [], v3Quotes: [], curveGraduated: {}, curveProgress: {},
     });
     chain.logs.push(
       mkLog(FACTORY4, FACTORY4_IFACE, 'LaunchedV4', [TOKEN4, CREATOR, CURVE4, VAULT4, 300, QUOTE], 10),
@@ -403,6 +403,9 @@ const silent = () => {};
         chain.curveReads.push(fn);
         if (fn === 'keeper') return chain.curveKeeperV4;
         if (fn === 'graduator') return GRADUATOR;
+        // graduateStepV4 checks whether a filled curve still needs graduate(); these are state views, not pricing.
+        if (fn === 'isGraduated') return chain.curveGraduated[lc(args[0])] ?? false;
+        if (fn === 'graduationProgress') return chain.curveProgress[lc(args[0])] ?? 6200n;
         throw new Error(`unexpected V4 curve read ${fn} (the keeper never prices anything on the curve)`);
       }
       if (a === lc(HOOK)) {
@@ -443,6 +446,8 @@ const silent = () => {};
     };
     return chain;
   }
+  // Curve reads the keeper may make: wiring views and graduation state. Anything else would be pricing on the curve.
+  const CURVE_STATE_VIEWS = new Set(['keeper', 'graduator', 'isGraduated', 'graduationProgress']);
   const V4_ENV = { CURVE_V4_ADDRESS: CURVE4, FACTORY_V4_ADDRESS: FACTORY4, HOOK_ADDRESS: HOOK, V4_ROUTER_ADDRESS: ROUTER4, POOL_MANAGER_ADDRESS: POOL_MANAGER, QUOTER_ADDRESS: QUOTER };
   // Expected distribute(minOut[]) for the [quote, stock] basket: quote entry 0, stock via the V3 quoter at SLIPPAGE_BPS.
   const EXPECTED_MIN_OUT = [0n, applySlippage(PORTION_STOCK * 3n)];
@@ -475,7 +480,7 @@ const silent = () => {};
     assert.equal(reg.launches[lc(TOKEN_NOREF)].vault, ethers.ZeroAddress, 'reflection-off launch recorded without a vault');
     assert.ok(lines.some((x) => x.includes('[dry] would send distribute:')), 'the distribution was planned in dry run');
     assert.equal(chain.v3Quotes.length, 1, 'the stock leg was priced through the shared Uniswap planner');
-    assert.ok(!chain.curveReads.some((fn) => fn !== 'keeper' && fn !== 'graduator'), 'nothing is priced on the curve');
+    assert.ok(!chain.curveReads.some((fn) => !CURVE_STATE_VIEWS.has(fn)), 'nothing is priced on the curve');
     console.log('PASS v4 dry run: LaunchedV4 discovery persisted under its own cursor, plan produced, zero signatures');
   }
 
@@ -496,7 +501,7 @@ const silent = () => {};
     assert.equal(lc(chain.v3Quotes[0].tokenIn), lc(QUOTE));
     assert.equal(lc(chain.v3Quotes[0].tokenOut), lc(STOCK));
     assert.equal(BigInt(chain.v3Quotes[0].amountIn), PORTION_STOCK);
-    assert.ok(!chain.curveReads.some((fn) => fn !== 'keeper' && fn !== 'graduator'), 'nothing is priced on the curve');
+    assert.ok(!chain.curveReads.some((fn) => !CURVE_STATE_VIEWS.has(fn)), 'nothing is priced on the curve');
     const pushes = txsTo(chain, VAULT4, VAULT_IFACE.getFunction('claimFor').selector);
     assert.equal(pushes.length, 1, 'one push');
     assert.equal(lc(VAULT_IFACE.decodeFunctionData('claimFor', pushes[0].data)[0]), lc(HOLDER1), 'pushed to the holder over PUSH_MIN_WEI (HOLDER2 under, EXCLUDED excluded)');
@@ -535,7 +540,7 @@ const silent = () => {};
     assert.deepEqual(mins[0], EXPECTED_MIN_OUT);
     assert.equal(chain.v3Quotes.length, 1, 'stock leg priced by the shared Uniswap planner after graduation too');
     assert.equal(lc(chain.v3Quotes[0].tokenOut), lc(STOCK));
-    assert.ok(!chain.curveReads.some((fn) => fn !== 'keeper' && fn !== 'graduator'), 'curve never consulted for pricing');
+    assert.ok(!chain.curveReads.some((fn) => !CURVE_STATE_VIEWS.has(fn)), 'curve never consulted for pricing');
     // Every transaction targets the hook or the reflection vault: the reflection-off launch got no vault work or push.
     for (const t of chain.sent) assert.ok([lc(HOOK), lc(VAULT4)].includes(lc(t.to)), `unexpected target ${t.to}`);
     assert.equal(chain.sent.length, 5, `claim(vault) + distribute + claim(creator) + claim(treasury) + push, got ${chain.sent.length}`);
