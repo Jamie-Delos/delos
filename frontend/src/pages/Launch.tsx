@@ -44,17 +44,17 @@ function loadPendingLaunch(): PendingLaunch | null {
       ? { ...pending, factory: isAddress(pending.factory) ? pending.factory : CONTRACTS.factoryV4 } : null;
   } catch { return null; }
 }
-// Delos team deployment test: new launches graduate at a small, selectable net quote reserve (default 0.1 ETH)
+// Delos team deployment test: new launches graduate at a small, selectable net quote reserve (default 0.02 ETH)
 // so the team can bond coins cheaply; the contracts accept any non-zero target.
 // Existing on-chain launches retain the graduation target stored at their creation.
 const TEST_GRADS = [
-  { eth: 0.05, label: "Cheapest test" },
-  { eth: 0.1, label: "Team test default" },
-  { eth: 0.25, label: "Fuller curve" },
+  { eth: 0.02, label: "Cheapest test (proven on this stack)" },
+  { eth: 0.05, label: "Small test" },
+  { eth: 0.1, label: "Fuller curve" },
   { eth: 1, label: "Previous target" },
 ];
 const GRADS: Record<Tier, { eth: number; label: string }[]> = { v1: TEST_GRADS, v2: TEST_GRADS };
-const DEFAULT_GRAD = 0.1;
+const DEFAULT_GRAD = 0.02;
 const isTier = (t: unknown): t is Tier => t === "v1" || t === "v2";
 const gradsFor = (tier: Tier) => GRADS[tier];
 const gradAllowed = (tier: Tier, eth: number) => gradsFor(tier).some((g) => g.eth === eth);
@@ -67,7 +67,7 @@ const UNIVERSE = STOCK_CATEGORIES.flatMap((c) => c.stocks.map((s) => ({ ...s, se
 const stockAddress = (ticker: string) => STOCK_ROUTES[ticker]?.address ?? "";
 const deriveTicker = (name: string) => name.replace(/[^a-zA-Z]/g, "").slice(0, 5).toUpperCase();
 const usd = (v: number) => `$${v.toFixed(2)}`;
-const usdK = (v: number) => `$${Math.round(v / 1000)}k`;
+const usdK = (v: number) => (v < 1000 ? `$${Math.round(v)}` : `$${Math.round(v / 1000)}k`);
 // Graduation targets are set in ETH terms; a non-ETH anchor's target is converted at launch.
 const gradLabel = (eth: number, anchorKey: string) => (anchorKey === "ETH" ? `~${eth} ETH` : `~${eth} ETH in ${anchorKey}`);
 
@@ -491,7 +491,7 @@ export function Launch() {
       </header>
 
       <div role="status" style={{ padding: "10px 24px", textAlign: "center", background: "rgba(180,240,61,.12)", color: "var(--census-text)", fontSize: 13 }}>
-        DELOS TEAM TEST · New launches graduate at the target you pick, 0.05 to 1 ETH of net reserve. Mainnet transactions use real funds.
+        DELOS TEAM TEST · New launches graduate at the target you pick, 0.02 to 1 ETH of net reserve. Mainnet transactions use real funds.
       </div>
 
       <div className="census-wizard__body">
@@ -905,7 +905,7 @@ function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPc
         })}
       </div>
       <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>
-        Test launches graduate at the target you pick, from 0.05 to 1 ETH of net quote reserve. On mainnet, this uses real funds.
+        Test launches graduate at the target you pick, from 0.02 to 1 ETH of net quote reserve. On mainnet, this uses real funds.
         At the target the bonding curve graduates into the canonical hooked pool; liquidity stays locked and the same fee keeps applying there.
         {anchorKey !== "ETH" && ` Targets are set in ETH terms and converted to ${anchorKey} at launch.`}
       </div>
