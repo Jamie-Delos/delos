@@ -353,7 +353,7 @@ export function AppShell({ active, topbar, children }: { active: string; topbar:
             </Link>
           ))}
         </nav>
-        <Link className="cx-cta delos-test-cta" to="/create">TEST LAUNCH · 1 ETH</Link>
+        <Link className="cx-cta delos-test-cta" to="/create">TEST LAUNCH · FROM 0.05 ETH</Link>
         <div className="cx-side-meta">
           <div>{CHAIN.name}</div>
           <div>chainId {CHAIN.id}</div>

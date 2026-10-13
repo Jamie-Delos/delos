@@ -52,12 +52,12 @@ export function Landing() {
         >
           Enter the market <span className="census-cta__arrow" aria-hidden="true">→</span>
         </button>
-        <Link className="delos-test-button census-rise" to="/create" style={{ animationDelay: "0.6s" }}>TEST LAUNCH · 1 ETH</Link>
+        <Link className="delos-test-button census-rise" to="/create" style={{ animationDelay: "0.6s" }}>TEST LAUNCH · FROM 0.05 ETH</Link>
         <span className="delos-test-note">Team test target. Mainnet launches and trades use real funds.</span>
       </main>
 
       <footer className="census-landing__footer">
-        <span className="census-mono">Delos team test · 1 ETH graduation</span>
+        <span className="census-mono">Delos team test · graduation from 0.05 ETH</span>
       </footer>
     </div>
   );

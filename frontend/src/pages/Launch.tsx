@@ -44,13 +44,17 @@ function loadPendingLaunch(): PendingLaunch | null {
       ? { ...pending, factory: isAddress(pending.factory) ? pending.factory : CONTRACTS.factoryV4 } : null;
   } catch { return null; }
 }
-// Delos team deployment test: all new launches graduate at 1 ETH of net quote reserve.
+// Delos team deployment test: new launches graduate at a small, selectable net quote reserve (default 0.1 ETH)
+// so the team can bond coins cheaply; the contracts accept any non-zero target.
 // Existing on-chain launches retain the graduation target stored at their creation.
-const GRADS: Record<Tier, { eth: number; label: string }[]> = {
-  v1: [{ eth: 1, label: "Team test target" }],
-  v2: [{ eth: 1, label: "Team test target" }],
-};
-const DEFAULT_GRAD = 1;
+const TEST_GRADS = [
+  { eth: 0.05, label: "Cheapest test" },
+  { eth: 0.1, label: "Team test default" },
+  { eth: 0.25, label: "Fuller curve" },
+  { eth: 1, label: "Previous target" },
+];
+const GRADS: Record<Tier, { eth: number; label: string }[]> = { v1: TEST_GRADS, v2: TEST_GRADS };
+const DEFAULT_GRAD = 0.1;
 const isTier = (t: unknown): t is Tier => t === "v1" || t === "v2";
 const gradsFor = (tier: Tier) => GRADS[tier];
 const gradAllowed = (tier: Tier, eth: number) => gradsFor(tier).some((g) => g.eth === eth);
@@ -487,7 +491,7 @@ export function Launch() {
       </header>
 
       <div role="status" style={{ padding: "10px 24px", textAlign: "center", background: "rgba(180,240,61,.12)", color: "var(--census-text)", fontSize: 13 }}>
-        DELOS TEAM TEST · New launches target 1 ETH of net reserve. Mainnet transactions use real funds.
+        DELOS TEAM TEST · New launches graduate at the target you pick, 0.05 to 1 ETH of net reserve. Mainnet transactions use real funds.
       </div>
 
       <div className="census-wizard__body">
@@ -901,7 +905,7 @@ function EconomicsStep({ draft, set, anchor, ticker, ethUsd, picks, pctOf, setPc
         })}
       </div>
       <div style={{ marginTop: 10, fontSize: 13, color: "var(--census-text-muted)" }}>
-        Both meme and company test launches graduate at about 1 ETH of net quote reserve. On mainnet, this uses real funds.
+        Test launches graduate at the target you pick, from 0.05 to 1 ETH of net quote reserve. On mainnet, this uses real funds.
         At the target the bonding curve graduates into the canonical hooked pool; liquidity stays locked and the same fee keeps applying there.
         {anchorKey !== "ETH" && ` Targets are set in ETH terms and converted to ${anchorKey} at launch.`}
       </div>
