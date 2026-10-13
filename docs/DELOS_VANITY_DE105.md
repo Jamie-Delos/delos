@@ -13,11 +13,21 @@ Nothing in this change touches `LaunchToken` bytecode, so predicted addresses fo
 
 ## What has to happen on-chain
 
+There is a script for it. Anyone with a funded key can run it; it deploys the factory and its vault deployer, binds them, checks the wiring, and prints the one call the curve deployer still has to send (or sends it when the signer is that wallet):
+
+```bash
+cd contracts
+PRIVATE_KEY=0x... npx hardhat run scripts/deployDe105Factory.js --network robinhood
+```
+
+The same flow is rehearsed end to end on a fork of mainnet, including the launch, a capped buy and the graduation into the live pool, by `DE105_FORK=1 npx hardhat test test/v4.de105.fork.test.js --network hardhat`.
+
+
 The team-test factories on Robinhood Chain (`0x3776FBA3…` and the dev-buy factory `0xc37b600F…`) were deployed from the old source and will keep enforcing `c0de` until they are replaced. To get de105 coins:
 
-1. Deploy a new `LaunchFactoryV4` (and a new dev-buy factory if that path stays) from this source.
-2. Authorise them on the curve (`setFactory`) and bind the vault deployer (`setLaunchFactory`). Only the curve's deployer/keeper wallet can do this.
-3. Point the frontend at the new addresses (`VITE_FACTORY_V4_ADDRESS`, `VITE_FACTORY_V4_DEV_BUY`). The site needs no code change: it reads the suffix from whichever factory it is given.
+1. Deploy a new `LaunchFactoryV4` from this source together with a fresh `CensusRewardVaultDeployer` and bind them (`setLaunchFactory`, owned by whoever deploys the vault deployer; a vault deployer binds once, so the old ones cannot be reused). One factory serves both the plain and the creator-buy paths.
+2. Authorise it on the curve (`setFactory`). Only the curve's deployer wallet can do this.
+3. Point the frontend at the new address (`VITE_FACTORY_V4_ADDRESS` and `VITE_FACTORY_V4_DEV_BUY`, both the same). The site needs no code change: it reads the suffix from whichever factory it is given.
 
 Until then every launch through the site, including the team-test coins, lands on a `c0de` address. Existing coins keep their addresses forever; the suffix only applies to new launches.
 
