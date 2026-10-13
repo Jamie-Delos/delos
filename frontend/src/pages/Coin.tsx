@@ -632,9 +632,11 @@ export function Coin() {
         <PendingPanel line="The thread opens once the indexer is connected" />
       </div>
 
-      {/* trade panel */}
+      {/* trade panel + curve terms: one sticky block (see .cx-coin-aside), so the terms card can never
+          slide under a sticky trade panel while the page scrolls */}
       <div>
-        <div className="cx-panel" style={{ position: "sticky", top: 24 }}>
+        <div className="cx-coin-aside">
+        <div className="cx-panel">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, borderBottom: "1px solid var(--census-border)" }}>
             {(["buy", "sell"] as const).map((side) => {
               const on = buy === (side === "buy");
@@ -744,6 +746,7 @@ export function Coin() {
           <CurveRow k="Trade fee" v={cq.resolved ? `${standingFeeLabel} (${feeBreakdown(reflectionBps)})` : TRADE_FEE_LABEL} />
           {hasVault && <CurveRow k="Holder reflection" v={`${pctLabel(reflectionBps)} → ${basketDisp || "reward basket"}`} />}
           <CurveRow k="Trades on" v={onCurve ? "The Delos curve" : graduated ? (isV4 ? "Canonical pool · Delos hook" : "Uniswap V3 pool (legacy)") : "—"} />
+        </div>
         </div>
       </div>
     </div>

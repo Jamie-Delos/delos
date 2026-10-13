@@ -397,7 +397,10 @@
 .cx-coin { display: grid; grid-template-columns: minmax(0, 1fr) var(--census-aside-width); gap: 44px; align-items: start; }
 /* The trade aside must span the full row for its sticky panel to have room to stick (see census.css). */
 .cx-coin > :last-child { align-self: stretch; }
-@media (max-width: 900px) { .cx-coin { grid-template-columns: minmax(0, 1fr); gap: 28px; } .cx-coin .cx-panel { position: static !important; } }
+/* Both aside cards stick together; a block taller than the viewport scrolls inside itself instead of being cut off. */
+.cx-coin-aside { position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; scrollbar-width: none; }
+.cx-coin-aside::-webkit-scrollbar { display: none; }
+@media (max-width: 900px) { .cx-coin { grid-template-columns: minmax(0, 1fr); gap: 28px; } .cx-coin .cx-panel { position: static !important; } .cx-coin-aside { position: static; max-height: none; overflow: visible; } }
 
 /* The bottom tab bar is mobile-only; on desktop the sidebar handles navigation. */
 .cx-tabbar { display: none; }
