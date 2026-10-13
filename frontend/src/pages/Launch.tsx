@@ -81,7 +81,7 @@ type Setter = (p: Partial<Draft>) => void;
 // reflectionBps: the holder reflection charged ON TOP of the 2% base fee on every buy and sell — 0 (off)
 // or 100..400 — paid into the launch's reward basket. Frozen at launch. Maxima defaults to 2%, Prima to off.
 const DEFAULT_REFLECTION: Record<Tier, number> = { v1: 0, v2: 200 };
-const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: 1, reflectionBps: 0, devBuy: "", image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
+const EMPTY: Draft = { tier: "v1", name: "", thesis: "", description: "", quoteKey: "ETH", picks: [], weights: {}, graduationEth: DEFAULT_GRAD, reflectionBps: 0, devBuy: "", image: "", ticker: "", publicConsent: false, quoteSymbol: "" };
 
 function loadDraft(): Draft {
   try {
