@@ -8,6 +8,7 @@ import { serializeCoin } from "./ingest.js";
 import { ingestion } from "./status.js";
 import rateLimit from "@fastify/rate-limit";
 import { registerSocialRoutes } from "./social.js";
+import { registerGeckoTerminalRoutes, defaultGtDeps } from "./geckoterminal.js";
 import { Prisma } from "@prisma/client";
 
 function limitOf(value: string | undefined, fallback: number, maximum: number) {
@@ -38,6 +39,7 @@ export async function runApi() {
   await app.register(websocket);
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
   registerSocialRoutes(app);
+  registerGeckoTerminalRoutes(app, defaultGtDeps({ prisma, cfg, ingestion }));
 
   app.get("/live", async () => ({ ok: true }));
   app.get("/health", async (_req, reply) => {

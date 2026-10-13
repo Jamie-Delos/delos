@@ -199,6 +199,7 @@ async function onRegistered(log: any, db: Db, notify: Notify, ctx?: PageContext,
     graduationQuote: (log.args.graduationQuote as bigint).toString(),
     graduated: false,
     createdBlock: log.blockNumber as bigint,
+    createdTxHash: (log.transactionHash as string | undefined) ?? null,
     createdAt: await blockTime(log.blockNumber, ctx),
   };
   const d = derive(base);
@@ -256,7 +257,9 @@ async function onTraded(log: any, db: Db, notify: Notify, ctx?: PageContext) {
     coinAddress: coin, trader: lc(log.args.trader as string), isBuy,
     amountIn: amountIn.toString(), amountOut: amountOut.toString(), fee: fee.toString(), ...feeColumns(split),
     priceQuote: tradePrice, block: log.blockNumber as bigint, txHash: log.transactionHash as string,
-    logIndex: Number(log.logIndex), ts,
+    logIndex: Number(log.logIndex), txIndex: Number(log.transactionIndex ?? 0), ts,
+    // GeckoTerminal reads the curve's pricing reserves after each trade from these two columns.
+    reserve0After: (tr + BigInt(c.virtualTokenOffset ?? "0")).toString(), reserve1After: vq.toString(),
   };
   await db.trade.upsert({
     where: { txHash_logIndex: { txHash: log.transactionHash as string, logIndex: Number(log.logIndex) } },
@@ -279,21 +282,30 @@ async function onTraded(log: any, db: Db, notify: Notify, ctx?: PageContext) {
   notify({ type: "coin", data: serializeCoin(row) });
 }
 
-async function onGraduated(log: any, db: Db, notify: Notify) {
+async function onGraduated(log: any, db: Db, notify: Notify, ctx?: PageContext) {
   const coin = lc(log.args.coin as string);
   const row = await db.coin.update({
     where: { address: coin },
-    data: { graduated: true, pool: lc(log.args.pool as string), progressBps: 10000 },
+    data: { graduated: true, pool: lc(log.args.pool as string), progressBps: 10000, ...(await graduationColumns(log, ctx)) },
   });
   notify({ type: "graduate", data: serializeCoin(row) });
 }
 
 // V4: the coin migrates into the canonical hooked pool identified by poolId (no pool address).
-async function onGraduatedV4(log: any, db: Db, notify: Notify) {
+// Where graduation happened, for GeckoTerminal's "exit" event (src/geckoterminal.ts).
+async function graduationColumns(log: any, ctx?: PageContext) {
+  return {
+    graduatedBlock: log.blockNumber as bigint, graduatedTxHash: (log.transactionHash as string | undefined) ?? null,
+    graduatedTxIndex: Number(log.transactionIndex ?? 0), graduatedLogIndex: Number(log.logIndex ?? 0),
+    graduatedAt: await blockTime(log.blockNumber as bigint, ctx),
+  };
+}
+
+async function onGraduatedV4(log: any, db: Db, notify: Notify, ctx?: PageContext) {
   const coin = lc(log.args.coin as string);
   const row = await db.coin.update({
     where: { address: coin },
-    data: { graduated: true, poolId: lc(log.args.poolId as string), progressBps: 10000 },
+    data: { graduated: true, poolId: lc(log.args.poolId as string), progressBps: 10000, ...(await graduationColumns(log, ctx)) },
   });
   notify({ type: "graduate", data: serializeCoin(row) });
 }
@@ -319,7 +331,7 @@ async function applyPoolTrade(c: any, t: {
     coinAddress: c.address, trader: t.trader, isBuy: t.isBuy,
     amountIn: t.amountIn.toString(), amountOut: t.amountOut.toString(), fee: t.fee.toString(), ...feeColumns(t.split),
     priceQuote: t.priceQuote, venue: "pool", block: log.blockNumber as bigint, txHash: log.transactionHash as string,
-    logIndex: Number(log.logIndex), ts,
+    logIndex: Number(log.logIndex), txIndex: Number(log.transactionIndex ?? 0), ts,
   };
   await db.trade.upsert({
     where: { txHash_logIndex: { txHash: log.transactionHash as string, logIndex: Number(log.logIndex) } },
@@ -415,14 +427,14 @@ async function onVaultEvent(log: any, coinAddress: string, quote: string, db: Db
 async function processLog(log: any, db: Db, notify: Notify, ctx?: PageContext) {
   if (log.eventName === "Registered") return onRegistered(log, db, notify, ctx, "v3");
   if (log.eventName === "Traded") return onTraded(log, db, notify, ctx);
-  if (log.eventName === "Graduated") return onGraduated(log, db, notify);
+  if (log.eventName === "Graduated") return onGraduated(log, db, notify, ctx);
   throw new Error("Unrecognized curve event");
 }
 
 async function processLogV4(log: any, db: Db, notify: Notify, ctx?: PageContext) {
   if (log.eventName === "Registered") return onRegistered(log, db, notify, ctx, "v4");
   if (log.eventName === "Traded") return onTraded(log, db, notify, ctx);
-  if (log.eventName === "Graduated") return onGraduatedV4(log, db, notify);
+  if (log.eventName === "Graduated") return onGraduatedV4(log, db, notify, ctx);
   throw new Error("Unrecognized V4 curve event");
 }
 

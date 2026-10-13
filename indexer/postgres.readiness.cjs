@@ -389,13 +389,25 @@ async function main() {
     app.listen = async () => {};
     const ingestion = { lastSuccessAt: Date.now(), lastBlock: stream.endBlock.toString(), error: null };
     const apiContext = {
-      exports: {}, console: { log() {} }, Fastify: () => app,
+      exports: {}, console: { log() {} }, Fastify: () => app, ...require('./backend.readiness.cjs').gtModule(),
       cors: require('@fastify/cors'), websocket: require('@fastify/websocket'), rateLimit: require('@fastify/rate-limit'), registerSocialRoutes: () => {},
-      cfg: { chainId: CFG.chainId, curve: CFG.curve, curveV4: CFG.curveV4, corsOrigin: '*', port: 0, pollMs: 4000 },
+      cfg: { chainId: CFG.chainId, curve: CFG.curve, curveV4: CFG.curveV4, corsOrigin: '*', port: 0, pollMs: 4000, ...require('./backend.readiness.cjs').GT_CFG },
       bus: new EventEmitter(), serializeCoin: (x) => JSON.parse(jsonBig(x)), ingestion, prisma: ref, Prisma: require('@prisma/client').Prisma,
     };
     vm.runInNewContext(code('api.ts'), apiContext);
     await apiContext.exports.runApi();
+    { // GeckoTerminal routes against the real Postgres queries (the in-memory harness cannot exercise Prisma filters).
+      const A = require('node:assert/strict');
+      const latest = await app.inject('/geckoterminal/latest-block'); A.equal(latest.statusCode, 200, latest.body); A.equal(latest.json().block.blockNumber, Number(stream.endBlock));
+      const ev = await app.inject(`/geckoterminal/events?fromBlock=0&toBlock=${stream.endBlock}`); A.equal(ev.statusCode, 200, ev.body);
+      const events = ev.json().events; A.ok(events.length > 0, 'curve trades expected');
+      for (const e of events) { A.ok(['swap', 'exit'].includes(e.eventType)); A.ok(e.txnId && e.pairId && e.maker, 'event ids'); if (e.eventType === 'swap') { A.ok(Number(e.priceNative) > 0, 'priceNative > 0'); A.ok((e.asset0In && e.asset1Out) || (e.asset1In && e.asset0Out), 'one side in, one side out'); } }
+      for (let i = 1; i < events.length; i++) { const a = events[i - 1], b = events[i]; A.ok(a.block.blockNumber < b.block.blockNumber || (a.block.blockNumber === b.block.blockNumber && (a.txnIndex < b.txnIndex || (a.txnIndex === b.txnIndex && a.eventIndex < b.eventIndex))), 'events ordered'); }
+      const graduated = events.filter((e) => e.eventType === 'exit'); A.ok(graduated.length >= 1, 'graduation exit expected');
+      const pairId = events[0].pairId; const pair = await app.inject(`/geckoterminal/pair?id=${pairId}`); A.equal(pair.statusCode, 200, pair.body); A.equal(pair.json().pair.asset0Id, pairId); A.ok(pair.json().pair.createdAtTxnId, 'createdAtTxnId from the launch transaction');
+      const asset = await app.inject(`/geckoterminal/asset?id=${pairId}`); A.equal(asset.statusCode, 200, asset.body); A.ok(asset.json().asset.metadata.imageUrl, 'image from the metadata store');
+      console.log(`PASS geckoterminal on Postgres: ${events.length} events (${graduated.length} graduation exits) served from real rows, ordered, priced, with pair and asset detail`);
+    }
     try {
       const health = await app.inject('/health');
       assert.equal(health.statusCode, 200);

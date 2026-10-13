@@ -49,6 +49,12 @@ model Coin {
   holdersIndexed  Boolean  @default(false) // true only when Transfer history was indexed from mint
 
   createdBlock    BigInt   @default(0)
+  createdTxHash   String? // launch transaction (GeckoTerminal pair.createdAtTxnId)
+  graduatedBlock  BigInt? // graduation event position: GeckoTerminal reports it as an "exit" that empties the curve pair
+  graduatedTxHash String?
+  graduatedTxIndex Int?
+  graduatedLogIndex Int?
+  graduatedAt     DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -56,6 +62,7 @@ model Coin {
   prices          PricePoint[]
 
   @@index([graduated])
+  @@index([graduatedBlock])
   @@index([createdAt])
   @@index([marketCapUsd])
   @@index([updatedAt])
@@ -135,11 +142,15 @@ model Trade {
   block       BigInt
   txHash      String
   logIndex    Int
+  txIndex     Int      @default(0) // transaction position in the block (GeckoTerminal event ordering)
+  reserve0After String? // curve pricing reserves AFTER this trade: tokenReserve + virtualTokenOffset (base units)
+  reserve1After String? // ... and virtualQuote (base units); null for pool-venue trades
   ts          DateTime @default(now())
 
   @@unique([txHash, logIndex])
   @@index([coinAddress, ts])
   @@index([ts])
+  @@index([block])
 }
 
 // Holder-reward ledger: vault distributions, claims and launch-token fee conversions, indexed from

@@ -43,6 +43,12 @@ export const cfg = {
   // of trusted hops (e.g. 1) or a comma-separated list of proxy IPs/CIDRs; never a bare "true"
   // (anyone could then spoof the header and share or escape the rate-limit bucket). Unset = direct.
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+  // GeckoTerminal integration (src/geckoterminal.ts): the dex key GeckoTerminal lists us under, the site that
+  // serves /api/metadata (coin images and descriptions), and the largest block span one /events call may ask for.
+  gtDexKey: process.env.GT_DEX_KEY ?? "delos",
+  gtMetadataUrl: (process.env.GT_METADATA_URL ?? "").replace(/\/+$/, ""),
+  gtMaxSpan: Number(process.env.GT_MAX_SPAN ?? 10000),
+  gtPrefix: "/geckoterminal",
   // Explicitly reviewed token=wallet pairs. A launch creator is not automatically a verified company.
   companyCalloutWallets: parseCompanyWallets(process.env.COMPANY_CALLOUT_WALLETS),
 };

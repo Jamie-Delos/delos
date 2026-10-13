@@ -3,11 +3,14 @@ const path=require('node:path');
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
 const {EventEmitter}=require('node:events');
 function code(file,tail='') {return ts.transpileModule(fs.readFileSync(__dirname+'/src/'+file,'utf8').replace(/^import .*;\r?$/gm,'')+tail,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;}
+// GeckoTerminal routes (src/geckoterminal.ts) loaded like the API, with the RPC and metadata fetches stubbed.
+function gtModule(overrides={}){const viem=require('viem');const g={exports:{},console:{log(){}},getAddress:viem.getAddress,formatUnits:viem.formatUnits,isAddress:viem.isAddress,createPublicClient:()=>{throw Error('no rpc in tests');},http:()=>({}),defineChain:x=>x,fetch:async()=>({ok:false}),AbortSignal};vm.runInNewContext(code('geckoterminal.ts'),g);return{registerGeckoTerminalRoutes:g.exports.registerGeckoTerminalRoutes,defaultGtDeps:(b)=>({...g.exports.defaultGtDeps(b),getBlockTimestamp:async(n)=>1700000000+Number(n),readErc20:async(a)=>a.toLowerCase()==='0x'+'ee'.repeat(20)?{name:'Wrapped Ether',symbol:'WETH',decimals:18,totalSupply:10n**21n}:null,fetchMetadata:async(a)=>({image:'https://img.test/'+a+'.png',description:'A test coin'}),...overrides})};}
+const GT_CFG={gtDexKey:'delos',gtMetadataUrl:'https://site.test',gtMaxSpan:1000,gtPrefix:'/geckoterminal',rpcUrl:'http://unused'};
 async function apiChecks(){
   const app=require('fastify')({logger:false});app.listen=async()=>{};
   const ingestion={lastSuccessAt:0,lastBlock:null,error:'starting'};
   let failDb=false,chartQuery;
-  const context={exports:{},console:{log(){}},Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),registerSocialRoutes:()=>{},cfg:{chainId:1,curve:'0xcurve',corsOrigin:'*',port:0,pollMs:4000},bus:new EventEmitter(),serializeCoin:x=>x,ingestion,
+  const context={exports:{},console:{log(){}},...gtModule(),Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),registerSocialRoutes:()=>{},cfg:{chainId:1,curve:'0xcurve',corsOrigin:'*',port:0,pollMs:4000,...GT_CFG},bus:new EventEmitter(),serializeCoin:x=>x,ingestion,
     prisma:{$queryRaw:async()=>{if(failDb)throw Error('offline');},coin:{findMany:async()=>[]},pricePoint:{findMany:async(q)=>{chartQuery=q;return[{ts:3,priceQuote:3},{ts:2,priceQuote:2}];}}}};
   vm.runInNewContext(code('api.ts'),context);await context.exports.runApi();
   try{
@@ -220,7 +223,7 @@ async function v4Checks(){
   await reject([accrued('0xbad4',8,0,POOL_A,false,10n**18n,200),swap('0xbad4',8,1,POOL_A,10n,-10n,Q96)],/direction mismatch/);
   // API surface: products from the configured curves; fee split on trades; product/reflection/poolId on coins.
   const app=require('fastify')({logger:false});app.listen=async()=>{};
-  const apiCtx={exports:{},console:{log(){}},Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),registerSocialRoutes:()=>{},cfg:{chainId:1,curve:'0xcurve',curveV4:'0xcurvev4',corsOrigin:'*',port:0,pollMs:4000},bus:new EventEmitter(),serializeCoin:context.exports.serializeCoin,ingestion:{lastSuccessAt:Date.now(),lastBlock:'7',error:null},
+  const apiCtx={exports:{},console:{log(){}},...gtModule(),Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),registerSocialRoutes:()=>{},cfg:{chainId:1,curve:'0xcurve',curveV4:'0xcurvev4',corsOrigin:'*',port:0,pollMs:4000,...GT_CFG},bus:new EventEmitter(),serializeCoin:context.exports.serializeCoin,ingestion:{lastSuccessAt:Date.now(),lastBlock:'7',error:null},
     prisma:{$queryRaw:async()=>{},coin:{findMany:async()=>[...state.coins.values()],findUnique:async({where})=>state.coins.get(where.address)||null},trade:{findMany:async({where})=>[...state.trades.values()].filter(t=>t.coinAddress===where.coinAddress)}}};
   vm.runInNewContext(code('api.ts'),apiCtx);await apiCtx.exports.runApi();
   try{
@@ -234,4 +237,46 @@ async function v4Checks(){
   console.log('PASS v4: reflection registration, FeeAllocated split (incl. anti-snipe penalty), Graduated(poolId), PoolManager Swap + hook FeeAccrued for both currency orderings (gross volume, net sell output, oriented price), vault/hook rewards, foreign pools ignored, exactly-once replay, fail-closed fee pairing, API fields; V3 curve indexed alongside.');
 }
 module.exports.v4Checks=v4Checks;
-if(require.main===module)(async()=>{await apiChecks();await ingestChecks();await pricingChecks();await v4Checks();})().catch(e=>{console.error(e);process.exit(1);}); // explicit non-zero exit
+async function gtChecks(){
+  const viem=require('viem');
+  const app=require('fastify')({logger:false});app.listen=async()=>{};
+  const COIN='0x'+'aa'.repeat(20),QUOTE='0x'+'ee'.repeat(20),CREATOR='0x'+'cc'.repeat(20),BUYER='0x'+'bb'.repeat(20);
+  const coins=new Map([[COIN,{address:COIN,name:'Delos Test',symbol:'DLT',decimals:18,totalSupply:(10n**27n).toString(),creator:CREATOR,quote:QUOTE,quoteDecimals:18,product:'v4',reflectionBps:0,virtualQuote:(15n*10n**17n).toString(),tokenReserve:(10n**27n).toString(),virtualTokenOffset:(5n*10n**26n).toString(),graduationQuote:(2n*10n**16n).toString(),createdBlock:100n,createdAt:new Date(1700000100*1000),createdTxHash:'0xcreate',graduated:true,poolId:'0xpool',graduatedBlock:103n,graduatedTxHash:'0xgrad',graduatedTxIndex:2,graduatedLogIndex:7,graduatedAt:new Date(1700000103*1000)}]]);
+  const trades=[
+    {coinAddress:COIN,trader:BUYER,isBuy:true,amountIn:(10n**16n).toString(),amountOut:(25n*10n**24n).toString(),fee:(2n*10n**14n).toString(),priceQuote:1e-9,venue:'curve',block:101n,txIndex:3,txHash:'0xbuy',logIndex:5,ts:new Date(1700000101*1000),reserve0After:(1475n*10n**24n).toString(),reserve1After:(15098n*10n**14n).toString()},
+    {coinAddress:COIN,trader:BUYER,isBuy:false,amountIn:(10n**24n).toString(),amountOut:(9n*10n**14n).toString(),fee:(2n*10n**13n).toString(),priceQuote:9e-10,venue:'curve',block:102n,txIndex:0,txHash:'0xsell',logIndex:1,ts:new Date(1700000102*1000),reserve0After:(1476n*10n**24n).toString(),reserve1After:(15089n*10n**14n).toString()},
+    {coinAddress:COIN,trader:BUYER,isBuy:true,amountIn:'1',amountOut:'1',fee:'0',priceQuote:1,venue:'pool',block:104n,txIndex:0,txHash:'0xpoolswap',logIndex:0,ts:new Date(1700000104*1000)},
+  ];
+  const ingestion={lastSuccessAt:Date.now(),lastBlock:null,error:null};
+  const ctx={exports:{},console:{log(){}},...gtModule(),Fastify:()=>app,cors:require('@fastify/cors'),websocket:require('@fastify/websocket'),rateLimit:require('@fastify/rate-limit'),registerSocialRoutes:()=>{},cfg:{chainId:1,curve:'0xcurve',curveV4:'0xcurvev4',corsOrigin:'*',port:0,pollMs:4000,...GT_CFG},bus:new EventEmitter(),serializeCoin:x=>x,ingestion,
+    prisma:{$queryRaw:async()=>{},coin:{findMany:async()=>[...coins.values()],findUnique:async({where})=>coins.get(where.address)||null},trade:{findMany:async({where})=>trades.filter(t=>!where?.coinAddress||t.coinAddress===where.coinAddress)}}};
+  vm.runInNewContext(code('api.ts'),ctx);await ctx.exports.runApi();
+  try{
+    assert.equal((await app.inject('/geckoterminal/latest-block')).statusCode,503);
+    ingestion.lastBlock='105';
+    assert.deepEqual((await app.inject('/geckoterminal/latest-block')).json(),{block:{blockNumber:105,blockTimestamp:1700000105}});
+    assert.equal((await app.inject('/geckoterminal/asset?id=nope')).statusCode,400);
+    assert.equal((await app.inject('/geckoterminal/asset?id=0x'+'dd'.repeat(20))).statusCode,404);
+    const asset=(await app.inject('/geckoterminal/asset?id='+COIN)).json().asset;
+    assert.equal(asset.id,viem.getAddress(COIN));assert.equal(asset.symbol,'DLT');assert.equal(asset.decimals,18);assert.equal(asset.totalSupply,'1000000000');
+    assert.equal(asset.metadata.imageUrl,'https://img.test/'+COIN+'.png');assert.equal(asset.metadata.description,'A test coin');assert.equal(asset.metadata.website,'https://site.test/#/coin/'+COIN);
+    const quote=(await app.inject('/geckoterminal/asset?id='+QUOTE)).json().asset;assert.equal(quote.symbol,'WETH');assert.equal(quote.totalSupply,'1000');
+    const pair=(await app.inject('/geckoterminal/pair?id='+COIN)).json().pair;
+    assert.equal(pair.dexKey,'delos');assert.equal(pair.asset0Id,asset.id);assert.equal(pair.asset1Id,quote.id);assert.equal(pair.createdAtBlockNumber,100);assert.equal(pair.createdAtBlockTimestamp,1700000100);assert.equal(pair.createdAtTxnId,'0xcreate');assert.equal(pair.feeBps,200);assert.equal(pair.creator,viem.getAddress(CREATOR));assert.equal(pair.metadata.graduationQuote,'0.02');
+    assert.equal((await app.inject('/geckoterminal/pair?id=0x'+'dd'.repeat(20))).statusCode,404);
+    assert.equal((await app.inject('/geckoterminal/events?fromBlock=5&toBlock=4')).statusCode,400);
+    assert.equal((await app.inject('/geckoterminal/events?fromBlock=0&toBlock=5000')).statusCode,400);
+    assert.equal((await app.inject('/geckoterminal/events?fromBlock=a&toBlock=4')).statusCode,400);
+    const ev=(await app.inject('/geckoterminal/events?fromBlock=100&toBlock=104')).json().events;
+    assert.deepEqual(ev.map(e=>[e.eventType,e.block.blockNumber,e.txnIndex,e.eventIndex]),[['swap',101,3,5],['swap',102,0,1],['exit',103,2,7]]);
+    const buy=ev[0];assert.equal(buy.asset1In,'0.01');assert.equal(buy.asset0Out,'25000000');assert.equal(buy.metadata.fees1In,'0.0002');assert.equal(buy.reserves.asset0,'1475000000');assert.equal(buy.reserves.asset1,'1.5098');assert.equal(buy.maker,viem.getAddress(BUYER));assert.equal(buy.pairId,asset.id);assert.equal(buy.txnId,'0xbuy');assert.equal(buy.block.blockTimestamp,1700000101);
+    assert.equal(buy.priceNative.slice(0,14),'0.000000001023'); // 1.5098 quote / 1,475,000,000 coins, full precision
+    const sell=ev[1];assert.equal(sell.asset0In,'1000000');assert.equal(sell.asset1Out,'0.0009');assert.equal(sell.metadata.fees1Out,'0.00002');assert.equal(sell.asset1In,undefined);
+    const exit=ev[2];assert.equal(exit.amount0,'1476000000');assert.equal(exit.amount1,'1.5089');assert.deepEqual(exit.reserves,{asset0:'0',asset1:'0'});assert.equal(exit.txnId,'0xgrad');assert.equal(exit.block.blockTimestamp,1700000103);assert.equal(exit.metadata.poolId,'0xpool');
+    assert.deepEqual((await app.inject('/geckoterminal/events?fromBlock=200&toBlock=300')).json(),{events:[]});
+  }finally{await app.close();}
+  console.log('PASS geckoterminal: latest-block gated on ingestion, checksummed asset/pair ids, decimalized amounts, buy/sell orientation with fees, reserves after each trade, graduation exit, pool-venue trades excluded, range validation.');
+}
+module.exports.gtChecks=gtChecks;
+module.exports.gtModule=gtModule;module.exports.GT_CFG=GT_CFG;
+if(require.main===module)(async()=>{await apiChecks();await ingestChecks();await pricingChecks();await v4Checks();await gtChecks();})().catch(e=>{console.error(e);process.exit(1);}); // explicit non-zero exit
