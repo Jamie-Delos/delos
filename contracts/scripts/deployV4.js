@@ -18,14 +18,19 @@ const STOCK_SWAP_FEE = 3000;
 const ALLOWANCE_HOLDER = "0x0000000000001fF3684f28c67538d4D072C22734"; // 0x AllowanceHolder (Cancun singleton)
 
 async function main() {
-  const netName = hre.network.name;
+  // FORK_OF=robinhood on --network hardhat (with HARDHAT_FORK_URL set) rehearses the exact mainnet path on a fork:
+  // real WETH/SwapRouter02/PoolManager addresses, mainnet guards, and a record tagged so it can never be mistaken
+  // for a real deployment.
+  const forkOf = hre.network.name === "hardhat" ? (process.env.FORK_OF || "") : "";
+  const netName = forkOf || hre.network.name;
   const net = ADDR[netName] || {};
   const [deployer] = await hre.ethers.getSigners();
   const mainnet = netName === "robinhood";
   // DEPLOY_TAG=rehearsal: a throwaway side stack (mainnet dress rehearsal, see MAINNET_RUNBOOK_V4.md). Its
   // record goes to deployments.v4.<net>-<tag>.json so it can never be mistaken for, or overwrite, the
   // production record, and verify:* (which reads deployments.v4.<net>.json) never touches it.
-  const tag = (process.env.DEPLOY_TAG || "").replace(/[^a-z0-9-]/gi, "");
+  const tag = (process.env.DEPLOY_TAG || (forkOf ? "fork" : "")).replace(/[^a-z0-9-]/gi, "");
+  if (forkOf) console.log(`*** FORK REHEARSAL of ${forkOf} on a local Hardhat fork: nothing here reaches the real chain. ***`);
   const recordName = tag ? `${netName}-${tag}` : netName;
   if (tag) console.log(`*** ${tag.toUpperCase()} deploy: record -> deployments.v4.${recordName}.json. Do NOT verify on the explorer; do NOT point production at it. ***`);
 
@@ -166,6 +171,8 @@ async function main() {
     (out.StateView ? `\nVITE_STATE_VIEW=${out.StateView}` : "\n# VITE_STATE_VIEW=<StateView for this chain>") +
     (out.V4Quoter ? `\nVITE_V4_QUOTER=${out.V4Quoter}` : "\n# VITE_V4_QUOTER=<V4Quoter for this chain>"));
   console.log("\nIndexer/keeper:\n" + `CURVE_V4_ADDRESS=${curveAddr}\nFACTORY_V4_ADDRESS=${factoryAddr}\nPOOL_MANAGER_ADDRESS=${poolManager}\nHOOK_ADDRESS=${predictedHook}\nV4_ROUTER_ADDRESS=${routerAddr}`);
+  return out;
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+module.exports = { main };
+if (require.main === module) main().catch((e) => { console.error(e); process.exitCode = 1; });

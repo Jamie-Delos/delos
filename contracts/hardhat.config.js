@@ -37,7 +37,12 @@ module.exports = {
     // target-chain suites, which pin their own fork block at runtime (AUDIT_FORK_BLOCK to reproduce):
     //   AUDIT_MAINNET_FORK=1 npx hardhat test test/backend.mainnet-fork.test.js --network hardhat
     //   AUDIT_V4_FORK=1 npx hardhat test test/v4.readiness.test.js --grep "V4 Robinhood fork" --network hardhat
-    hardhat: {},
+    // HARDHAT_FORK_URL=<rpc> turns the in-process network into a fork (optionally pinned with HARDHAT_FORK_BLOCK).
+    // Robinhood Chain is unknown to Hardhat, so its hardfork history is declared here (Cancun from genesis).
+    hardhat: process.env.HARDHAT_FORK_URL
+      ? { forking: { url: process.env.HARDHAT_FORK_URL, ...(process.env.HARDHAT_FORK_BLOCK ? { blockNumber: Number(process.env.HARDHAT_FORK_BLOCK) } : {}) },
+          chains: { 4663: { hardforkHistory: { cancun: 0 } } } }
+      : {},
     robinhood: {
       url: ROBINHOOD_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],

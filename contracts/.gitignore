@@ -7,3 +7,5 @@ coverage
 coverage.json
 deployments.local.json
 uniswap.*.json
+# Fork rehearsals of deployV4.js (FORK_OF=...) write a tagged record that must never be committed or verified.
+deployments.v4.*-fork.json
