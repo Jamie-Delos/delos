@@ -34,6 +34,9 @@ export const fmtUsd = (n: number | null | undefined) =>
 export const fmtPrice = (n: number | null | undefined) => (n == null ? "—" : `$${n.toPrecision(3)}`);
 export const fmtPct = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n)}%`);
 export const fmtAmount = (n: number, digits = 4) => n.toLocaleString(undefined, { maximumFractionDigits: digits });
+// Reserve figures: two decimals once there is at least 1 unit, otherwise three significant figures, so a
+// 0.02 ETH test target reads "0.00196 / 0.02" rather than "0.00 / 0.02".
+export const fmtReserve = (n: number) => (n >= 1 ? n.toFixed(2) : n === 0 ? "0.00" : String(Number(n.toPrecision(3))));
 export const shortAddr = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—");
 export const initials = (name: string) =>
   (name || "").split(/\s+/).filter((w) => /[a-z0-9]/i.test(w)).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "C";
@@ -414,8 +417,8 @@ export function Tape({ events }: { events?: { id: string; kind: string; actor: s
  * partial when the target isn't known yet. */
 export const reserveCaption = (c: { reserve?: number; graduationTarget?: number | null; anchor?: string }) =>
   c.graduationTarget != null
-    ? `${(c.reserve ?? 0).toFixed(2)} / ${c.graduationTarget.toFixed(2)} ${c.anchor ?? "ETH"} reserve`
-    : `${(c.reserve ?? 0).toFixed(2)} ${c.anchor ?? "ETH"} raised`;
+    ? `${fmtReserve(c.reserve ?? 0)} / ${fmtReserve(c.graduationTarget)} ${c.anchor ?? "ETH"} reserve`
+    : `${fmtReserve(c.reserve ?? 0)} ${c.anchor ?? "ETH"} raised`;
 
 /* -------- shared rows -------- */
 export const HomeRow = ({ c }: { c: DisplayCoin }) => (
