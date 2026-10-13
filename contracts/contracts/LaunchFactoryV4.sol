@@ -38,10 +38,15 @@ interface IRewardVaultDeployer {
 ///         on the curve's reward-asset allowlist; never the coin itself), and graduation into the hooked
 ///         Uniswap V4 pool.
 ///         Compiled with the legacy settings so the embedded LaunchToken creation code (and therefore
-///         every predicted `…c0de` address) is byte-identical to the audited artifact.
+///         every predicted `…de105` address) is byte-identical to the audited artifact.
 contract LaunchFactoryV4 {
     using SafeERC20 for IERC20;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    /// @notice Every Delos token launched with a grinded salt lands on an address whose last five hex
+    ///         characters read `de105`. Clients read these two constants to grind (scripts/lib/grindSalt.js,
+    ///         frontend/src/lib/c0de.ts); the Census-era factories enforced `c0de` over 0xFFFF instead.
+    uint160 public constant VANITY_SUFFIX = 0xDE105;
+    uint160 public constant VANITY_MASK = 0xFFFFF;
 
     address public immutable weth;
     address public immutable curve;
@@ -155,7 +160,7 @@ contract LaunchFactoryV4 {
             // Bind the vanity address to the creator (see LaunchFactory): keccak256(salt, creator).
             bytes32 s = keccak256(abi.encodePacked(salt, msg.sender));
             t = new LaunchToken{salt: s}(p.name, p.symbol, p.totalSupply, p.decimals, address(this));
-            require((uint160(address(t)) & 0xFFFF) == 0xC0DE, "not a census address");
+            require((uint160(address(t)) & VANITY_MASK) == VANITY_SUFFIX, "not a delos address");
         }
         token = address(t);
 

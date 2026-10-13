@@ -12,7 +12,7 @@ import { useLaunches } from "../lib/useLaunches";
 import { stripConfusables, coinNameWarning, type NameWarning } from "../lib/names";
 import { useCurveStats } from "../lib/useCurveStats";
 import { STOCK_CATEGORIES } from "../lib/stocks";
-import { grindC0de } from "../lib/c0de";
+import { grindC0de, vanityOf, type Vanity } from "../lib/c0de";
 import { ANCHORS, anchorByKey, anchorAvailable, isCoinKey, curveLaunchParams, ethUsdPrice, graduationFdvEth, ETH_USD_FALLBACK, type Anchor } from "../lib/anchors";
 import { putMetadata, type CoinMetadata } from "../lib/metadata";
 import { prepareImage, uploadImage, isHostedUrl } from "../lib/upload";
@@ -154,6 +154,15 @@ export function Launch() {
   const ticker = (draft.ticker || deriveTicker(draft.name)) || "—";
   const hasDevBuy = draft.devBuy.trim() !== "";
   const factoryAddr = hasDevBuy ? CONTRACTS.factoryV4DevBuy : CONTRACTS.factoryV4;
+  // The suffix this factory enforces (de105 on Delos factories; the Census-era ones answer c0de).
+  const [vanity, setVanity] = useState<Vanity | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setVanity(null);
+    if (!publicClient || factoryAddr === zeroAddress) return;
+    vanityOf(publicClient, factoryAddr).then((v) => { if (!cancelled) setVanity(v); });
+    return () => { cancelled = true; };
+  }, [publicClient, factoryAddr]);
   useEffect(() => {
     let cancelled = false;
     setDevEstimate(null);
@@ -229,14 +238,14 @@ export function Launch() {
   const goTo = (i: number) => nav(pathFor(i));
   useEffect(() => { if (urlStep !== step) nav(pathFor(step), { replace: true }); }, [urlStep, step]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Grind the reserved …c0de address once we reach Identity and have a name + ticker. A changed
+  // Grind the reserved vanity address once we reach Identity and have a name + ticker. A changed
   // name/ticker means a different address, so the old one is dropped immediately (never shown, never
   // launched with) while the new grind runs.
   // The address depends on the connected wallet, so the grind key includes it and a wallet change re-grinds.
-  const grindKey = `${draft.name}|${ticker}|${address ?? ""}|${factoryAddr}`;
+  const grindKey = `${draft.name}|${ticker}|${address ?? ""}|${factoryAddr}|${vanity?.hex ?? ""}`;
   const lastGrind = useRef("");
   useEffect(() => {
-    if (step < 3 || !draft.name.trim() || ticker === "—" || !address) return;
+    if (step < 3 || !draft.name.trim() || ticker === "—" || !address || !vanity) return;
     if (lastGrind.current === grindKey) return;
     lastGrind.current = grindKey;
     setReserved(null);
@@ -245,12 +254,12 @@ export function Launch() {
     const creator = address;
     (async () => {
       try {
-        const g = await grindC0de({ name: draft.name.trim(), symbol: ticker, totalSupply: parseUnits(String(STANDARD.totalSupply), STANDARD.decimals), decimals: STANDARD.decimals, factory: factoryAddr, creator });
+        const g = await grindC0de({ name: draft.name.trim(), symbol: ticker, totalSupply: parseUnits(String(STANDARD.totalSupply), STANDARD.decimals), decimals: STANDARD.decimals, factory: factoryAddr, creator, vanity });
         if (!cancelled) setReserved({ salt: g.salt, address: g.address, creator });
       } catch { if (!cancelled) setReserved(null); }
     })();
     return () => { cancelled = true; };
-  }, [step, grindKey, factoryAddr, hasFactory, address]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, grindKey, factoryAddr, hasFactory, address, vanity]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pickLabel = (k: string) => (k === QUOTE_KEY ? anchor.key : k);
   const totalFeeBps = TRADE_FEE_BPS + draft.reflectionBps;
@@ -323,9 +332,10 @@ export function Launch() {
     let hash: Hex | undefined;
     try {
       // A single green progress bar carries the whole launch (grind → price → confirm → mine → publish).
-      // The c0de grind is probabilistic (~65k tries), so attempts map onto the first ~65% and the on-chain
-      // phases fill the rest.
-      setStatus("reserving your …c0de address…");
+      // The vanity grind is probabilistic (~1M tries for de105, ~65k for c0de), so attempts map onto the
+      // first ~65% and the on-chain phases fill the rest.
+      const v = vanity ?? (await vanityOf(publicClient, factoryAddr));
+      setStatus(`reserving your …${v.hex} address…`);
       setLaunchPct(4);
       // Reuse the previewed salt only if it was grinded for the wallet that's about to sign; otherwise
       // grind fresh bound to the current creator. A salt from another wallet would deploy off-address.
@@ -335,11 +345,11 @@ export function Launch() {
         setLaunchPct(68);
       } else if (address) {
         try {
-          const g = await grindC0de({ name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, factory: factoryAddr, creator: address },
-            { onProgress: (n) => setLaunchPct(Math.min(66, 6 + Math.round((n / 65536) * 60))) });
+          const g = await grindC0de({ name: nm, symbol: sym, totalSupply, decimals: STANDARD.decimals, factory: factoryAddr, creator: address, vanity: v },
+            { onProgress: (n) => setLaunchPct(Math.min(66, 6 + Math.round((n / v.expectedTries) * 60))) });
           salt = g.salt;
           setLaunchPct(68);
-        } catch { /* grind unavailable — fall back to a plain (non-c0de) deploy with the zero salt */ }
+        } catch { /* grind unavailable — fall back to a plain (non-vanity) deploy with the zero salt */ }
       }
 
       // CensusCurve launch params: the coin's whole supply seeds a bonding curve priced in the anchor.
@@ -499,7 +509,7 @@ export function Launch() {
           {step === 0 && <CompanyStep draft={draft} set={set} ticker={ticker} warning={nameWarning} />}
           {step === 1 && <AnchorsStep draft={draft} set={set} anchor={anchor} />}
           {step === 2 && <EconomicsStep draft={draft} set={set} anchor={anchor} ticker={ticker} ethUsd={ethUsd} picks={picks} pctOf={pctOf} setPct={setPct} togglePick={togglePick} pickLabel={pickLabel} allowed={allowedAssets} allowedError={allowedError} devEstimate={devEstimate} />}
-          {step === 3 && <IdentityStep draft={draft} set={set} ticker={ticker} reserved={reserved} hasFactory={hasFactory} />}
+          {step === 3 && <IdentityStep draft={draft} set={set} ticker={ticker} reserved={reserved} hasFactory={hasFactory} vanity={vanity} />}
           {step === 4 && <ReviewStep draft={draft} ticker={ticker} isV2={isV2} picks={picks} pctOf={pctOf} pickLabel={pickLabel} reserved={reserved} onEdit={goTo} status={status} anchorKey={anchor.key} devEstimate={devEstimate} />}
           {pendingLaunch && <div className="census-panel" role="status" style={{ marginTop: 16, overflowWrap: "anywhere" }}>
             <p>A launch transaction has been submitted. Check its confirmation before starting another launch.</p>
@@ -986,8 +996,8 @@ function LogoDrop({ value, onChange }: { value: string; onChange: (v: string) =>
   );
 }
 
-type IdentityProps = { draft: Draft; set: Setter; ticker: string; reserved: { address: Address } | null; hasFactory: boolean };
-function IdentityStep({ draft, set, ticker, reserved, hasFactory }: IdentityProps) {
+type IdentityProps = { draft: Draft; set: Setter; ticker: string; reserved: { address: Address } | null; hasFactory: boolean; vanity: Vanity | null };
+function IdentityStep({ draft, set, ticker, reserved, hasFactory, vanity }: IdentityProps) {
   return (
     <>
       <h1 className="census-wizard__title">Identity.</h1>
@@ -1004,11 +1014,11 @@ function IdentityStep({ draft, set, ticker, reserved, hasFactory }: IdentityProp
       <div className="census-card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <span className="census-mono" style={{ fontSize: 14, color: reserved ? "var(--census-text)" : "var(--census-text-muted)", wordBreak: "break-all" }}>
           {reserved
-            ? <>{reserved.address.slice(0, -4)}<span className="census-dot" style={{ color: "var(--census-lime)" }}>c0de</span></>
-            : hasFactory ? "grinding a …c0de address…" : "assigned at launch on this network"}
+            ? <>{reserved.address.slice(0, -(vanity?.hex.length ?? 5))}<span className="census-dot" style={{ color: "var(--census-lime)" }}>{reserved.address.slice(-(vanity?.hex.length ?? 5))}</span></>
+            : hasFactory ? `grinding a …${vanity?.hex ?? "de105"} address…` : "assigned at launch on this network"}
         </span>
       </div>
-      <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 8 }}>Every Delos token address ends in <span className="census-mono" style={{ color: "var(--census-lime)" }}>c0de</span>. Held for you until you launch.</div>
+      <div style={{ fontSize: 13, color: "var(--census-text-muted)", marginTop: 8 }}>Every Delos token address ends in <span className="census-mono" style={{ color: "var(--census-lime)" }}>{vanity?.hex ?? "de105"}</span>. Held for you until you launch.</div>
 
       <label style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 26, cursor: "pointer" }}>
         <input type="checkbox" checked={draft.publicConsent} onChange={(e) => set({ publicConsent: e.target.checked })} style={{ marginTop: 3, accentColor: "var(--census-lime)" }} />

@@ -439,7 +439,7 @@ export function Coin() {
     return (
       <div className="cx-panel cx-empty">
         <div className="cx-empty__title">That's not a coin address</div>
-        <div className="cx-empty__body">A Delos coin address is 42 characters long and ends in c0de. Check the link and try again.</div>
+        <div className="cx-empty__body">A Delos coin address is 42 characters long. Check the link and try again.</div>
         <Link className="cx-cta" style={{ marginTop: 26 }} to="/board">Open the market</Link>
       </div>
     );

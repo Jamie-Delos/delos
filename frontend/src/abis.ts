@@ -1,7 +1,7 @@
 import { parseAbi } from "viem";
 
 // LaunchFactoryV4 — every new launch (Prima and Maxima alike). Deploys a fixed-supply ERC-20 (CREATE2,
-// …c0de salt bound to the creator) and seeds the WHOLE supply into CensusCurveV4. Optional holder
+// …de105 salt bound to the creator) and seeds the WHOLE supply into CensusCurveV4. Optional holder
 // reflection (`reflectionBps` 0 or 100..400, ON TOP of the 2% base fee) creates a CensusRewardVault with a
 // 1-3 asset basket of QUOTED assets only: the quote asset (path 0x) and/or tokenised stocks that are
 // allow-listed on CensusCurveV4 (`allowedRewardAsset`), reached by a V3 path from the quote. The launch
