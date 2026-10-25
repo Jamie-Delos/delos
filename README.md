@@ -1,15 +1,15 @@
-# Census
+# Delos
 
-A token launchpad built on a shared **bonding curve** that graduates filled coins into
-**permanently-locked Uniswap V3 liquidity**. Own-brand rebuild of the NOXA Fun mechanics.
+A launchpad on Robinhood Chain built on a shared **bonding curve** that graduates filled coins into
+**permanently custodied Uniswap V4 liquidity**, where a Delos hook keeps charging the same fee. It began
+as Census (the V3 product below still carries that name in code); every new launch is the V4 product.
 
-Every coin launches its **whole fixed supply straight onto the shared `CensusCurve`** — there is no
-DEX pool at launch, so *all* early trading happens on the curve (which is why the fee is
-un-dodgeable). When a coin fills its graduation reserve, the curve migrates the tokens plus the
-raised quote into a Uniswap V3 pool whose LP NFT is **locked forever** in the `LaunchLocker`; only
-*fees* can ever be collected after that. Every Census token address ends in `…c0de` (a CREATE2
-vanity salt bound to the creator).
-
+Every coin launches its **whole fixed supply straight onto the shared curve** — there is no DEX pool at
+launch, so *all* early trading happens on the curve (which is why the fee is un-dodgeable). When a coin
+fills its graduation reserve, the curve migrates the tokens plus the raised quote into a Uniswap V4 pool
+whose liquidity is custodied forever by the graduator; only *fees* can ever be collected after that. Every
+Delos token address ends in `…de105` (a CREATE2 vanity salt bound to the creator; the Census-era
+factories enforced `…c0de`).
 ## Fee model (V4 product, every new launch)
 
 - **2% base fee** on every buy and sell, on the bonding curve and in the coin's canonical Uniswap V4 pool
