@@ -98,3 +98,16 @@ npx hardhat run scripts/deploy.js --network robinhoodTestnet   # or robinhood (m
   few Prima coins (current curve ABI, `…c0de` addresses, one small buy so the first coin shows a price).
 - **Curve smoke test:** `npx hardhat run scripts/curveProof.js --network <net>` launches a Prima coin
   and does a small curve buy, confirming the 2% fee (25% of it) lands in the treasury.
+
+## Branches
+
+- `main` is the live line of work. It continues Neil's `codex/delos-team-test-2026-10-12` handover branch, which continued `CensusV4`.
+- `legacy/census-main` is the former Census main: the old app, the Delos reskin of it, and the brand folder the site repo was split from.
+- `CensusV4`, `BACKEND-NEIL`, `codex/backend-launch-readiness`, `codex/census-frontend-concepts` and `feat/coin-txfeed-xlink-flip` are kept for history.
+
+The delos.fund marketing site lives in its own repo, `delos-site`.
+
+## Checks and deploys
+
+- `.github/workflows/backend.yml` runs on every push: contracts (Hardhat suite, rehearsals, parity checks), indexer (type check, in-memory suite, embedded Postgres suite), bot, and the frontend build and tests.
+- `.github/workflows/deploy-team-test.yml` deploys `frontend/` to the `delos-team-test` Vercel project on every push to `main` that touches it. The project holds the chain and contract addresses as environment variables; the workflow only needs `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID`.
