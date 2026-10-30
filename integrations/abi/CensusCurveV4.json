@@ -1,0 +1,1732 @@
+[
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "platform_",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "weth_",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "swapRouter_",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+ },
+ {
+  "inputs": [],
+  "name": "AlreadyGraduated",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "AlreadyRegistered",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "BadParams",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "CurveFilled",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "CurveLimit",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "EthTransferFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "InsufficientGas",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "InvalidReflection",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "NotConfigured",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "NotDeployer",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "NotFactory",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "NotGraduated",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "NotReady",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "NotSelf",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "NotZappable",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "QuoteNotSupported",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ReentrancyGuardReentrantCall",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "token",
+    "type": "address"
+   }
+  ],
+  "name": "SafeERC20FailedOperation",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "Slippage",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "SupplyNotFunded",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "UnknownCoin",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "UnsupportedQuote",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ZeroAmount",
+  "type": "error"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "buyer",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "amount",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "nativeRefund",
+    "type": "bool"
+   }
+  ],
+  "name": "BuyRefunded",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "recipient",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "amount",
+    "type": "uint256"
+   }
+  ],
+  "name": "DeferredFeeWithdrawn",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "factory",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "allowed",
+    "type": "bool"
+   }
+  ],
+  "name": "FactorySet",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "isBuy",
+    "type": "bool"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "protocolFee",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "creatorFee",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "holderFee",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "penalty",
+    "type": "uint256"
+   }
+  ],
+  "name": "FeeAllocated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "recipient",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "amount",
+    "type": "uint256"
+   }
+  ],
+  "name": "FeeDeferred",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "poolId",
+    "type": "bytes32"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "tokensIn",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "quoteIn",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint128",
+    "name": "liquidity",
+    "type": "uint128"
+   }
+  ],
+  "name": "Graduated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bytes",
+    "name": "reason",
+    "type": "bytes"
+   }
+  ],
+  "name": "GraduationDeferred",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "graduator",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "hook",
+    "type": "address"
+   }
+  ],
+  "name": "GraduatorSet",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "keeper",
+    "type": "address"
+   }
+  ],
+  "name": "KeeperSet",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "launchedAt",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "secondsWindow",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint16",
+    "name": "startBps",
+    "type": "uint16"
+   }
+  ],
+  "name": "LaunchWindow",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "tokenAmount",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "quoteAmount",
+    "type": "uint256"
+   }
+  ],
+  "name": "MigrationDustSwept",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "allowed",
+    "type": "bool"
+   }
+  ],
+  "name": "QuoteAllowed",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "creator",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "vault",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint16",
+    "name": "reflectionBps",
+    "type": "uint16"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "virtualQuote",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "graduationQuote",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "virtualTokenOffset",
+    "type": "uint256"
+   }
+  ],
+  "name": "Registered",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "allowed",
+    "type": "bool"
+   }
+  ],
+  "name": "RewardAssetAllowed",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "buyer",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "amount",
+    "type": "uint256"
+   }
+  ],
+  "name": "SnipeTaxCharged",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   }
+  ],
+  "name": "SnipeTaxExempted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "trader",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "isBuy",
+    "type": "bool"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "amountIn",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "amountOut",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "fee",
+    "type": "uint256"
+   }
+  ],
+  "name": "Traded",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bytes",
+    "name": "pathIn",
+    "type": "bytes"
+   },
+   {
+    "indexed": false,
+    "internalType": "bytes",
+    "name": "pathOut",
+    "type": "bytes"
+   }
+  ],
+  "name": "ZapPathSet",
+  "type": "event"
+ },
+ {
+  "inputs": [],
+  "name": "BPS",
+  "outputs": [
+   {
+    "internalType": "uint16",
+    "name": "",
+    "type": "uint16"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "CURVE_PROTOCOL_BPS",
+  "outputs": [
+   {
+    "internalType": "uint16",
+    "name": "",
+    "type": "uint16"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "FEE_BPS",
+  "outputs": [
+   {
+    "internalType": "uint16",
+    "name": "",
+    "type": "uint16"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "GRADUATION_GAS_FLOOR",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "SNIPE_TAX_SECONDS",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "SNIPE_TAX_START_BPS",
+  "outputs": [
+   {
+    "internalType": "uint16",
+    "name": "",
+    "type": "uint16"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "allowedQuote",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "allowedRewardAsset",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "quoteIn",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "minTokensOut",
+    "type": "uint256"
+   }
+  ],
+  "name": "buy",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "tokensOut",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "buyer",
+    "type": "address"
+   }
+  ],
+  "name": "buyFeeBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "minTokensOut",
+    "type": "uint256"
+   }
+  ],
+  "name": "buyWithETH",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "tokensOut",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "payable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "buyer",
+    "type": "address"
+   }
+  ],
+  "name": "currentSnipeTaxBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "curves",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "creator",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "vault",
+    "type": "address"
+   },
+   {
+    "internalType": "uint16",
+    "name": "reflectionBps",
+    "type": "uint16"
+   },
+   {
+    "internalType": "uint256",
+    "name": "virtualQuote",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokenReserve",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "realQuote",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "graduationQuote",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "graduated",
+    "type": "bool"
+   },
+   {
+    "internalType": "bool",
+    "name": "exists",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "deferredFee",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "deployer",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "factory",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   }
+  ],
+  "name": "graduate",
+  "outputs": [
+   {
+    "internalType": "PoolId",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   }
+  ],
+  "name": "graduateFromBuy",
+  "outputs": [
+   {
+    "internalType": "PoolId",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   }
+  ],
+  "name": "graduationProgress",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "graduator",
+  "outputs": [
+   {
+    "internalType": "contract CensusV4Graduator",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   }
+  ],
+  "name": "isGraduated",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "q",
+    "type": "address"
+   }
+  ],
+  "name": "isPairableCompanyCoin",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "keeper",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "launchedAt",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   }
+  ],
+  "name": "maxQuoteIn",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "buyer",
+    "type": "address"
+   }
+  ],
+  "name": "maxQuoteInFor",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "migrationQuoteDust",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "migrationTokenDust",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "platform",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "poolIds",
+  "outputs": [
+   {
+    "internalType": "PoolId",
+    "name": "",
+    "type": "bytes32"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "quoteIn",
+    "type": "uint256"
+   }
+  ],
+  "name": "quoteBuy",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "tokensOut",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "quoteIn",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address",
+    "name": "buyer",
+    "type": "address"
+   }
+  ],
+  "name": "quoteBuyFor",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "tokensOut",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokensIn",
+    "type": "uint256"
+   }
+  ],
+  "name": "quoteSell",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "quoteOut",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "creator",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "vault",
+    "type": "address"
+   },
+   {
+    "internalType": "uint16",
+    "name": "reflectionBps",
+    "type": "uint16"
+   },
+   {
+    "internalType": "uint256",
+    "name": "virtualQuote",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokenSupply",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "graduationQuote",
+    "type": "uint256"
+   }
+  ],
+  "name": "register",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "creator",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "vault",
+    "type": "address"
+   },
+   {
+    "internalType": "uint16",
+    "name": "reflectionBps",
+    "type": "uint16"
+   },
+   {
+    "internalType": "uint256",
+    "name": "virtualQuote",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokenSupply",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "graduationQuote",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address[]",
+    "name": "exemptBuyers",
+    "type": "address[]"
+   }
+  ],
+  "name": "registerWithExemptions",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokensIn",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "minQuoteOut",
+    "type": "uint256"
+   }
+  ],
+  "name": "sell",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "quoteOut",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   }
+  ],
+  "name": "sellFeeBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokensIn",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "minEthOut",
+    "type": "uint256"
+   }
+  ],
+  "name": "sellForETH",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "ethOut",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "f",
+    "type": "address"
+   },
+   {
+    "internalType": "bool",
+    "name": "ok",
+    "type": "bool"
+   }
+  ],
+  "name": "setFactory",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "contract CensusV4Graduator",
+    "name": "g",
+    "type": "address"
+   }
+  ],
+  "name": "setGraduator",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "keeper_",
+    "type": "address"
+   }
+  ],
+  "name": "setKeeper",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "internalType": "bool",
+    "name": "ok",
+    "type": "bool"
+   }
+  ],
+  "name": "setQuoteAllowed",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   },
+   {
+    "internalType": "bool",
+    "name": "ok",
+    "type": "bool"
+   }
+  ],
+  "name": "setRewardAssetAllowed",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes",
+    "name": "pathIn",
+    "type": "bytes"
+   },
+   {
+    "internalType": "bytes",
+    "name": "pathOut",
+    "type": "bytes"
+   }
+  ],
+  "name": "setZapPath",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "snipeTaxExempt",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "swapRouter",
+  "outputs": [
+   {
+    "internalType": "contract IV3ExactInputRouter",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   }
+  ],
+  "name": "sweepMigrationDust",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "virtualTokenOffset",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "weth",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "quote",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "recipient",
+    "type": "address"
+   }
+  ],
+  "name": "withdrawDeferredFee",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "zapPathIn",
+  "outputs": [
+   {
+    "internalType": "bytes",
+    "name": "",
+    "type": "bytes"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "zapPathOut",
+  "outputs": [
+   {
+    "internalType": "bytes",
+    "name": "",
+    "type": "bytes"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "stateMutability": "payable",
+  "type": "receive"
+ }
+]

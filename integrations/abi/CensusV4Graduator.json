@@ -1,0 +1,352 @@
+[
+ {
+  "inputs": [
+   {
+    "internalType": "contract IPoolManager",
+    "name": "manager_",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "curve_",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "protocol_",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+ },
+ {
+  "inputs": [],
+  "name": "InvalidConfiguration",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "InvalidReserves",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ReentrancyGuardReentrantCall",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "token",
+    "type": "address"
+   }
+  ],
+  "name": "SafeERC20FailedOperation",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "Unauthorized",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "UnsupportedToken",
+  "type": "error"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "coin",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "PoolId",
+    "name": "poolId",
+    "type": "bytes32"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint128",
+    "name": "liquidity",
+    "type": "uint128"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "coinUsed",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "quoteUsed",
+    "type": "uint256"
+   }
+  ],
+  "name": "Graduated",
+  "type": "event"
+ },
+ {
+  "inputs": [],
+  "name": "TICK_LOWER",
+  "outputs": [
+   {
+    "internalType": "int24",
+    "name": "",
+    "type": "int24"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "TICK_UPPER",
+  "outputs": [
+   {
+    "internalType": "int24",
+    "name": "",
+    "type": "int24"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "curve",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "deployer",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "components": [
+     {
+      "internalType": "address",
+      "name": "coin",
+      "type": "address"
+     },
+     {
+      "internalType": "address",
+      "name": "quote",
+      "type": "address"
+     },
+     {
+      "internalType": "address",
+      "name": "creator",
+      "type": "address"
+     },
+     {
+      "internalType": "address",
+      "name": "rewards",
+      "type": "address"
+     },
+     {
+      "internalType": "uint16",
+      "name": "reflectionBps",
+      "type": "uint16"
+     },
+     {
+      "internalType": "uint64",
+      "name": "launchedAt",
+      "type": "uint64"
+     },
+     {
+      "internalType": "uint256",
+      "name": "coinAmount",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "quoteAmount",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint160",
+      "name": "sqrtPriceX96",
+      "type": "uint160"
+     }
+    ],
+    "internalType": "struct CensusV4Graduator.Graduation",
+    "name": "g",
+    "type": "tuple"
+   }
+  ],
+  "name": "graduate",
+  "outputs": [
+   {
+    "internalType": "PoolId",
+    "name": "id",
+    "type": "bytes32"
+   },
+   {
+    "internalType": "uint256",
+    "name": "coinUsed",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "quoteUsed",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "graduated",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "hook",
+  "outputs": [
+   {
+    "internalType": "contract CensusV4Hook",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "lockedLiquidity",
+  "outputs": [
+   {
+    "internalType": "uint128",
+    "name": "",
+    "type": "uint128"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "manager",
+  "outputs": [
+   {
+    "internalType": "contract IPoolManager",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "poolIds",
+  "outputs": [
+   {
+    "internalType": "PoolId",
+    "name": "",
+    "type": "bytes32"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "protocol",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "contract CensusV4Hook",
+    "name": "hook_",
+    "type": "address"
+   }
+  ],
+  "name": "setHook",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "data",
+    "type": "bytes"
+   }
+  ],
+  "name": "unlockCallback",
+  "outputs": [
+   {
+    "internalType": "bytes",
+    "name": "",
+    "type": "bytes"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ }
+]

@@ -1,0 +1,69 @@
+{
+  "updated": "2026-10-30",
+  "current": "teamTest",
+  "chain": {
+    "name": "Robinhood Chain",
+    "chainId": 4663,
+    "caip2": "eip155:4663",
+    "rpc": "https://rpc.mainnet.chain.robinhood.com",
+    "explorer": "https://robinhoodchain.blockscout.com",
+    "gas": "ETH",
+    "testnetChainId": 46630
+  },
+  "uniswap": {
+    "v4PoolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "v4StateView": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+    "v4Quoter": "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
+    "v3Factory": "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
+    "v3SwapRouter02": "0xCaf681a66D020601342297493863E78C959E5cb2",
+    "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+  },
+  "anchors": {
+    "ETH": { "token": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", "decimals": 18 },
+    "HOOD": { "token": "0x32ac8c1d7672667d5ebdea22935f7b06fc8d496f", "decimals": 18, "pricePoolUsdgV3": "0x1c1f6e283a72a68c15c816324363c794151cf913" }
+  },
+  "delos": {
+    "teamTest": {
+      "status": "live, temporary: coins launched here stay on this stack after the final cutover",
+      "vanitySuffix": "c0de",
+      "startBlock": 69000000,
+      "curve": "0xD1300ccE1Ed4c778791cF713b6bA47FE32B217C3",
+      "factory": "0x3776FBA3b9a7C47fAd1d66a5223c73590d07278b",
+      "factoryDevBuy": "0xc37b600F1079B88C7c077f607Fad7aee095Cb653",
+      "graduator": "0x275802F2145f03e3685C48Beaaab5bc100F69D4f",
+      "hook": "0xCaA6477f3116126ebD4A7f03B2B7631c70cF20cC",
+      "router": "0xb087d45099D9e275c67693eD1a215c66B4907BA6",
+      "treasury": "0x952594c08c027e8d401A8c462467a94cf8AE48E7",
+      "keeper": "0x456A9f69dd2639D449A2EaedDC53a59478d36A1b"
+    },
+    "final": {
+      "status": "pending deployment",
+      "vanitySuffix": "de105",
+      "startBlock": null,
+      "curve": null,
+      "factory": null,
+      "factoryDevBuy": null,
+      "graduator": null,
+      "hook": null,
+      "router": null,
+      "treasury": null,
+      "keeper": null
+    }
+  },
+  "pool": {
+    "fee": 0,
+    "tickSpacing": 60,
+    "hooks": "the stack's hook address",
+    "note": "poolId = keccak256(abi.encode(PoolKey{currency0, currency1, fee, tickSpacing, hooks})) with currency0 < currency1; CensusCurveV4.poolIds(coin) returns it"
+  },
+  "indexer": {
+    "baseUrl": null,
+    "websocket": null,
+    "geckoTerminalPrefix": "/geckoterminal"
+  },
+  "app": {
+    "site": "https://delos.fund",
+    "teamTestApp": "https://delos-team-test.vercel.app",
+    "metadataApi": "https://delos-team-test.vercel.app/api/metadata?address=<coin>"
+  }
+}
